@@ -1,0 +1,23 @@
+name: kyc_sdk_flutter_example
+description: "Minimal example showing how to launch the Myaza KYC flow with kyc_sdk_flutter."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # The SDK under test, resolved from the package root.
+  kyc_sdk_flutter:
+    path: ..
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true

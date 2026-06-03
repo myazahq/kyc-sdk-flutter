@@ -1,0 +1,49 @@
+group 'co.myazahq.kyc'
+version '1.0.0'
+
+buildscript {
+    ext.kotlin_version = '1.9.10'
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.0'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'co.myazahq.kyc'
+    compileSdk 34
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+
+    defaultConfig {
+        minSdk 21
+    }
+}
+
+dependencies {
+    // Native ML Kit face detection — NOT the cross-platform Flutter package.
+    // Keeping ML Kit Android-only (Gradle) means no GoogleMLKit CocoaPod on iOS,
+    // so iOS-simulator builds stay green while Android gets real ML Kit liveness.
+    implementation 'com.google.mlkit:face-detection:16.1.6'
+}

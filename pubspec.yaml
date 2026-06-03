@@ -1,0 +1,54 @@
+name: kyc_sdk_flutter
+description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
+version: 1.0.0
+
+homepage: https://github.com/myazahq/kyc-sdk-flutter
+repository: https://github.com/myazahq/kyc-sdk-flutter
+issue_tracker: https://github.com/myazahq/kyc-sdk-flutter/issues
+
+environment:
+  sdk: ">=3.4.0 <4.0.0"
+  flutter: ">=3.22.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^2.5.0
+  riverpod_annotation: ^2.3.0
+  dio: ^5.4.0
+  camera: ^0.11.0+1
+  google_fonts: ^6.2.0
+  image: ^4.1.0
+  path_provider: ^2.1.0
+  permission_handler: ^11.3.0
+  uuid: ^4.4.0
+  flutter_animate: ^4.5.0
+  flutter_tts: ^4.0.2
+  image_picker: ^1.1.0
+  device_info_plus: ^10.1.0
+  package_info_plus: ^8.0.0
+  video_compress: ^3.1.3
+  flutter_image_compress: ^2.3.0
+  lucide_icons_flutter: ^3.1.14+2
+  country_flags: ^4.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.0
+  riverpod_generator: ^2.4.0
+
+flutter:
+  assets:
+    - assets/liveness/
+  # Native on-device face detection ships in-package: iOS = Apple Vision (Swift),
+  # Android = Google ML Kit via native Gradle. No cross-platform GoogleMLKit pod,
+  # so the SDK still builds & runs on Apple-Silicon iOS simulators.
+  plugin:
+    platforms:
+      ios:
+        pluginClass: KycSdkFlutterPlugin
+      android:
+        package: co.myazahq.kyc
+        pluginClass: KycSdkFlutterPlugin
