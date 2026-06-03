@@ -1,0 +1,54 @@
+name: Publish to pub.dev
+
+# Lives in the PUBLIC repo myazahq/kyc-sdk-flutter. The monorepo sync preserves
+# this repo's .github/, so it survives every release sync.
+# Required secret: PUB_CREDENTIALS
+#   Contents of the pub credentials file created locally by `flutter pub login`
+#   (~/.config/dart/pub-credentials.json on newer Dart;
+#    ~/.pub-cache/credentials.json on older).
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter (stable)
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      # Restore pub.dev OAuth credentials from the secret. Write both the modern
+      # and legacy locations so it works regardless of the Dart version.
+      - name: Write pub credentials
+        run: |
+          mkdir -p "$HOME/.config/dart"
+          printf '%s' '${{ secrets.PUB_CREDENTIALS }}' > "$HOME/.config/dart/pub-credentials.json"
+          mkdir -p "$HOME/.pub-cache"
+          printf '%s' '${{ secrets.PUB_CREDENTIALS }}' > "$HOME/.pub-cache/credentials.json"
+
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      - name: Publish to pub.dev (skip if this version already exists)
+        run: |
+          NAME=$(grep -E '^name:' pubspec.yaml | head -1 | awk '{print $2}')
+          VERSION=$(grep -E '^version:' pubspec.yaml | head -1 | awk '{print $2}')
+          echo "Resolved package: $NAME@$VERSION"
+
+          # pub.dev returns 200 for an existing version, 404 otherwise.
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' \
+            "https://pub.dev/api/packages/$NAME/versions/$VERSION")
+
+          if [ "$CODE" = "200" ]; then
+            echo "✓ $NAME $VERSION is already on pub.dev — skipping publish."
+            exit 0
+          fi
+
+          echo "Publishing $NAME $VERSION to pub.dev…"
+          flutter pub publish --force
