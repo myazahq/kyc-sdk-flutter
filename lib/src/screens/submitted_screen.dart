@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -7,12 +6,26 @@ import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
+import '../services/kyc_error_mapper.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/myaza_pulse_loader.dart';
 
 // ─── Submission status (local UI state) ──────────────────────────────────────
 
 enum _SubmitStatus { submitting, success, error }
+
+const String _kDefaultSuccessTitle = 'Verification Submitted!';
+const String _kDefaultSuccessDescription =
+    "Your identity verification has been submitted for review. "
+    "You'll be notified of the result.";
+
+/// Replaces `{firstName}` / `{lastName}` tokens with the user's data (or '').
+String _fillTokens(String template, String firstName, String lastName) =>
+    template
+        .replaceAll('{firstName}', firstName)
+        .replaceAll('{lastName}', lastName)
+        .trim();
 
 // ─── Submitted screen ─────────────────────────────────────────────────────────
 //
@@ -49,6 +62,10 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
   KYCSubmission? _submission;
   KYCError? _error;
 
+  /// Set while a transient failure is being retried — drives the "Reconnecting…
+  /// retrying (n/total)" copy under the spinner.
+  ({int attempt, int total})? _retryInfo;
+
   bool _kicked = false;
 
   @override
@@ -64,11 +81,16 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
     setState(() {
       _status = _SubmitStatus.submitting;
       _error = null;
+      _retryInfo = null;
     });
 
     try {
       final notifier = ref.read(kYCNotifierProvider.notifier);
-      final result = await notifier.submitAsync();
+      final result = await notifier.submitAsync(
+        onRetry: (attempt, total) {
+          if (mounted) setState(() => _retryInfo = (attempt: attempt, total: total));
+        },
+      );
       if (!mounted) return;
 
       final config = ref.read(kycConfigProvider);
@@ -82,15 +104,18 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       setState(() {
         _status = _SubmitStatus.success;
         _submission = submission;
+        _retryInfo = null;
       });
 
       widget.onSubmitted?.call(submission);
     } on KYCApiException catch (e) {
       if (!mounted) return;
-      final error = _mapToKycError(e);
+      // Retries (if any) are exhausted — surface a typed error.
+      final error = mapToKycError(e, context: ErrorContext.verify);
       setState(() {
         _status = _SubmitStatus.error;
         _error = error;
+        _retryInfo = null;
       });
       widget.onError?.call(error);
     } catch (_) {
@@ -102,53 +127,10 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       setState(() {
         _status = _SubmitStatus.error;
         _error = error;
+        _retryInfo = null;
       });
       widget.onError?.call(error);
     }
-  }
-
-  KYCError _mapToKycError(KYCApiException e) {
-    return switch (e.error) {
-      'insufficient_credits' => KYCError(
-          code: 'insufficient_credits',
-          message:
-              'Organization credits exhausted. Contact your administrator.',
-          details: e.details,
-        ),
-      'invalid_api_key' => KYCError(
-          code: 'invalid_api_key',
-          message: e.message ?? 'Invalid or revoked API key.',
-        ),
-      'id_type_not_allowed' => const KYCError(
-          code: 'feature_disabled',
-          message:
-              "This ID type isn't enabled for your organization. Contact your administrator to request access.",
-        ),
-      'feature_disabled' => KYCError(
-          code: 'feature_disabled',
-          message: switch (e.details?['feature']) {
-            'document_verification' =>
-              'Document verification is currently disabled for your organization.',
-            'gov_db_check' =>
-              'Government database verification is currently disabled for your organization.',
-            _ => e.message ??
-                'This verification feature is currently disabled for your organization.',
-          },
-          details: e.details,
-        ),
-      'upload_failed' => KYCError(
-          code: 'upload_failed',
-          message: e.message ?? 'A file failed to upload. Please try again.',
-        ),
-      'timeout' || 'network_error' || 'connection_error' => const KYCError(
-          code: 'network_error',
-          message: 'Connection failed. Please try again.',
-        ),
-      _ => KYCError(
-          code: 'unknown',
-          message: e.message ?? 'Something went wrong. Please try again.',
-        ),
-    };
   }
 
   void _retry() {
@@ -164,6 +146,16 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final config = ref.watch(kycConfigProvider);
+    final firstName = config.userData?.firstName ?? '';
+    final lastName = config.userData?.lastName ?? '';
+    final successTitle = config.success?.title != null
+        ? _fillTokens(config.success!.title!, firstName, lastName)
+        : _kDefaultSuccessTitle;
+    final successDescription = config.success?.description != null
+        ? _fillTokens(config.success!.description!, firstName, lastName)
+        : _kDefaultSuccessDescription;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         final minHeight =
@@ -171,9 +163,11 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
         return ConstrainedBox(
           constraints: BoxConstraints(minHeight: minHeight),
           child: switch (_status) {
-            _SubmitStatus.submitting => const _SubmittingView(),
+            _SubmitStatus.submitting => _SubmittingView(retryInfo: _retryInfo),
             _SubmitStatus.success => _SuccessView(
                 submission: _submission!,
+                title: successTitle,
+                description: successDescription,
                 onDone: _close,
               ),
             _SubmitStatus.error => _ErrorView(
@@ -191,35 +185,33 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
 // ─── Submitting view ──────────────────────────────────────────────────────────
 
 class _SubmittingView extends StatelessWidget {
-  const _SubmittingView();
+  /// Non-null while a transient failure is being retried.
+  final ({int attempt, int total})? retryInfo;
+
+  const _SubmittingView({this.retryInfo});
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.myazaColors;
     final text = context.myazaText;
+    final retrying = retryInfo != null;
 
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         const SizedBox(height: MyazaSpacing.xl),
-        SizedBox(
-          width: 56,
-          height: 56,
-          child: CircularProgressIndicator(
-            color: colors.primary,
-            strokeWidth: 3,
-          ),
-        ),
+        const MyazaPulseLoader(),
         const SizedBox(height: MyazaSpacing.lg),
         Text(
-          'Submitting your verification…',
+          retrying ? 'Reconnecting…' : 'Submitting your verification…',
           style: text.heading3,
           textAlign: TextAlign.center,
         ).animate().fadeIn(duration: 400.ms),
         const SizedBox(height: MyazaSpacing.sm),
         Text(
-          "This will only take a moment.",
+          retrying
+              ? 'Connection issue — retrying (${retryInfo!.attempt}/${retryInfo!.total})…'
+              : 'Please wait a moment.',
           style: text.bodyMedium,
           textAlign: TextAlign.center,
         ),
@@ -233,9 +225,16 @@ class _SubmittingView extends StatelessWidget {
 
 class _SuccessView extends StatelessWidget {
   final KYCSubmission submission;
+  final String title;
+  final String description;
   final VoidCallback onDone;
 
-  const _SuccessView({required this.submission, required this.onDone});
+  const _SuccessView({
+    required this.submission,
+    required this.title,
+    required this.description,
+    required this.onDone,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -257,13 +256,13 @@ class _SuccessView extends StatelessWidget {
                     begin: const Offset(0.4, 0.4),
                     end: const Offset(1.0, 1.0),
                     duration: 450.ms,
-                    curve: Curves.elasticOut,
+                    curve: Curves.easeOutBack,
                   )
                   .fadeIn(duration: 200.ms),
             ),
             const SizedBox(height: MyazaSpacing.lg),
             Text(
-              'Your verification has\nbeen submitted!',
+              title,
               style: text.heading1.copyWith(height: 1.2),
               textAlign: TextAlign.center,
             )
@@ -272,7 +271,7 @@ class _SuccessView extends StatelessWidget {
                 .moveY(begin: 8, end: 0, duration: 350.ms),
             const SizedBox(height: MyazaSpacing.sm),
             Text(
-              "You'll be notified of the result.",
+              description,
               style: text.bodyMedium,
               textAlign: TextAlign.center,
             ).animate(delay: 320.ms).fadeIn(duration: 350.ms),
@@ -330,7 +329,7 @@ class _ErrorView extends StatelessWidget {
                     begin: const Offset(0.4, 0.4),
                     end: const Offset(1.0, 1.0),
                     duration: 450.ms,
-                    curve: Curves.elasticOut,
+                    curve: Curves.easeOutBack,
                   )
                   .fadeIn(duration: 200.ms),
             ),
@@ -375,51 +374,6 @@ class _ErrorView extends StatelessWidget {
             .fadeIn(duration: 300.ms)
             .moveY(begin: 8, end: 0, duration: 300.ms),
       ],
-    );
-  }
-}
-
-// ─── Verification ID card (copyable monospace) ───────────────────────────────
-
-class _VerificationIdCard extends StatefulWidget {
-  final String verificationId;
-  final MyazaColorScheme colors;
-  final MyazaThemeText text;
-
-  const _VerificationIdCard({
-    required this.verificationId,
-    required this.colors,
-    required this.text,
-  });
-
-  @override
-  State<_VerificationIdCard> createState() => _VerificationIdCardState();
-}
-
-class _VerificationIdCardState extends State<_VerificationIdCard> {
-  bool _copied = false;
-
-  Future<void> _copy() async {
-    await Clipboard.setData(ClipboardData(text: widget.verificationId));
-    if (!mounted) return;
-    setState(() => _copied = true);
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) setState(() => _copied = false);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: widget.colors.backgroundSecondary,
-        borderRadius: BorderRadius.circular(MyazaRadius.md),
-        border: Border.all(color: widget.colors.border),
-      ),
-      padding: const EdgeInsets.symmetric(
-        horizontal: MyazaSpacing.md,
-        vertical: MyazaSpacing.md,
-      ),
     );
   }
 }

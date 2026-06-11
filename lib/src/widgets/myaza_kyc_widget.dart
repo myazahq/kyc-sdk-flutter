@@ -2,6 +2,7 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/kyc_config.dart';
@@ -19,7 +20,9 @@ import '../screens/id_input_screen.dart';
 import '../screens/id_type_screen.dart';
 import '../screens/liveness_screen.dart';
 import '../screens/submitted_screen.dart';
+import '../utils/resolve_url.dart';
 import 'kyc_bottom_sheet.dart';
+import 'myaza_button.dart';
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 
@@ -92,10 +95,14 @@ ThemeMode _initialThemeMode(MyazaKYCAppearance? a) => switch (a?.theme) {
 
 /// Static launcher — shows the KYC flow as a full-screen modal bottom sheet.
 ///
+/// The environment (and base URL) is derived automatically from the API key
+/// prefix — `pk_live_…` → production, `pk_test_…` → sandbox, `pk_dev_…` →
+/// development. There is no `environment` parameter.
+///
 /// ```dart
 /// MyazaKYC.show(
 ///   context: context,
-///   config: MyazaKYCConfig(apiKey: '...', country: Country.NG, environment: KYCEnvironment.production),
+///   config: MyazaKYCConfig(apiKey: 'pk_live_…', country: Country.NG),
 ///   onSubmit: (s) => print('Submitted: ${s.verificationId}'),
 ///   onError:  (e) => print('Error: ${e.code} — ${e.message}'),
 /// );
@@ -110,6 +117,10 @@ class MyazaKYC {
     void Function(KYCError)? onError,
     VoidCallback? onClose,
   }) {
+    // Fail loud on an invalid key prefix before presenting anything (throws
+    // ArgumentError with a clear message).
+    detectEnvironment(config.apiKey);
+
     final overrides = [
       // Config must be first — the notifiers read it during build.
       kycConfigProvider.overrideWithValue(config),
@@ -144,10 +155,14 @@ class MyazaKYC {
           .then((_) => onClose?.call());
     }
 
+    // When the consumer disables close, the sheet can't be dragged down or
+    // dismissed by tapping the barrier — only a programmatic pop closes it.
+    final allowDismiss = !config.disableClose;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
-      enableDrag: true,
+      enableDrag: allowDismiss,
+      isDismissible: allowDismiss,
       backgroundColor: Colors.transparent,
       useSafeArea: false,
       builder: (ctx) => ProviderScope(
@@ -180,6 +195,9 @@ class MyazaKYCWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Fail loud on an invalid key prefix (throws ArgumentError).
+    detectEnvironment(config.apiKey);
+
     return ProviderScope(
       overrides: [
         kycConfigProvider.overrideWithValue(config),
@@ -218,6 +236,9 @@ class _KycFlowWidget extends ConsumerStatefulWidget {
 }
 
 class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
+  // Ensures a fatal config-load failure is reported to onError at most once.
+  bool _configErrorReported = false;
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(kYCNotifierProvider);
@@ -323,30 +344,70 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       _ => notifier.previousStep,
     };
 
-    // ── Prevent dismissal during submission ───────────────────────────────
-    final canDismiss = step != KYCStep.submitted;
+    // ── Prevent dismissal during submission, or when the consumer disables
+    //    close (programmatic pop is then the only way out). ──────────────────
+    final canDismiss = step != KYCStep.submitted && !config.disableClose;
+
+    // ── Fatal config-load failure (e.g. wrong API key) blocks the flow ─────
+    // It replaces the normal step with a clear error screen, strips the
+    // progress bar / back button, and reports the error to onError once.
+    final serverConfig = state.serverConfig;
+    final configError =
+        serverConfig.status == ServerConfigStatus.error && serverConfig.fatal
+            ? (serverConfig.error ??
+                'Unable to start verification. Please try again.')
+            : null;
+    if (configError != null && !_configErrorReported) {
+      _configErrorReported = true;
+      final kycError = KYCError(
+        code: switch (serverConfig.statusCode) {
+          401 => 'invalid_api_key',
+          403 => 'feature_disabled',
+          _ => 'unknown',
+        },
+        message: configError,
+      );
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => widget.onError?.call(kycError));
+    }
 
     // ── Screen routing ────────────────────────────────────────────────────
-    final screen = _screenForStep(step);
+    final screen = configError != null
+        ? _ConfigErrorScreen(
+            message: configError,
+            onClose: () {
+              widget.onClose?.call();
+              if (Navigator.of(context).canPop()) {
+                Navigator.of(context).pop();
+              }
+            },
+          )
+        : _screenForStep(step);
 
     // Show the country flag beside the title on the ID-selection steps.
-    final headerCountry =
-        (step == KYCStep.idType || step == KYCStep.idInput) ? config.country : null;
+    final headerCountry = configError == null &&
+            (step == KYCStep.idType || step == KYCStep.idInput)
+        ? config.country
+        : null;
 
     final sheet = KycBottomSheet(
-      title: meta.title,
-      description: meta.description,
-      progress: progress,
-      stepCount: stepInfo?.stepCount,
-      onBack: onBack,
+      title: configError != null ? '' : meta.title,
+      description: configError != null ? null : meta.description,
+      progress: configError != null ? null : progress,
+      stepCount: configError != null ? null : stepInfo?.stepCount,
+      onBack: configError != null ? null : onBack,
       onClose: widget.onClose,
       canDismiss: canDismiss,
       isFullScreen: widget.isFullScreen,
       isDark: isDark,
-      onToggleTheme: onToggleTheme,
-      logoUrl: logoUrl,
-      logoAsset: appearance?.logoAsset,
-      companyName: companyName,
+      // Only wire the toggle when the consumer opted in; a null callback hides
+      // the button and keeps the flow on the appearance theme.
+      onToggleTheme: config.showThemeToggle ? onToggleTheme : null,
+      // Hide the brand bar on a fatal config error — show a clean, chrome-free
+      // error screen (just the theme/fullscreen controls), like the web SDK.
+      logoUrl: configError != null ? null : logoUrl,
+      logoAsset: configError != null ? null : appearance?.logoAsset,
+      companyName: configError != null ? null : companyName,
       country: headerCountry,
       child: screen,
     );
@@ -435,9 +496,9 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
   Widget _screenForStep(KYCStep step) => switch (step) {
         KYCStep.consent         => const ConsentScreen(),
         KYCStep.idType          => const IdTypeScreen(),
-        KYCStep.documentCapture => const DocumentCaptureScreen(),
+        KYCStep.documentCapture => DocumentCaptureScreen(onError: widget.onError),
         KYCStep.idInput         => const IdInputScreen(),
-        KYCStep.liveness        => const LivenessScreen(),
+        KYCStep.liveness        => LivenessScreen(onError: widget.onError),
         KYCStep.submitted       => SubmittedScreen(
             onSubmitted: widget.onSubmit,
             onError: widget.onError,
@@ -449,4 +510,73 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
             },
           ),
       };
+}
+
+// ─── Config error screen ──────────────────────────────────────────────────────
+//
+// Shown when the SDK can't load its server config because of a fatal auth
+// failure (e.g. a wrong API key). Blocks the flow so the user gets a clear
+// message instead of a silently broken ID-type list. Mirrors the web SDK's
+// ConfigErrorScreen and the styling of SubmittedScreen's error view.
+
+class _ConfigErrorScreen extends StatelessWidget {
+  final String message;
+  final VoidCallback onClose;
+
+  const _ConfigErrorScreen({required this.message, required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.myazaColors;
+    final text = context.myazaText;
+
+    // Mirrors the web SDK's ConfigErrorScreen: icon → title → message →
+    // full-width Close button stacked as one vertically-centered group
+    // (gap-6 / 24px between blocks, 4px within the text block), with a single
+    // fade-in on the whole group.
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(
+          horizontal: MyazaSpacing.md,
+          vertical: MyazaSpacing.xl,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Icon circle (80×80, destructive @10%), centered.
+            Center(
+              child: Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  color: MyazaColors.error.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.error_outline_rounded,
+                  size: 40,
+                  color: MyazaColors.error,
+                ),
+              ),
+            ),
+            const SizedBox(height: MyazaSpacing.lg),
+            Text(
+              'Unable to start verification',
+              style: text.heading2,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: MyazaSpacing.xs),
+            Text(
+              message,
+              style: text.bodyMedium.copyWith(color: colors.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: MyazaSpacing.lg),
+            MyazaButton(label: 'Close', onPressed: onClose),
+          ],
+        ),
+      ).animate().fadeIn(duration: 250.ms),
+    );
+  }
 }

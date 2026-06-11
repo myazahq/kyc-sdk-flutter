@@ -7,11 +7,12 @@ library kyc_sdk_flutter;
 // Config
 export 'src/config/kyc_config.dart'
     show
-        KYCEnvironment,
         MyazaThemeMode,
         MyazaKYCAppearance,
         KYCConsentContent,
+        KYCSuccessContent,
         LivenessConfig,
+        VoiceGuidanceConfig,
         UserData,
         MyazaKYCConfig,
         KYCSubmission,

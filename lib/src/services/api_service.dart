@@ -8,7 +8,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '1.0.0';
+const String kSdkVersion = '2.0.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -322,7 +322,7 @@ class SdkConfigBranding {
 }
 
 class SdkConfigResponse {
-  /// Server environment derived from the API key — 'STAGING' or 'PRODUCTION'.
+  /// Server environment derived from the API key — 'SANDBOX' or 'PRODUCTION'.
   final String environment;
   final List<SdkConfigIdType> idTypes;
 
@@ -337,7 +337,7 @@ class SdkConfigResponse {
 
   factory SdkConfigResponse.fromJson(Map<String, dynamic> json) =>
       SdkConfigResponse(
-        environment: json['environment'] as String? ?? 'STAGING',
+        environment: json['environment'] as String? ?? 'SANDBOX',
         idTypes: ((json['idTypes'] as List?) ?? const [])
             .cast<Map<String, dynamic>>()
             .map(SdkConfigIdType.fromJson)

@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
@@ -12,12 +13,17 @@ import 'package:image_picker/image_picker.dart';
 
 import '../config/capture_config.dart';
 import '../config/id_types.dart';
+import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/camera_provider.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/image_service.dart';
+import '../services/kyc_error_mapper.dart';
 import '../services/media_compress_service.dart';
+import '../services/retry.dart';
+import '../utils/permissions.dart';
+import '../widgets/camera_permission_view.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
 
@@ -33,7 +39,11 @@ enum _ScanPhase { cameraFront, frontPreview, cameraBack, review }
 // ─── Document capture screen ──────────────────────────────────────────────────
 
 class DocumentCaptureScreen extends ConsumerStatefulWidget {
-  const DocumentCaptureScreen({super.key});
+  /// Fires for technical errors raised on this screen (camera permission
+  /// denied, document upload failed after retries).
+  final void Function(KYCError error)? onError;
+
+  const DocumentCaptureScreen({super.key, this.onError});
 
   @override
   ConsumerState<DocumentCaptureScreen> createState() =>
@@ -41,8 +51,15 @@ class DocumentCaptureScreen extends ConsumerStatefulWidget {
 }
 
 class _DocumentCaptureScreenState
-    extends ConsumerState<DocumentCaptureScreen> {
+    extends ConsumerState<DocumentCaptureScreen>
+    with WidgetsBindingObserver {
   _ScanPhase _phase = _ScanPhase.cameraFront;
+
+  // True while the camera is (re)initialising — ignores the inactive→resumed
+  // bounce from the OS permission prompt (the in-flight init handles it).
+  bool _initializing = false;
+  // Set when the explicit camera-permission check fails.
+  bool _permissionDenied = false;
 
   // Locally held captures — only uploaded + committed to kycProvider on Continue.
   Uint8List? _frontBytes;
@@ -60,37 +77,78 @@ class _DocumentCaptureScreenState
   bool _isUploading = false; // upload in progress
 
   String? _uploadError;
+  ({int attempt, int total})? _uploadRetryInfo;
+
+  // Ensures the camera_permission_denied error is reported to onError once.
+  bool _cameraPermissionReported = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // ── App lifecycle ──────────────────────────────────────────────────────────
+  //
+  // The camera is released when the app is backgrounded (e.g. leaving to
+  // Settings to change the camera permission, or while the OS permission prompt
+  // is up). On return the old CameraController is dead, so the viewfinder would
+  // freeze — re-initialise it on resume, but only while a live camera phase is
+  // showing (preview/review render static images).
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!mounted || state != AppLifecycleState.resumed) return;
+    // iOS only — see LivenessScreen. On Android the CameraX-backed camera plugin
+    // is lifecycle-aware; a manual reinit on resume races CameraX's video
+    // recorder teardown (fatal "onConfigured in STOPPING state" assertion).
+    if (!Platform.isIOS) return;
+    if (_initializing) return;
+    if (_phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack) {
+      _restartCamera();
+    }
   }
 
   // ── Camera lifecycle ───────────────────────────────────────────────────────
 
-  Future<void> _init() async {
-    if (!mounted) return;
-    await ref.read(cameraNotifierProvider.notifier).initialize(
-      direction: CameraLensDirection.back,
-      // Kept high (not medium) so the OCR still stays sharp — the document
-      // video is shrunk by VideoCompress at encode time instead.
-      resolution: CaptureConfig.documentResolution,
-    );
-    if (!mounted) return;
-    await _startVideoRecording();
-  }
+  Future<void> _init() => _restartCamera();
 
   Future<void> _restartCamera() async {
-    if (!mounted) return;
-    await ref.read(cameraNotifierProvider.notifier).initialize(
-      direction: CameraLensDirection.back,
-      // Kept high (not medium) so the OCR still stays sharp — the document
-      // video is shrunk by VideoCompress at encode time instead.
-      resolution: CaptureConfig.documentResolution,
-    );
-    if (!mounted) return;
-    await _startVideoRecording();
+    if (_initializing || !mounted) return;
+    _initializing = true;
+    try {
+      // Android: explicit permission gate before opening the camera. iOS is
+      // left to the camera controller's own denial signal (and avoids needing
+      // permission_handler Podfile macros).
+      if (Platform.isAndroid) {
+        final granted = await requestCameraPermission();
+        if (!mounted) return;
+        if (!granted) {
+          _reportCameraPermissionDenied(null);
+          setState(() => _permissionDenied = true);
+          return;
+        }
+        if (_permissionDenied) setState(() => _permissionDenied = false);
+      }
+
+      await ref.read(cameraNotifierProvider.notifier).initialize(
+        direction: CameraLensDirection.back,
+        // Kept high (not medium) so the OCR still stays sharp — the document
+        // video is shrunk by VideoCompress at encode time instead.
+        resolution: CaptureConfig.documentResolution,
+      );
+      if (!mounted) return;
+      await _startVideoRecording();
+    } finally {
+      _initializing = false;
+    }
   }
 
   /// Best-effort start: records a side-specific MP4 capturing how the user
@@ -162,11 +220,15 @@ class _DocumentCaptureScreenState
       // viewW = screen width minus the bottom sheet's 16 px left+right padding.
       // A large maxBytes keeps the crop at full quality here — the OCR-grade
       // sizing happens in compressDocumentImage below (quality 90, ≥1080 px).
+      final idType = ref.read(kYCNotifierProvider).selectedIdType!;
       final viewW = MediaQuery.of(context).size.width - 2 * MyazaSpacing.md;
       final croppedRaw = await cropCardRegionBytes(
         bytes,
         viewW: viewW,
         viewH: 300.0,
+        // Mirror the guide aspect so the crop matches what the user framed —
+        // taller for passports so the bottom MRZ band isn't cut off.
+        aspect: documentGuideAspect(idType),
         maxBytes: 1 << 24, // 16 MB — effectively "don't degrade while cropping"
       );
       if (!mounted) return;
@@ -254,6 +316,20 @@ class _DocumentCaptureScreenState
     _restartCamera();
   }
 
+  /// Reports a denied camera permission to onError exactly once (deferred so it
+  /// runs after the current build).
+  void _reportCameraPermissionDenied(String? message) {
+    if (_cameraPermissionReported) return;
+    _cameraPermissionReported = true;
+    final error = KYCError(
+      code: 'camera_permission_denied',
+      message: message ??
+          'Camera access is required to photograph your document. Please allow camera access, or upload a photo instead.',
+    );
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => widget.onError?.call(error));
+  }
+
   void _retakeFront() {
     setState(() {
       _frontBytes = null;
@@ -284,44 +360,47 @@ class _DocumentCaptureScreenState
     setState(() {
       _isUploading = true;
       _uploadError = null;
+      _uploadRetryInfo = null;
     });
+
+    void onRetry(int attempt, int total) {
+      if (mounted) setState(() => _uploadRetryInfo = (attempt: attempt, total: total));
+    }
 
     try {
       final notifier = ref.read(kYCNotifierProvider.notifier);
       final api = notifier.api;
 
-      // Upload front
-      final frontMediaId = await api.upload(
-        _frontBytes!,
-        'image/jpeg',
-        MediaType.documentFront,
+      // Upload front (retried on transient failures: network / timeout / 5xx)
+      final frontMediaId = await withRetry(
+        () => api.upload(_frontBytes!, 'image/jpeg', MediaType.documentFront),
+        onRetry: onRetry,
       );
       if (!mounted) return;
       notifier.setDocumentMediaId(frontMediaId, side: 'front');
 
-      // Upload front video (best-effort — skip if not recorded). Compress
-      // aggressively first; the "Uploading…" state is already shown.
+      // Upload front video (best-effort — skip if not recorded or if its upload
+      // fails after retries). Compress aggressively first.
       if (_frontVideoPath != null) {
-        final frontVideoBytes = await compressVideoToBytes(
-          _frontVideoPath!,
-          label: 'document front video',
-        );
-        if (!mounted) return;
-        final frontVideoMediaId = await api.upload(
-          frontVideoBytes,
-          'video/mp4',
-          MediaType.documentFrontVideo,
-        );
-        if (!mounted) return;
-        notifier.setMediaId('documentFrontVideo', frontVideoMediaId);
+        try {
+          final frontVideoBytes = await compressVideoToBytes(
+            _frontVideoPath!,
+            label: 'document front video',
+          );
+          if (!mounted) return;
+          final frontVideoMediaId = await withRetry(
+            () => api.upload(frontVideoBytes, 'video/mp4', MediaType.documentFrontVideo),
+          );
+          if (!mounted) return;
+          notifier.setMediaId('documentFrontVideo', frontVideoMediaId);
+        } catch (_) {/* best-effort */}
       }
 
       // Upload back if captured
       if (_backBytes != null) {
-        final backMediaId = await api.upload(
-          _backBytes!,
-          'image/jpeg',
-          MediaType.documentBack,
+        final backMediaId = await withRetry(
+          () => api.upload(_backBytes!, 'image/jpeg', MediaType.documentBack),
+          onRetry: onRetry,
         );
         if (!mounted) return;
         notifier.setDocumentMediaId(backMediaId, side: 'back');
@@ -329,34 +408,41 @@ class _DocumentCaptureScreenState
 
       // Upload back video (best-effort)
       if (_backVideoPath != null) {
-        final backVideoBytes = await compressVideoToBytes(
-          _backVideoPath!,
-          label: 'document back video',
-        );
-        if (!mounted) return;
-        final backVideoMediaId = await api.upload(
-          backVideoBytes,
-          'video/mp4',
-          MediaType.documentBackVideo,
-        );
-        if (!mounted) return;
-        notifier.setMediaId('documentBackVideo', backVideoMediaId);
+        try {
+          final backVideoBytes = await compressVideoToBytes(
+            _backVideoPath!,
+            label: 'document back video',
+          );
+          if (!mounted) return;
+          final backVideoMediaId = await withRetry(
+            () => api.upload(backVideoBytes, 'video/mp4', MediaType.documentBackVideo),
+          );
+          if (!mounted) return;
+          notifier.setMediaId('documentBackVideo', backVideoMediaId);
+        } catch (_) {/* best-effort */}
       }
 
       if (!mounted) return;
       notifier.nextStep();
     } on KYCApiException catch (e) {
       if (!mounted) return;
+      // Retries exhausted — show the inline error AND report a typed error.
+      final kycError = mapToKycError(e, context: ErrorContext.upload);
       setState(() {
         _isUploading = false;
-        _uploadError = e.message ?? 'Upload failed. Please try again.';
+        _uploadRetryInfo = null;
+        _uploadError = kycError.message;
       });
-    } catch (_) {
+      widget.onError?.call(kycError);
+    } catch (e) {
       if (!mounted) return;
+      final kycError = mapToKycError(e, context: ErrorContext.upload);
       setState(() {
         _isUploading = false;
-        _uploadError = 'Upload failed. Please try again.';
+        _uploadRetryInfo = null;
+        _uploadError = kycError.message;
       });
+      widget.onError?.call(kycError);
     }
   }
 
@@ -369,6 +455,35 @@ class _DocumentCaptureScreenState
     final controller   = ref.read(cameraNotifierProvider.notifier).controller;
     final config       = ref.read(kycConfigProvider);
     final idTypeConfig = getIdTypeConfig(config.country, kycState.selectedIdType!)!;
+
+    // Camera permission denied during a capture phase — show a dedicated screen.
+    // Document capture still offers a gallery-upload fallback, so we surface that
+    // as a secondary action. onError is reported once.
+    final inCameraPhase =
+        _phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack;
+    if ((cameraState.isPermissionDenied || _permissionDenied) && inCameraPhase) {
+      _reportCameraPermissionDenied(cameraState.error);
+      // The gallery fallback is always offered here as an escape hatch — even
+      // when `allowDocumentUpload` is false — so a permission denial never
+      // hard-stops the user with no way to provide their document.
+      return CameraPermissionView(
+        message: cameraState.error ??
+            'Camera access is required to photograph your document. Please allow camera access, or upload a photo instead.',
+        onOpenSettings: openDeviceAppSettings,
+        // iOS: re-checking in place can't succeed (only Settings can grant, and
+        // that relaunches the app), so omit "Try Again" there.
+        onRetry: Platform.isIOS
+            ? null
+            : () {
+                _cameraPermissionReported = false;
+                _restartCamera();
+              },
+        secondaryAction: MyazaButton.ghost(
+          label: 'Upload a photo instead',
+          onPressed: _onUpload,
+        ),
+      );
+    }
 
     return switch (_phase) {
       _ScanPhase.cameraFront || _ScanPhase.cameraBack => _buildCamera(
@@ -446,6 +561,7 @@ class _DocumentCaptureScreenState
           error: error,
           isBack: isBack,
           isProcessing: _isCapturing,
+          guideAspect: documentGuideAspect(idTypeConfig.idType),
           onCapture: isReady && !_isCapturing ? _onCapture : null,
         ),
         const SizedBox(height: MyazaSpacing.md),
@@ -457,26 +573,29 @@ class _DocumentCaptureScreenState
             style: context.myazaText.bodySmall,
             textAlign: TextAlign.center,
           ),
-          const SizedBox(height: MyazaSpacing.sm),
-          GestureDetector(
-            onTap: _onUpload,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text('Having trouble? ', style: context.myazaText.bodySmall),
-                Icon(LucideIcons.upload,
-                    size: 14, color: context.myazaColors.primary),
-                const SizedBox(width: 4),
-                Text(
-                  'Upload a photo instead',
-                  style: context.myazaText.bodySmall.copyWith(
-                    color: context.myazaColors.primary,
-                    fontWeight: FontWeight.w700,
+          // "Upload a photo instead" — hidden when device upload is disabled.
+          if (ref.read(kycConfigProvider).allowDocumentUpload) ...[
+            const SizedBox(height: MyazaSpacing.sm),
+            GestureDetector(
+              onTap: _onUpload,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Having trouble? ', style: context.myazaText.bodySmall),
+                  Icon(LucideIcons.upload,
+                      size: 14, color: context.myazaColors.primary),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Upload a photo instead',
+                    style: context.myazaText.bodySmall.copyWith(
+                      color: context.myazaColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ],
     );
@@ -582,7 +701,25 @@ class _DocumentCaptureScreenState
         const SizedBox(height: MyazaSpacing.xs),
         ClipRRect(
           borderRadius: BorderRadius.circular(MyazaRadius.md),
-          child: Image.memory(_frontBytes!, fit: BoxFit.cover),
+          child: Stack(
+            children: [
+              Image.memory(_frontBytes!, fit: BoxFit.cover),
+              // Uploading loader rendered INSIDE the preview frame (replaces the
+              // old standalone "Uploading…" pill). Mirrors the liveness selfie /
+              // submitting screen's pulse-ring + spinner loader.
+              if (_isUploading)
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                    ),
+                    child: Center(
+                      child: _PulseLoader(color: context.myazaColors.primary),
+                    ),
+                  ).animate().fadeIn(duration: 200.ms),
+                ),
+            ],
+          ),
         ),
         const SizedBox(height: MyazaSpacing.sm),
         _RetakeButton(
@@ -602,12 +739,38 @@ class _DocumentCaptureScreenState
           const SizedBox(height: MyazaSpacing.xs),
           ClipRRect(
             borderRadius: BorderRadius.circular(MyazaRadius.md),
-            child: Image.memory(_backBytes!, fit: BoxFit.cover),
+            child: Stack(
+              children: [
+                Image.memory(_backBytes!, fit: BoxFit.cover),
+                if (_isUploading)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.45),
+                      ),
+                      child: Center(
+                        child: _PulseLoader(color: context.myazaColors.primary),
+                      ),
+                    ).animate().fadeIn(duration: 200.ms),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: MyazaSpacing.sm),
           _RetakeButton(
             label: 'Retake Back',
             onTap: _isUploading ? null : _retakeBack,
+          ),
+        ],
+
+        // ── Upload retry note ──────────────────────────────────────────────
+        if (_uploadRetryInfo != null && _isUploading) ...[
+          const SizedBox(height: MyazaSpacing.md),
+          Text(
+            'Upload failed — retrying (${_uploadRetryInfo!.attempt}/${_uploadRetryInfo!.total})…',
+            style: context.myazaText.bodySmall
+                .copyWith(color: const Color(0xFF92400E)), // amber-800
+            textAlign: TextAlign.center,
           ),
         ],
 
@@ -623,48 +786,6 @@ class _DocumentCaptureScreenState
               .animate()
               .fadeIn(duration: 250.ms)
               .slideY(begin: -0.2, end: 0, duration: 250.ms),
-        ],
-
-        // ── Uploading indicator ────────────────────────────────────────────
-        if (_isUploading) ...[
-          const SizedBox(height: MyazaSpacing.md),
-          Container(
-            padding: const EdgeInsets.symmetric(
-              vertical: MyazaSpacing.md,
-              horizontal: MyazaSpacing.lg,
-            ),
-            decoration: BoxDecoration(
-              color: context.myazaColors.primary50,
-              borderRadius: BorderRadius.circular(MyazaRadius.md),
-              border: Border.all(color: context.myazaColors.primary100),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    color: context.myazaColors.primary,
-                    strokeWidth: 2,
-                  ),
-                ),
-                const SizedBox(width: MyazaSpacing.sm),
-                Text(
-                  'Uploading…',
-                  style: context.myazaText.label
-                      .copyWith(color: context.myazaColors.primary),
-                ),
-              ],
-            ),
-          )
-              .animate(onPlay: (c) => c.repeat(reverse: true))
-              .fadeIn(duration: 400.ms)
-              .then()
-              .shimmer(
-                duration: 1200.ms,
-                color: context.myazaColors.primary.withValues(alpha: 0.08),
-              ),
         ],
 
         // ── Continue button ────────────────────────────────────────────────
@@ -800,6 +921,7 @@ class _DocumentViewfinder extends StatelessWidget {
   final String? error;
   final bool isBack;
   final bool isProcessing;
+  final double guideAspect;
   final VoidCallback? onCapture;
 
   const _DocumentViewfinder({
@@ -808,6 +930,7 @@ class _DocumentViewfinder extends StatelessWidget {
     required this.error,
     required this.isBack,
     required this.isProcessing,
+    required this.guideAspect,
     required this.onCapture,
   });
 
@@ -834,7 +957,8 @@ class _DocumentViewfinder extends StatelessWidget {
             else
               _ViewfinderPlaceholder(isLoading: isLoading, error: error),
 
-            CustomPaint(painter: _CardGuidePainter(isBack: isBack)),
+            CustomPaint(
+                painter: _CardGuidePainter(isBack: isBack, aspect: guideAspect)),
 
             // Side badge
             Positioned(
@@ -1018,12 +1142,23 @@ class _ProcessingPill extends StatelessWidget {
 
 // ─── Card guide painter ───────────────────────────────────────────────────────
 
+// Passport data pages are taller than a credit card and carry the 2-line MRZ
+// band at the bottom — which the server OCR relies on for the passport number
+// and nationality. A 1.586 card crop centred on the visual zone cuts the MRZ
+// off, so passports use a taller guide/crop (≈ the ICAO TD3 125×88 mm page
+// ratio) that frames the whole data page, MRZ included.
+const double kCardGuideAspect = 1.586;
+const double kPassportGuideAspect = 1.42;
+
+double documentGuideAspect(IdType idType) =>
+    idType == IdType.passport ? kPassportGuideAspect : kCardGuideAspect;
+
 class _CardGuidePainter extends CustomPainter {
   final bool isBack;
+  final double aspect;
 
-  const _CardGuidePainter({required this.isBack});
+  const _CardGuidePainter({required this.isBack, this.aspect = kCardGuideAspect});
 
-  static const double _aspectRatio   = 1.586;
   static const double _widthFraction = 0.88;
   static const double _cornerLen     = 18.0;
   static const double _cornerRadius  = 6.0;
@@ -1031,7 +1166,7 @@ class _CardGuidePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final cardWidth  = size.width * _widthFraction;
-    final cardHeight = cardWidth / _aspectRatio;
+    final cardHeight = cardWidth / aspect;
     // Shift upward so the shutter button fits below
     final top    = (size.height - cardHeight) / 2 - 20;
     final left   = (size.width - cardWidth) / 2;
@@ -1087,7 +1222,8 @@ class _CardGuidePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CardGuidePainter old) => old.isBack != isBack;
+  bool shouldRepaint(_CardGuidePainter old) =>
+      old.isBack != isBack || old.aspect != aspect;
 }
 
 // ─── Crop params ──────────────────────────────────────────────────────────────
@@ -1531,4 +1667,64 @@ class _CropOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(_CropOverlayPainter old) =>
       old.cropRect != cropRect || old.imgRect != imgRect;
+}
+
+// ─── Pulse loader ─────────────────────────────────────────────────────────────
+//
+// Pulsing ring + tinted spinner badge — mirrors the liveness selfie / submitting
+// screen's loader. Rendered inside the document preview frame while uploading.
+
+class _PulseLoader extends StatelessWidget {
+  final Color color;
+
+  const _PulseLoader({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 72,
+      height: 72,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Pulsing outer ring.
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: color.withValues(alpha: 0.3),
+                width: 2,
+              ),
+            ),
+          )
+              .animate(onPlay: (c) => c.repeat())
+              .scale(
+                begin: const Offset(0.85, 0.85),
+                end: const Offset(1.05, 1.05),
+                duration: 1000.ms,
+                curve: Curves.easeInOut,
+              )
+              .fadeOut(begin: 0.8, duration: 1000.ms),
+          // Inner tinted circle with spinner.
+          Container(
+            width: 52,
+            height: 52,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.10),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(15),
+              child: CircularProgressIndicator(
+                color: color,
+                strokeWidth: 3,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

@@ -1,5 +1,5 @@
 Pod::Spec.new do |s|
-  s.name             = 'kyc_sdk_flutter'
+  s.name             = 'myaza_kyc_sdk_flutter'
   s.version          = '1.0.0'
   s.summary          = 'Myaza KYC SDK — native face detection (Apple Vision on iOS).'
   s.description      = <<-DESC

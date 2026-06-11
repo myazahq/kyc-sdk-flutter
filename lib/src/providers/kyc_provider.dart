@@ -6,6 +6,7 @@ import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../services/api_service.dart';
 import '../services/device_metadata_service.dart';
+import '../services/retry.dart';
 import '../services/validators.dart';
 import '../utils/resolve_url.dart';
 import 'kyc_state.dart';
@@ -57,15 +58,58 @@ class KYCNotifier extends _$KYCNotifier {
         ),
       );
     } catch (err) {
+      final described = _describeConfigError(err);
       state = state.copyWith(
         serverConfig: ServerSdkConfig(
           status: ServerConfigStatus.error,
-          error: err is KYCApiException
-              ? (err.message ?? err.error)
-              : err.toString(),
+          error: described.message,
+          statusCode: described.statusCode,
+          fatal: described.fatal,
         ),
       );
     }
+  }
+
+  // Maps a config-load failure to a user-facing message. Auth failures
+  // (401/403) are "fatal": the API key is wrong or not permitted, so the flow
+  // can't run and the modal blocks on a clear error rather than silently
+  // degrading. Other failures (network blips, 5xx) are non-fatal — the flow
+  // falls back to the prop ID-type list and any real problem resurfaces at the
+  // verify step.
+  ({String message, int? statusCode, bool fatal}) _describeConfigError(
+    Object err,
+  ) {
+    if (err is KYCApiException) {
+      if (err.statusCode == 401) {
+        return (
+          message: 'Invalid API key. Please check the API key configured in the SDK.',
+          statusCode: 401,
+          fatal: true,
+        );
+      }
+      if (err.statusCode == 403) {
+        return (
+          message: err.message ??
+              'This API key is not permitted to use the verification SDK.',
+          statusCode: 403,
+          fatal: true,
+        );
+      }
+      if (err.statusCode >= 500) {
+        return (
+          message:
+              'A server error occurred while loading verification settings. Please try again.',
+          statusCode: err.statusCode,
+          fatal: false,
+        );
+      }
+      return (
+        message: err.message ?? err.error,
+        statusCode: err.statusCode,
+        fatal: false,
+      );
+    }
+    return (message: err.toString(), statusCode: null, fatal: false);
   }
 
   // ── Config + service helpers ───────────────────────────────────────────────
@@ -73,7 +117,7 @@ class KYCNotifier extends _$KYCNotifier {
   MyazaKYCConfig get _config => ref.read(kycConfigProvider);
 
   KYCApiService get api => KYCApiService(
-        baseUrl: resolveBaseUrl(_config.environment, devUrl: _config.devUrl),
+        baseUrl: resolveBaseUrl(_config.apiKey, devUrl: _config.devUrl),
         apiKey: _config.apiKey,
       );
 
@@ -226,7 +270,9 @@ class KYCNotifier extends _$KYCNotifier {
   // Throws [KYCApiException] for network/auth/credit errors so the caller
   // (SubmittedScreen) can surface them via onError.
 
-  Future<KYCSubmissionResult> submitAsync() async {
+  Future<KYCSubmissionResult> submitAsync({
+    void Function(int attempt, int total)? onRetry,
+  }) async {
     final idType = state.selectedIdType;
     if (idType == null) {
       throw const KYCApiException(
@@ -318,7 +364,9 @@ class KYCNotifier extends _$KYCNotifier {
     );
 
     try {
-      final response = await api.verify(request);
+      // Retry the submission on transient failures (network / timeout / 5xx);
+      // terminal errors (401/402/403/validation) surface immediately.
+      final response = await withRetry(() => api.verify(request), onRetry: onRetry);
       final result = KYCSubmissionResult(
         verificationId: response.verificationId,
         status: response.status,

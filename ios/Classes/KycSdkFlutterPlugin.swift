@@ -60,9 +60,13 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
         return
       }
 
-      // Front camera, portrait. Simulators have no camera, so this matters only
-      // on device — adjust if pose/landmarks look mirrored or rotated.
-      let orientation: CGImagePropertyOrientation = .leftMirrored
+      // Front camera, portrait. `.leftMirrored` (90° family) made Vision see the
+      // upright head rotated ~90° (roll ≈ +105°), which broke pitch + all
+      // landmark-derived signals (eyes/smile) while leaving yaw intact.
+      // `.upMirrored` keeps the front-camera mirror (so turn/yaw stays correct)
+      // but removes the 90° rotation, so roll should read ~0° and landmarks land
+      // upright. Tune if roll is still off on device.
+      let orientation: CGImagePropertyOrientation = .upMirrored
 
       let request = VNDetectFaceLandmarksRequest()
       let handler = VNImageRequestHandler(
@@ -90,9 +94,18 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
       let toDeg = 180.0 / Double.pi
       let yawDeg = (face.yaw?.doubleValue ?? 0) * toDeg
       let rollDeg = (face.roll?.doubleValue ?? 0) * toDeg
+
+      // Pitch: Vision's `face.pitch` is iOS 15+ and frequently returns nil/0 for
+      // VNDetectFaceLandmarksRequest (confirmed on-device: always 0). Derive a
+      // proxy from landmark geometry instead — the nose tip's vertical position
+      // relative to the eye line. Looking down pushes the nose UP in normalized
+      // landmark space (origin bottom-left), so we negate to match ML Kit's
+      // convention (headEulerAngleX < 0 == looking down). Scaled to ~degrees.
       var pitchDeg = 0.0
-      if #available(iOS 15.0, *) {
-        pitchDeg = (face.pitch?.doubleValue ?? 0) * toDeg
+      if #available(iOS 15.0, *), let p = face.pitch?.doubleValue, p != 0 {
+        pitchDeg = p * toDeg
+      } else {
+        pitchDeg = Self.pitchFromLandmarks(face.landmarks)
       }
 
       let leftOpen = Self.openProbability(
@@ -112,6 +125,8 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
         "leftEyeOpenProbability": leftOpen,
         "rightEyeOpenProbability": rightOpen,
         "faceSizeRatio": faceSizeRatio,
+        // Number of faces in frame — the Dart liveness flow pauses on > 1.
+        "faceCount": faces.count,
       ]
       DispatchQueue.main.async { result(payload) }
     }
@@ -179,7 +194,12 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
     return min(max(v, 0.0), 1.0)
   }
 
-  /// Smile from outer-lip width / face box. Neutral ≈ 0.42, smiling ≈ 0.55+.
+  /// Smile from outer-lip width relative to the face. On-device the original
+  /// (0.42→0.55) mapping topped out at ~0.70 for a real smile (barely crossing
+  /// the 0.7 gesture threshold), so the input band is recentred to (0.40→0.50):
+  /// a neutral mouth sits near 0, a clear smile lands well above the threshold.
+  /// `outerLips.normalizedPoints` are relative to the face bounding box, so the
+  /// width is already face-normalized.
   private static func smileProbability(_ landmarks: VNFaceLandmarks2D?) -> Double {
     guard let pts = landmarks?.outerLips?.normalizedPoints, pts.count >= 4 else {
       return 0.0
@@ -190,7 +210,38 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
       minX = min(minX, Double(p.x)); maxX = max(maxX, Double(p.x))
     }
     let width = maxX - minX
-    let score = (width - 0.42) / (0.55 - 0.42)
+    let score = (width - 0.40) / (0.50 - 0.40)
     return min(max(score, 0.0), 1.0)
+  }
+
+  /// Pitch (nod) proxy from landmark geometry, used when Vision's `face.pitch`
+  /// is unavailable (returns 0). Compares the nose-tip/crest vertical position to
+  /// the eye line, both in the face's normalized landmark space (origin
+  /// bottom-left, y up). When the head tilts down, the nose rises toward the eye
+  /// line (gap shrinks); when it tilts up, the gap grows. We map the deviation
+  /// from a neutral gap to a signed pseudo-degree value, negated so that looking
+  /// DOWN yields a negative angle — matching ML Kit's headEulerAngleX convention
+  /// (and the SDK's detectNod, which fires on a dip below −10° then recovery).
+  private static func pitchFromLandmarks(_ landmarks: VNFaceLandmarks2D?) -> Double {
+    guard let lm = landmarks else { return 0 }
+    func meanY(_ r: VNFaceLandmarkRegion2D?) -> Double? {
+      guard let pts = r?.normalizedPoints, !pts.isEmpty else { return nil }
+      return pts.reduce(0.0) { $0 + Double($1.y) } / Double(pts.count)
+    }
+    // Nose crest (bridge → tip). Fall back to nose region if crest is absent.
+    let noseY = meanY(lm.noseCrest) ?? meanY(lm.nose)
+    let leftEyeY = meanY(lm.leftEye)
+    let rightEyeY = meanY(lm.rightEye)
+    guard let n = noseY, let le = leftEyeY, let re = rightEyeY else { return 0 }
+    let eyeY = (le + re) / 2.0
+
+    // Eye→nose vertical gap (eyes are above the nose, so eyeY > noseY → positive).
+    let gap = eyeY - n
+    // Neutral gap (~0.18 of face height) and sensitivity were chosen so a clear
+    // nod crosses the ±10–15° band the detector uses. Tune on device if needed.
+    let neutralGap = 0.18
+    let degPerUnit = 220.0
+    // gap < neutral (nose risen toward eyes) ⇒ looking down ⇒ negative.
+    return (gap - neutralGap) * degPerUnit
   }
 }

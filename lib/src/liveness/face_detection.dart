@@ -14,7 +14,7 @@ import 'package:flutter/services.dart';
 // of any ML Kit dependency so the core SDK builds on every platform/architecture
 // — including Apple-Silicon iOS simulators, where GoogleMLKit ships no arm64
 // slice. The actual on-device detector lives behind [FaceDetectorService] and is
-// provided by an optional companion package (e.g. kyc_sdk_flutter_mlkit).
+// provided by an optional companion package (e.g. myaza_kyc_sdk_flutter_mlkit).
 
 class LivenessFaceData {
   /// Head pitch: positive = looking up, negative = looking down.
@@ -44,6 +44,18 @@ class LivenessFaceData {
   ///   0.2–0.7 → correct distance
   final double faceSizeRatio;
 
+  /// Number of faces the native detector found in the frame. The gesture
+  /// signals above describe the dominant (largest) face; the liveness flow uses
+  /// `> 1` to pause challenges ("Make sure only your face is visible"). Defaults
+  /// to 1 for detectors that don't report a count.
+  final int faceCount;
+
+  /// Mean frame luminance (0–255), or `< 0` when not provided. Supplied by the
+  /// Android native recorder (which owns the camera, so the raw frame never
+  /// reaches Dart) to drive lighting guidance. iOS computes brightness from the
+  /// Flutter-camera frame directly, so it leaves this unset.
+  final double brightness;
+
   /// Convenience: average of both eye-open probabilities.
   double get eyeAverageOpenProbability =>
       (leftEyeOpenProbability + rightEyeOpenProbability) / 2;
@@ -56,6 +68,8 @@ class LivenessFaceData {
     required this.leftEyeOpenProbability,
     required this.rightEyeOpenProbability,
     required this.faceSizeRatio,
+    this.faceCount = 1,
+    this.brightness = -1,
   });
 }
 
@@ -165,6 +179,7 @@ class NativeFaceDetectorService implements FaceDetectorService {
       if (result == null) return null;
 
       double d(String k) => (result[k] as num).toDouble();
+      final faceCountRaw = result['faceCount'];
       return LivenessFaceData(
         headEulerAngleX: d('headEulerAngleX'),
         headEulerAngleY: d('headEulerAngleY'),
@@ -173,6 +188,8 @@ class NativeFaceDetectorService implements FaceDetectorService {
         leftEyeOpenProbability: d('leftEyeOpenProbability'),
         rightEyeOpenProbability: d('rightEyeOpenProbability'),
         faceSizeRatio: d('faceSizeRatio'),
+        // Older native plugins don't send a count — default to 1.
+        faceCount: faceCountRaw is num ? faceCountRaw.toInt() : 1,
       );
     } on PlatformException {
       return null;
@@ -232,13 +249,17 @@ bool detectNod(List<double> xHistory) {
 bool detectTurn(double eulerY) => eulerY.abs() > 25;
 
 /// Detects a blink by watching the average eye-open probability ([earHistory])
-/// drop below 0.15 then recover above 0.5. Requires at least 2 frames.
+/// drop below 0.2 then recover above 0.5. Requires at least 2 frames.
+/// (Threshold relaxed 0.15→0.2 from on-device data, where a real blink bottomed
+/// out around 0.03–0.15 but only briefly.)
 bool detectBlink(List<double> earHistory) {
   if (earHistory.length < 2) return false;
-  final hadClose = earHistory.any((v) => v < 0.15);
+  final hadClose = earHistory.any((v) => v < 0.2);
   final recovered = earHistory.last > 0.5;
   return hadClose && recovered;
 }
 
-/// Detects a smile when [smilingProbability] exceeds 0.7. Single frame.
-bool detectSmile(double smilingProbability) => smilingProbability > 0.7;
+/// Detects a smile when [smilingProbability] exceeds 0.5. Single frame.
+/// (Threshold lowered 0.7→0.5 to pair with the widened Vision smile mapping;
+/// a clear smile now lands comfortably above this.)
+bool detectSmile(double smilingProbability) => smilingProbability > 0.5;

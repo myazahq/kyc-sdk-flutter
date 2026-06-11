@@ -9,7 +9,7 @@ part 'camera_provider.g.dart';
 
 // ─── Camera status ────────────────────────────────────────────────────────────
 
-enum CameraStatus { uninitialized, loading, ready, error }
+enum CameraStatus { uninitialized, loading, ready, error, permissionDenied }
 
 // ─── Camera state ─────────────────────────────────────────────────────────────
 
@@ -28,6 +28,11 @@ class CameraState {
 
   bool get isReady => status == CameraStatus.ready;
   bool get isLoading => status == CameraStatus.loading;
+
+  /// True when the camera couldn't start because the OS camera permission was
+  /// denied (or is blocked at the OS level). The UI shows a dedicated
+  /// "allow camera access" screen for this case.
+  bool get isPermissionDenied => status == CameraStatus.permissionDenied;
 
   CameraState copyWith({
     CameraStatus? status,
@@ -93,6 +98,18 @@ class CameraNotifier extends _$CameraNotifier {
 
     try {
       final cameras = await availableCameras();
+
+      // No camera on the device (e.g. an iOS Simulator). Surface a clean,
+      // user-facing message rather than letting `cameras.first` throw a raw
+      // "Bad state: No element" into the error UI.
+      if (cameras.isEmpty) {
+        state = state.copyWith(
+          status: CameraStatus.error,
+          error: 'No camera available on this device.',
+        );
+        return;
+      }
+
       final description = cameras.firstWhere(
         (c) => c.lensDirection == direction,
         orElse: () => cameras.first,
@@ -128,10 +145,25 @@ class CameraNotifier extends _$CameraNotifier {
         resolution: resolution,
       );
     } on CameraException catch (e) {
-      state = state.copyWith(
-        status: CameraStatus.error,
-        error: e.description ?? 'Camera initialisation failed',
-      );
+      // The camera plugin surfaces a denied/blocked OS permission via these
+      // codes. Map them to a dedicated permissionDenied status so the UI can
+      // show "allow camera access" guidance + an Open Settings action.
+      const deniedCodes = {
+        'CameraAccessDenied',
+        'CameraAccessDeniedWithoutPrompt',
+        'CameraAccessRestricted',
+      };
+      if (deniedCodes.contains(e.code)) {
+        state = state.copyWith(
+          status: CameraStatus.permissionDenied,
+          error: 'Camera access is required. Please allow camera access to continue.',
+        );
+      } else {
+        state = state.copyWith(
+          status: CameraStatus.error,
+          error: e.description ?? 'Camera initialisation failed',
+        );
+      }
     } catch (e) {
       state = state.copyWith(
         status: CameraStatus.error,

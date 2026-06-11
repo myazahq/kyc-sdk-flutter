@@ -29,11 +29,9 @@ class MyazaCountryFlag extends StatelessWidget {
 
     return CountryFlag.fromCountryCode(
       code,
-      theme: ImageTheme(
-        height: size,
-        width: size,
-        shape: const Circle(),
-      ),
+      height: size,
+      width: size,
+      shape: const Circle(),
     );
   }
 }

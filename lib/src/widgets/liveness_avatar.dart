@@ -67,13 +67,6 @@ class _AvatarContent extends StatelessWidget {
         LivenessChallenge.smile => 'assets/liveness/Smile.gif',
       };
 
-  String get _label => switch (challenge) {
-        LivenessChallenge.nod   => 'Nod your head up and down',
-        LivenessChallenge.turn  => 'Turn your head to either side',
-        LivenessChallenge.blink => 'Blink your eyes',
-        LivenessChallenge.smile => 'Smile',
-      };
-
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -89,10 +82,10 @@ class _AvatarContent extends StatelessWidget {
           child: ClipOval(
             child: Image.asset(
               _gifAsset,
-              // Required: this code lives inside the kyc_sdk_flutter package
+              // Required: this code lives inside the myaza_kyc_sdk_flutter package
               // which is a dependency — Flutter resolves assets under
-              // packages/kyc_sdk_flutter/ only when the package name is supplied.
-              package: 'kyc_sdk_flutter',
+              // packages/myaza_kyc_sdk_flutter/ only when the package name is supplied.
+              package: 'myaza_kyc_sdk_flutter',
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Icon(
                 Icons.face_outlined,
@@ -102,39 +95,8 @@ class _AvatarContent extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: MyazaSpacing.sm + 4),
-        _ChallengeHint(label: _label),
       ],
     );
   }
 }
 
-// ─── Challenge hint pill ──────────────────────────────────────────────────────
-
-class _ChallengeHint extends StatelessWidget {
-  final String label;
-
-  const _ChallengeHint({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text   = context.myazaText;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-      decoration: BoxDecoration(
-        color: colors.primary50,
-        borderRadius: BorderRadius.circular(MyazaRadius.full),
-        border: Border.all(color: colors.primary100),
-      ),
-      child: Text(
-        label,
-        style: text.bodySmall.copyWith(
-          color: colors.primary,
-          fontWeight: FontWeight.w600,
-          fontSize: 11,
-        ),
-      ),
-    );
-  }
-}

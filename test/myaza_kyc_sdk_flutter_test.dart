@@ -1,6 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kyc_sdk_flutter/kyc_sdk_flutter.dart';
-import 'package:kyc_sdk_flutter/src/utils/resolve_url.dart';
+import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
+// KYCEnvironment is internal (not exported from the barrel) — import the source
+// for the detection tests.
+import 'package:myaza_kyc_sdk_flutter/src/config/kyc_config.dart' show KYCEnvironment;
+import 'package:myaza_kyc_sdk_flutter/src/utils/resolve_url.dart';
 
 void main() {
   // ── Validator smoke tests ────────────────────────────────────────────────────
@@ -78,33 +81,44 @@ void main() {
       expect(config.enableLiveness, isTrue);
       expect(config.enableDocumentCapture, isTrue);
     });
+  });
 
-    test('environment defaults to production', () {
-      const config = MyazaKYCConfig(apiKey: 'key', country: Country.NG);
-      expect(config.environment, KYCEnvironment.production);
+  // ── Environment detection + base URL resolution ──────────────────────────────
+
+  group('environment detection', () {
+    test('derives the environment from the key prefix (pk_ and sk_)', () {
+      expect(detectEnvironment('pk_dev_abc'), KYCEnvironment.development);
+      expect(detectEnvironment('sk_dev_abc'), KYCEnvironment.development);
+      expect(detectEnvironment('pk_test_abc'), KYCEnvironment.sandbox);
+      expect(detectEnvironment('sk_test_abc'), KYCEnvironment.sandbox);
+      expect(detectEnvironment('pk_live_abc'), KYCEnvironment.production);
+      expect(detectEnvironment('sk_live_abc'), KYCEnvironment.production);
+    });
+
+    test('throws on an unrecognized / malformed key prefix', () {
+      expect(() => detectEnvironment('nope_123'), throwsArgumentError);
+      expect(() => detectEnvironment('pk_prod_123'), throwsArgumentError);
+      expect(() => detectEnvironment('pklive_123'), throwsArgumentError);
+      expect(() => detectEnvironment(''), throwsArgumentError);
     });
   });
 
-  // ── Base URL resolution ──────────────────────────────────────────────────────
-
   group('resolveBaseUrl', () {
-    test('staging and production are hardcoded into the SDK', () {
-      expect(resolveBaseUrl(KYCEnvironment.staging),
-          'https://identity.myaza.app');
-      expect(resolveBaseUrl(KYCEnvironment.production),
-          'https://identity.myaza.app');
+    test('sandbox / production resolve to the canonical URLs', () {
+      expect(resolveBaseUrl('pk_test_abc'), 'https://sandbox.identity.myaza.app');
+      expect(resolveBaseUrl('pk_live_abc'), 'https://identity.myaza.app');
     });
 
-    test('devUrl is ignored for staging/production', () {
+    test('devUrl is ignored for sandbox/production keys', () {
       expect(
-        resolveBaseUrl(KYCEnvironment.production, devUrl: 'http://localhost:9'),
+        resolveBaseUrl('pk_live_abc', devUrl: 'http://localhost:9'),
         'https://identity.myaza.app',
       );
     });
 
-    test('development honours devUrl when provided', () {
+    test('development keys honour devUrl when provided', () {
       expect(
-        resolveBaseUrl(KYCEnvironment.development, devUrl: 'http://192.168.1.5:3001'),
+        resolveBaseUrl('pk_dev_abc', devUrl: 'http://192.168.1.5:3001'),
         'http://192.168.1.5:3001',
       );
     });

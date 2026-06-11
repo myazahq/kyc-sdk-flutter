@@ -152,12 +152,14 @@ class _MyazaInputState extends State<MyazaInput> {
       ),
     );
 
-    if (widget.label == null && !hasError && widget.helperText == null) {
-      return field;
-    }
-
+    // Always return the same tree shape (a Column wrapping the field) regardless
+    // of label/error/helper state. Returning a bare `field` in some states and a
+    // `Column`-wrapped one in others reparents the TextField when the error row
+    // appears/disappears, destroying its element and dropping the keyboard — most
+    // visibly on the first invalid character and the last character that makes the
+    // value valid. `stretch` keeps the field full-width as it was when bare.
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.label != null) ...[

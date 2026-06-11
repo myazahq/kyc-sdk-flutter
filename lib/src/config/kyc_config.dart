@@ -4,7 +4,7 @@ import '../liveness/liveness_types.dart';
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
-enum KYCEnvironment { development, staging, production }
+enum KYCEnvironment { development, sandbox, production }
 
 // ─── Theme mode ─────────────────────────────────────────────────────────────
 
@@ -78,6 +78,22 @@ class KYCConsentContent {
   const KYCConsentContent({this.title, this.description});
 }
 
+// ─── Success screen content ──────────────────────────────────────────────────
+
+/// Overrides for the success (submitted) screen copy. Both fields support
+/// `{firstName}` / `{lastName}` tokens, replaced with the values from
+/// [MyazaKYCConfig.userData] (empty string when absent).
+class KYCSuccessContent {
+  /// Heading. Defaults to `Verification Submitted!`.
+  final String? title;
+
+  /// Sub-text under the heading. Defaults to the built-in "submitted for
+  /// review" copy.
+  final String? description;
+
+  const KYCSuccessContent({this.title, this.description});
+}
+
 // ─── Liveness config ────────────────────────────────────────────────────────
 
 class LivenessConfig {
@@ -92,6 +108,36 @@ class LivenessConfig {
     this.timeoutPerChallenge = 8,
     this.enableAvatar = true,
   });
+}
+
+// ─── Voice guidance config ────────────────────────────────────────────────────
+
+/// Configuration for the spoken liveness instructions ("nod your head",
+/// "blink", …). This is text-to-speech **output** played to the user for
+/// accessibility — it never records audio, so no microphone permission is
+/// involved.
+///
+/// Structured as an object (rather than a bare boolean) so a [language] can be
+/// added without a breaking change — Myaza operates across NG/GH/KE/ZA/CI, and
+/// French guidance for CI is a likely future need. Mirrors the web SDK's
+/// `VoiceGuidanceConfig`.
+class VoiceGuidanceConfig {
+  /// Whether spoken guidance plays. Default `true` (on for accessibility).
+  final bool enabled;
+
+  /// BCP-47 language tag for the spoken voice (e.g. `'en-US'`, `'fr-FR'`).
+  /// Defaults to `'en-US'`. Currently selects the TTS voice only; the spoken
+  /// text still mirrors the on-screen English instruction (localized strings
+  /// are a planned follow-up).
+  final String? language;
+
+  const VoiceGuidanceConfig({this.enabled = true, this.language});
+
+  /// Resolved BCP-47 language, defaulting to `en-US`.
+  String get resolvedLanguage => language ?? 'en-US';
+
+  /// Convenience: a config that disables spoken guidance.
+  static const VoiceGuidanceConfig off = VoiceGuidanceConfig(enabled: false);
 }
 
 // ─── User data ───────────────────────────────────────────────────────────────
@@ -135,30 +181,61 @@ class UserData {
 // ─── Main SDK config ────────────────────────────────────────────────────────
 
 class MyazaKYCConfig {
+  /// Bearer token sent on every request. The key prefix is the single source of
+  /// truth for the environment — the SDK derives it (and the base URL)
+  /// automatically: `pk_dev_…` → development, `pk_test_…` → sandbox,
+  /// `pk_live_…` → production. An unrecognized prefix throws on mount.
   final String apiKey;
   final Country country;
 
-  /// Target backend. Resolved to a base URL on mount: staging/production are
-  /// hardcoded into the SDK; development uses [devUrl] (or a localhost default).
-  final KYCEnvironment environment;
-
-  /// Dev-only override for the base URL. Only used when [environment] is
-  /// [KYCEnvironment.development]; ignored for staging/production. Defaults to a
-  /// platform-aware localhost (`http://10.0.2.2:3001` on Android emulators,
+  /// Dev-only base-URL override. Only applied for **development** keys
+  /// (`pk_dev_…`); ignored for sandbox/production. Defaults to a platform-aware
+  /// localhost (`http://10.0.2.2:3001` on Android emulators,
   /// `http://localhost:3001` elsewhere).
   final String? devUrl;
 
   final List<IdType>? idTypes;
   final bool enableSelfie;
   final bool enableDocumentCapture;
+
+  /// Allow picking a document photo from the device gallery as an alternative
+  /// to the live camera capture. Default `true`. When `false`, the
+  /// "upload a photo instead" affordances are hidden and the user must capture
+  /// with the camera.
+  final bool allowDocumentUpload;
+
   final bool enableLiveness;
+
+  /// Show a light/dark mode toggle button in the modal header. Default `true`.
+  /// When `false`, the flow stays on the theme from [appearance] (its `theme`
+  /// field) and the user can't switch it. Mirrors the web/RN SDKs'
+  /// `showThemeToggle`.
+  final bool showThemeToggle;
+
+  /// Hide the close (X) button and block all user-initiated dismissal — the X
+  /// button, the Android back gesture, and (on iOS) the bottom-sheet swipe-down
+  /// drag / barrier tap. When `true`, the flow can only be closed
+  /// programmatically by popping the route the launcher returns (see
+  /// [MyazaKYC.show], whose Future completes on close). Default `false`. The
+  /// terminal "Submitted" step is already non-dismissible regardless.
+  final bool disableClose;
+
   final MyazaKYCAppearance? appearance;
 
   /// Overrides for the consent (welcome) screen copy (title + description).
   final KYCConsentContent? consent;
 
+  /// Overrides for the success (submitted) screen copy (title + description).
+  final KYCSuccessContent? success;
+
   final Map<String, dynamic>? metadata;
   final LivenessConfig? livenessConfig;
+
+  /// Spoken liveness instructions (accessibility). TTS output only — no
+  /// microphone is used. Default: enabled (`en-US`). Pass
+  /// `VoiceGuidanceConfig.off` to mute, or `VoiceGuidanceConfig(language: …)`
+  /// to pick a voice language.
+  final VoiceGuidanceConfig voiceGuidance;
 
   /// Pre-fills form fields and personalises the welcome screen.
   final UserData? userData;
@@ -166,16 +243,20 @@ class MyazaKYCConfig {
   const MyazaKYCConfig({
     required this.apiKey,
     required this.country,
-    this.environment = KYCEnvironment.production,
     this.devUrl,
     this.idTypes,
     this.enableSelfie = true,
     this.enableDocumentCapture = true,
+    this.allowDocumentUpload = true,
     this.enableLiveness = true,
+    this.showThemeToggle = true,
+    this.disableClose = false,
     this.appearance,
     this.consent,
+    this.success,
     this.metadata,
     this.livenessConfig,
+    this.voiceGuidance = const VoiceGuidanceConfig(),
     this.userData,
   });
 }
@@ -209,12 +290,18 @@ class KYCSubmission {
 // failures — those arrive asynchronously via webhook.
 
 class KYCError {
-  /// One of:
-  ///   • 'network_error'         — connection failure / timeout
-  ///   • 'invalid_api_key'       — server returned 401
-  ///   • 'insufficient_credits'  — server returned 402
-  ///   • 'upload_failed'         — /api/kyc/upload failed
-  ///   • 'unknown'               — anything else
+  /// Typed, documented error category. IDENTICAL to the web SDK's `KYCErrorCode`
+  /// so integrators get one consistent contract across platforms. One of:
+  ///   • 'network_error'            — connection failure / timeout (after retries)
+  ///   • 'invalid_api_key'          — server returned 401
+  ///   • 'insufficient_credits'     — server returned 402 (see [details])
+  ///   • 'upload_failed'            — /api/kyc/upload failed (after retries)
+  ///   • 'camera_permission_denied' — the user denied / the OS blocks camera access
+  ///   • 'feature_disabled'         — server returned 403 (ID type / feature not enabled)
+  ///   • 'unknown'                  — anything else
+  ///
+  /// Voice guidance is text-to-speech *output* — it never records audio, so
+  /// there is no microphone-permission code.
   final String code;
   final String message;
   /// For 'insufficient_credits': { required, balance, currency }.

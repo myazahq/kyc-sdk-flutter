@@ -150,17 +150,20 @@ class KycBottomSheet extends StatelessWidget {
                             isDark: isDark,
                             onToggle: onToggleTheme!,
                           ),
-                          const SizedBox(width: MyazaSpacing.xs),
+                          if (canDismiss)
+                            const SizedBox(width: MyazaSpacing.xs),
                         ],
-                        _CloseButton(
-                          isDark: isDark,
-                          onTap: canDismiss
-                              ? () {
-                                  Navigator.of(context).maybePop();
-                                  onClose?.call();
-                                }
-                              : null,
-                        ),
+                        // Hide the close button entirely when the sheet can't be
+                        // dismissed (terminal step or disableClose) — rather than
+                        // showing a greyed, dead button.
+                        if (canDismiss)
+                          _CloseButton(
+                            isDark: isDark,
+                            onTap: () {
+                              Navigator.of(context).maybePop();
+                              onClose?.call();
+                            },
+                          ),
                       ],
                     ),
                   ),
@@ -193,19 +196,35 @@ class KycBottomSheet extends StatelessWidget {
               ),
             ),
 
-            // Scrollable screen content
+            // Scrollable screen content. The child is constrained to at least
+            // the visible viewport height so screens that bottom-align their
+            // actions (e.g. a Column with MainAxisAlignment.spaceBetween, or a
+            // button pinned under an Expanded) push those actions to the real
+            // bottom of the sheet — while still scrolling when content overflows.
             Expanded(
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                padding: EdgeInsets.only(
-                  left: MyazaSpacing.md,
-                  right: MyazaSpacing.md,
-                  top: MyazaSpacing.md,
-                  bottom: MediaQuery.of(context).viewInsets.bottom +
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  const topPad = MyazaSpacing.md;
+                  final bottomPad = MediaQuery.of(context).viewInsets.bottom +
                       MediaQuery.of(context).padding.bottom +
-                      MyazaSpacing.xl,
-                ),
-                child: child,
+                      MyazaSpacing.xl;
+                  final contentMinHeight =
+                      (constraints.maxHeight - topPad - bottomPad)
+                          .clamp(0.0, double.infinity);
+                  return SingleChildScrollView(
+                    physics: const ClampingScrollPhysics(),
+                    padding: EdgeInsets.only(
+                      left: MyazaSpacing.md,
+                      right: MyazaSpacing.md,
+                      top: topPad,
+                      bottom: bottomPad,
+                    ),
+                    child: ConstrainedBox(
+                      constraints: BoxConstraints(minHeight: contentMinHeight),
+                      child: child,
+                    ),
+                  );
+                },
               ),
             ),
           ],

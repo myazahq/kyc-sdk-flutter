@@ -190,24 +190,136 @@ class _SelfieParams {
 }
 
 Uint8List _selfieWorker(_SelfieParams p) {
-  const maxSide = CaptureConfig.selfieMaxLongEdge;
-  const quality = CaptureConfig.selfieImageQuality;
-
   var im = img.decodeImage(p.bytes);
   if (im == null) return p.bytes;
   im = img.bakeOrientation(im);
+  return _enhanceAndEncodeSelfie(im);
+}
 
-  // Downscale only if larger than the cap (never upscale — preserves detail).
-  final longEdge = math.max(im.width, im.height);
-  if (longEdge > maxSide) {
-    final scale = maxSide / longEdge;
-    im = img.copyResize(
-      im,
-      width: (im.width * scale).round(),
-      height: (im.height * scale).round(),
-      interpolation: img.Interpolation.average,
+// ── Stream-frame selfie path (no takePicture mode-switch) ────────────────────
+//
+// Encodes the selfie directly from a live camera-stream frame we already have
+// during "hold still", avoiding the slow video→photo capture-session switch
+// (`stopVideoRecording()` + `takePicture()`), which added several seconds on iOS.
+
+class _SelfieFrameParams {
+  final Uint8List bytes;   // raw frame plane bytes
+  final int width;
+  final int height;
+  final int bytesPerRow;   // row stride of the source plane
+  final bool bgra;         // true = iOS BGRA8888; false = treat as already-RGB(A)
+  final bool mirror;       // front camera → mirror horizontally
+  const _SelfieFrameParams({
+    required this.bytes,
+    required this.width,
+    required this.height,
+    required this.bytesPerRow,
+    required this.bgra,
+    required this.mirror,
+  });
+}
+
+Uint8List _selfieFrameWorker(_SelfieFrameParams p) {
+  // CameraImage plane bytes are frequently a *view* into a larger ByteBuffer
+  // (non-zero offsetInBytes). Passing `.buffer` directly would start decoding at
+  // the wrong place and misalign the BGRA channels (purple/green cast). Copy to a
+  // fresh, zero-offset buffer of exactly the plane length first.
+  final clean = Uint8List.fromList(p.bytes);
+  var im = img.Image.fromBytes(
+    width: p.width,
+    height: p.height,
+    bytes: clean.buffer,
+    rowStride: p.bytesPerRow,
+    order: p.bgra ? img.ChannelOrder.bgra : img.ChannelOrder.rgba,
+    numChannels: 4,
+  );
+  // Front camera: mirror to match what the user saw in the preview.
+  if (p.mirror) im = img.flipHorizontal(im);
+  // Stream frames are already at preview exposure — run the LEAN encode (resize +
+  // encode only). The heavy dark-face lift is tuned for stills and blows preview
+  // frames out, so it is skipped here.
+  return _resizeAndEncodeSelfie(im);
+}
+
+/// Encodes a selfie [from a stream frame]: BGRA bytes → enhanced JPEG. Runs in an
+/// isolate via [compute]. Returns null on failure so the caller can fall back.
+Future<Uint8List?> processSelfieFrame({
+  required Uint8List bytes,
+  required int width,
+  required int height,
+  required int bytesPerRow,
+  required bool bgra,
+  required bool mirror,
+}) async {
+  try {
+    return await compute(
+      _selfieFrameWorker,
+      _SelfieFrameParams(
+        bytes: bytes,
+        width: width,
+        height: height,
+        bytesPerRow: bytesPerRow,
+        bgra: bgra,
+        mirror: mirror,
+      ),
     );
+  } catch (_) {
+    return null;
   }
+}
+
+// Downscale to the selfie cap (never upscale — preserves detail).
+img.Image _downscaleSelfie(img.Image im) {
+  const maxSide = CaptureConfig.selfieMaxLongEdge;
+  final longEdge = math.max(im.width, im.height);
+  if (longEdge <= maxSide) return im;
+  final scale = maxSide / longEdge;
+  return img.copyResize(
+    im,
+    width: (im.width * scale).round(),
+    height: (im.height * scale).round(),
+    interpolation: img.Interpolation.average,
+  );
+}
+
+// Encodes a selfie JPEG under [CaptureConfig.selfieMaxBytes]. Steps quality down
+// from [selfieImageQuality] to [selfieMinQuality] first (preserving resolution =
+// facial detail); only if still too large does it scale dimensions down. Keeps
+// the file small enough to upload while sharp enough for facial comparison.
+Uint8List _encodeSelfieUnderBudget(img.Image image) {
+  const maxBytes = CaptureConfig.selfieMaxBytes;
+  const minQuality = CaptureConfig.selfieMinQuality;
+
+  var im = image;
+  var quality = CaptureConfig.selfieImageQuality;
+  while (true) {
+    final encoded = img.encodeJpg(im, quality: quality);
+    if (encoded.length <= maxBytes || (quality <= minQuality && im.width <= 480)) {
+      return Uint8List.fromList(encoded);
+    }
+    if (quality > minQuality) {
+      quality -= 6;
+    } else {
+      // Quality floor reached and still over budget — shrink and retry from top.
+      im = img.copyResize(
+        im,
+        width: (im.width * 0.85).round(),
+        height: (im.height * 0.85).round(),
+        interpolation: img.Interpolation.average,
+      );
+      quality = CaptureConfig.selfieImageQuality;
+    }
+  }
+}
+
+// Lean encode: resize + size-bounded JPEG only, no exposure lift. Used for stream
+// frames, which are already at preview exposure (the heavy lift blows them out).
+Uint8List _resizeAndEncodeSelfie(img.Image input) =>
+    _encodeSelfieUnderBudget(_downscaleSelfie(input));
+
+// Shared selfie enhancement + encode (used by the still-capture path).
+Uint8List _enhanceAndEncodeSelfie(img.Image input) {
+  var im = _downscaleSelfie(input);
 
   // Mean luminance (0–255) of the central face region.
   final x0 = (im.width * 0.30).round();
@@ -242,7 +354,7 @@ Uint8List _selfieWorker(_SelfieParams p) {
     );
   }
 
-  return Uint8List.fromList(img.encodeJpg(im, quality: quality));
+  return _encodeSelfieUnderBudget(im);
 }
 
 /// Bakes orientation, lifts a backlit/underexposed face, and encodes a sharp
@@ -256,12 +368,14 @@ class _CropCardParams {
   final Uint8List bytes;
   final double viewW;
   final double viewH;
+  final double aspect;
   final int maxBytes;
 
   const _CropCardParams({
     required this.bytes,
     required this.viewW,
     required this.viewH,
+    this.aspect = 1.586,
     this.maxBytes = 1024 * 1024,
   });
 }
@@ -271,7 +385,8 @@ class _CropCardParams {
 ///
 /// The calculation mirrors [_CardGuidePainter] exactly:
 ///   • card width  = [viewW] × 0.88
-///   • card height = card width / 1.586   (ID-card aspect ratio)
+///   • card height = card width / aspect  (1.586 for ID cards; a taller ratio
+///     for passports so the data page's bottom MRZ band is included)
 ///   • centred horizontally; centred vertically then shifted 20 logical px up
 ///
 /// The BoxFit.cover scale and overflow offsets are applied so the crop
@@ -298,7 +413,7 @@ Uint8List _cropCardWorker(_CropCardParams p) {
 
   // Card guide rect in viewfinder logical pixels (mirrors _CardGuidePainter).
   const widthFraction = 0.88;
-  const idAspect = 1.586;
+  final idAspect = p.aspect;
   final cardW = p.viewW * widthFraction;
   final cardH = cardW / idAspect;
   final left = (p.viewW - cardW) / 2;
@@ -331,12 +446,14 @@ Future<String> cropCardRegion(
   Uint8List bytes, {
   required double viewW,
   required double viewH,
+  double aspect = 1.586,
   int maxBytes = 1024 * 1024,
 }) async {
   final compressed = await cropCardRegionBytes(
     bytes,
     viewW: viewW,
     viewH: viewH,
+    aspect: aspect,
     maxBytes: maxBytes,
   );
   return base64Encode(compressed);
@@ -349,11 +466,18 @@ Future<Uint8List> cropCardRegionBytes(
   Uint8List bytes, {
   required double viewW,
   required double viewH,
+  double aspect = 1.586,
   int maxBytes = 1024 * 1024,
 }) {
   return compute(
     _cropCardWorker,
-    _CropCardParams(bytes: bytes, viewW: viewW, viewH: viewH, maxBytes: maxBytes),
+    _CropCardParams(
+      bytes: bytes,
+      viewW: viewW,
+      viewH: viewH,
+      aspect: aspect,
+      maxBytes: maxBytes,
+    ),
   );
 }
 

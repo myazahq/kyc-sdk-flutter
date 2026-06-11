@@ -7,6 +7,7 @@ import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../providers/kyc_state.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/myaza_pulse_loader.dart';
 
 // ─── ID type selection screen ─────────────────────────────────────────────────
 
@@ -44,29 +45,9 @@ class IdTypeScreen extends ConsumerWidget {
     };
 
     if (serverConfig.status == ServerConfigStatus.loading) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: MyazaSpacing.xl),
-        child: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2.5,
-                  color: colors.primary,
-                ),
-              ),
-              const SizedBox(height: MyazaSpacing.md),
-              Text(
-                'Loading available ID types…',
-                style: text.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        ),
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: MyazaSpacing.xl),
+        child: Center(child: MyazaPulseLoader()),
       );
     }
 
@@ -131,18 +112,18 @@ class _IdTypeCard extends StatelessWidget {
 
   // Same lucide icons as the web SDK's IdTypeStep (ID_TYPE_ICONS).
   static IconData _iconFor(IdType type) => switch (type) {
-        IdType.bvn            => LucideIcons.fingerprint,
-        IdType.nin            => LucideIcons.creditCard,
-        IdType.vnin           => LucideIcons.creditCard,
-        IdType.passport       => LucideIcons.globe,
-        IdType.driversLicense => LucideIcons.car,
-        IdType.pvc            => LucideIcons.vote,
-        IdType.ghanaCard      => LucideIcons.creditCard,
-        IdType.voters         => LucideIcons.vote,
-        IdType.ssnit          => LucideIcons.fileText,
-        IdType.nationalId     => LucideIcons.creditCard,
-        IdType.cni            => LucideIcons.creditCard,
-        IdType.residenceCard  => LucideIcons.fileText,
+        IdType.bvn            => LucideIcons.landmark, // Bank Verification Number
+        IdType.nin            => LucideIcons.fingerprint,
+        IdType.vnin           => LucideIcons.fingerprint,
+        IdType.passport       => LucideIcons.bookUser,
+        IdType.driversLicense => LucideIcons.idCard,
+        IdType.pvc            => LucideIcons.contact, // Permanent Voter's Card
+        IdType.ghanaCard      => LucideIcons.idCard,
+        IdType.voters         => LucideIcons.contact,
+        IdType.ssnit          => LucideIcons.idCard,
+        IdType.nationalId     => LucideIcons.idCard,
+        IdType.cni            => LucideIcons.idCard,
+        IdType.residenceCard  => LucideIcons.idCard,
       };
 
   @override

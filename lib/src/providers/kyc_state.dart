@@ -72,6 +72,14 @@ class ServerSdkConfig {
   final String? environment;
   final String? error;
 
+  /// HTTP status of the failed config request, if [status] is `error`.
+  final int? statusCode;
+
+  /// True when the failure is a hard, non-recoverable auth error (invalid API
+  /// key / forbidden) — the flow can't proceed, so the modal shows a blocking
+  /// error screen instead of silently falling back to the prop ID-type list.
+  final bool fatal;
+
   /// Org branding (logo, name, color) returned by /api/kyc/config. Consumed
   /// when the consumer sets `appearance.logo = 'default'`.
   final SdkConfigBranding? branding;
@@ -81,6 +89,8 @@ class ServerSdkConfig {
     this.idTypes = const [],
     this.environment,
     this.error,
+    this.statusCode,
+    this.fatal = false,
     this.branding,
   });
 

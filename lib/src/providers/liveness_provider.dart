@@ -50,6 +50,21 @@ class LivenessState {
   /// Blocks challenge advancement when not null during positioning.
   final String? positionGuidance;
 
+  /// True for a brief moment when the user performs a DIFFERENT gesture than the
+  /// one requested (e.g. turning during a nod challenge). Drives the red-border +
+  /// "Wrong gesture" feedback, mirroring the web SDK.
+  final bool wrongGesture;
+
+  /// True when more than one face is in frame. The challenge is paused and the
+  /// user is asked to ensure only their face is visible (quality + anti-spoof).
+  /// Mirrors the web SDK.
+  final bool multipleFaces;
+
+  /// Lighting guidance — null when lighting is acceptable, otherwise 'dark' or
+  /// 'bright'. Blocks challenge start / auto-capture while non-null, mirroring
+  /// the web SDK's lighting gate.
+  final String? lightingGuidance;
+
   const LivenessState({
     this.phase = LivenessPhase.loading,
     this.instruction = '',
@@ -61,6 +76,9 @@ class LivenessState {
     this.selfieBase64,
     this.error,
     this.positionGuidance,
+    this.wrongGesture = false,
+    this.multipleFaces = false,
+    this.lightingGuidance,
   });
 
   double get progress =>
@@ -82,6 +100,10 @@ class LivenessState {
     String? error,
     String? positionGuidance,
     bool clearPositionGuidance = false,
+    bool? wrongGesture,
+    bool? multipleFaces,
+    String? lightingGuidance,
+    bool clearLightingGuidance = false,
   }) =>
       LivenessState(
         phase: phase ?? this.phase,
@@ -97,6 +119,11 @@ class LivenessState {
         error: error, // explicit null clears error
         positionGuidance:
             clearPositionGuidance ? null : (positionGuidance ?? this.positionGuidance),
+        wrongGesture: wrongGesture ?? this.wrongGesture,
+        multipleFaces: multipleFaces ?? this.multipleFaces,
+        lightingGuidance: clearLightingGuidance
+            ? null
+            : (lightingGuidance ?? this.lightingGuidance),
       );
 }
 
@@ -150,13 +177,24 @@ class LivenessNotifier extends _$LivenessNotifier {
       state = state.copyWith(faceDetected: true);
     }
 
+    // More than one face — pause and ask for a single face (quality +
+    // anti-spoofing). Auto-resumes when the frame returns to one face.
+    if (data.faceCount > 1) {
+      _onMultipleFaces();
+      return;
+    }
+    if (state.multipleFaces) {
+      _onSingleFaceRestored();
+    }
+
     // Check face size and update position guidance on every frame.
     _checkFacePosition(data.faceSizeRatio);
 
     switch (state.phase) {
       case LivenessPhase.positioning:
-        // Only advance to challenges when the user is at the correct distance.
-        if (state.positionGuidance == null) {
+        // Only advance to challenges at the correct distance AND with
+        // acceptable lighting — discourages capture in poor light.
+        if (state.positionGuidance == null && state.lightingGuidance == null) {
           _startNextChallenge();
         }
         return;
@@ -174,6 +212,70 @@ class LivenessNotifier extends _$LivenessNotifier {
     }
   }
 
+  // ── Multiple faces ───────────────────────────────────────────────────────
+
+  static const String multipleFacesGuidance =
+      'Make sure only your face is visible';
+
+  void _onMultipleFaces() {
+    // Don't disturb terminal / capture phases.
+    if (state.phase == LivenessPhase.complete ||
+        state.phase == LivenessPhase.failed ||
+        state.phase == LivenessPhase.capturing) {
+      return;
+    }
+    if (state.multipleFaces) return; // already paused
+    // Pause the challenge timer so a second face can't run out the clock.
+    _cancelTimer();
+    state = state.copyWith(
+      multipleFaces: true,
+      instruction: multipleFacesGuidance,
+      wrongGesture: false,
+    );
+  }
+
+  void _onSingleFaceRestored() {
+    final resumeChallenge = state.phase == LivenessPhase.challenge;
+    state = state.copyWith(multipleFaces: false);
+    if (resumeChallenge) {
+      final challenge = _manager.current;
+      if (challenge != null) {
+        // Reset gesture history and restart the (paused) challenge timer.
+        _xHistory.clear();
+        _earHistory.clear();
+        _challengeProcessing = false;
+        final timeout =
+            ref.read(kycConfigProvider).livenessConfig?.timeoutPerChallenge ??
+                challenge.timeoutSeconds;
+        state = state.copyWith(instruction: challenge.instruction);
+        _startTimer(timeout);
+      }
+    }
+  }
+
+  // ── Lighting gate ────────────────────────────────────────────────────────
+
+  /// Feeds live lighting quality into the state machine. [guidance] is 'dark',
+  /// 'bright', or null (acceptable). While non-null during positioning, the
+  /// flow won't start challenges — discouraging capture in poor light.
+  void setLightingGuidance(String? guidance) {
+    if (guidance == state.lightingGuidance) return;
+    // Lighting guidance is only meaningful before/while capturing the selfie.
+    if (state.phase == LivenessPhase.complete ||
+        state.phase == LivenessPhase.failed ||
+        state.phase == LivenessPhase.capturing) {
+      if (state.lightingGuidance != null) {
+        state = state.copyWith(clearLightingGuidance: true);
+      }
+      return;
+    }
+    if (guidance == null) {
+      state = state.copyWith(clearLightingGuidance: true);
+    } else {
+      state = state.copyWith(lightingGuidance: guidance);
+    }
+  }
+
   /// Called when a camera frame produces no faces.
   void reportNoFace() {
     if (!state.faceDetected) return;
@@ -184,6 +286,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     state = state.copyWith(
       faceDetected: false,
       clearPositionGuidance: true, // no face → no distance guidance
+      multipleFaces: false, // no face → certainly not multiple
     );
   }
 
@@ -196,9 +299,21 @@ class LivenessNotifier extends _$LivenessNotifier {
     // Single pass: bake orientation, brighten a backlit/dark face, size + encode
     // a sharp JPEG (no square-box downscale that would soften the face).
     final bytes = await processSelfieImage(imageBytes);
+    _completeWithSelfie(bytes);
+  }
+
+  /// Like [captureSelfie] but for an already-enhanced/encoded JPEG (e.g. from the
+  /// stream-frame fast path, where the worker already ran the selfie pipeline).
+  /// Skips re-processing and just stores it.
+  void captureSelfieEncoded(Uint8List jpegBytes) {
+    if (state.phase != LivenessPhase.capturing) return;
+    _completeWithSelfie(jpegBytes);
+  }
+
+  void _completeWithSelfie(Uint8List jpegBytes) {
     state = state.copyWith(
       phase: LivenessPhase.complete,
-      selfieBase64: base64Encode(bytes),
+      selfieBase64: base64Encode(jpegBytes),
       instruction: 'Verification complete',
       clearActiveChallenge: true,
       clearPositionGuidance: true,
@@ -283,6 +398,7 @@ class LivenessNotifier extends _$LivenessNotifier {
       timeoutRemaining: timeout,
       activeChallenge: challenge.type,
       clearPositionGuidance: true,
+      wrongGesture: false,
     );
 
     _startTimer(timeout);
@@ -299,7 +415,27 @@ class LivenessNotifier extends _$LivenessNotifier {
       LivenessChallenge.smile => detectSmile(data.smilingProbability),
     };
 
-    if (detected) _onChallengePassed();
+    if (detected) {
+      _onChallengePassed();
+      return;
+    }
+
+    // Wrong-gesture feedback (mirrors the web SDK): the requested gesture wasn't
+    // detected, but the user is clearly doing a DIFFERENT one. Flash a red
+    // border + "Wrong gesture". The "wrong" signals per challenge avoid
+    // self-overlap (e.g. a turn challenge doesn't flag turning as wrong).
+    final isTurning = detectTurn(data.headEulerAngleY);
+    final isSmiling = detectSmile(data.smilingProbability);
+    final wrong = switch (challenge.type) {
+      LivenessChallenge.nod   => isTurning || isSmiling,
+      LivenessChallenge.turn  => isSmiling,
+      LivenessChallenge.blink => isTurning || isSmiling,
+      LivenessChallenge.smile => isTurning,
+    };
+
+    if (wrong != state.wrongGesture) {
+      state = state.copyWith(wrongGesture: wrong);
+    }
   }
 
   void _onChallengePassed() {
@@ -313,6 +449,7 @@ class LivenessNotifier extends _$LivenessNotifier {
       completedCount: _manager.completedCount,
       timeoutRemaining: 0,
       clearPositionGuidance: true,
+      wrongGesture: false,
     );
 
     Future.delayed(const Duration(milliseconds: 700), () {

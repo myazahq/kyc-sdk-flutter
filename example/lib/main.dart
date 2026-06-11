@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:kyc_sdk_flutter/kyc_sdk_flutter.dart';
+import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
 
 void main() => runApp(const ExampleApp());
 
@@ -26,10 +26,10 @@ class HomeScreen extends StatelessWidget {
     MyazaKYC.show(
       context: context,
       config: const MyazaKYCConfig(
-        // While integrating, use a sandbox key (pk_test_*) against staging.
+        // The environment is derived from the key prefix — a `pk_test_*` key
+        // targets staging automatically (no `environment` parameter).
         apiKey: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxx',
         country: Country.NG,
-        environment: KYCEnvironment.staging,
         idTypes: [IdType.bvn, IdType.nin, IdType.passport],
         enableSelfie: true,
         enableDocumentCapture: true,

@@ -1,16 +1,15 @@
-# kyc_sdk_flutter example
+# myaza_kyc_sdk_flutter example
 
 A minimal example showing how to launch the Myaza KYC flow.
 
 ```dart
-import 'package:kyc_sdk_flutter/kyc_sdk_flutter.dart';
+import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
 
 MyazaKYC.show(
   context: context,
   config: const MyazaKYCConfig(
     apiKey: 'pk_test_...',                 // sandbox key while integrating
     country: Country.NG,
-    environment: KYCEnvironment.staging,
     idTypes: [IdType.bvn, IdType.nin, IdType.passport],
     enableSelfie: true,
     enableDocumentCapture: true,
