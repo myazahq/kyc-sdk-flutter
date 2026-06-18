@@ -17,7 +17,8 @@ import '../config/kyc_config.dart';
 /// Canonical base URLs for the non-development environments
 /// (see the kyc-dashboard environments docs).
 const _baseUrls = <KYCEnvironment, String>{
-  KYCEnvironment.sandbox: 'https://sandbox.identity.myaza.app',
+  // Sandbox and production share the same host; the key prefix selects the env.
+  KYCEnvironment.sandbox: 'https://identity.myaza.app',
   KYCEnvironment.production: 'https://identity.myaza.app',
 };
 

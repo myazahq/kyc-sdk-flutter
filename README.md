@@ -122,7 +122,7 @@ base URL) from the API key prefix, the single source of truth:
 
 | Key prefix | Environment | Base URL |
 |---|---|---|
-| `pk_test_…` / `sk_test_…` | sandbox | `https://sandbox.identity.myaza.app` |
+| `pk_test_…` / `sk_test_…` | sandbox | `https://identity.myaza.app` |
 | `pk_live_…` / `sk_live_…` | production | `https://identity.myaza.app` |
 
 An unrecognized or malformed key throws an `ArgumentError` from `MyazaKYC.show()`

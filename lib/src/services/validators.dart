@@ -222,6 +222,9 @@ ValidationResult validateIdNumber(
 ) {
   return switch ((country, idType)) {
     (Country.NG, IdType.bvn)            => validateBvn(value),
+    (Country.NG, IdType.bvnPremium)     => validateBvn(value),
+    // Tax ID lookups are keyed off the person's NIN — the typed number is a NIN.
+    (Country.NG, IdType.taxId)          => validateNin(value),
     (Country.NG, IdType.nin)            => validateNin(value),
     (Country.NG, IdType.vnin)           => validateVnin(value),
     (Country.NG, IdType.passport)       => validateNgPassport(value),

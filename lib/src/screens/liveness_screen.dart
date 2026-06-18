@@ -26,6 +26,7 @@ import '../services/media_compress_service.dart';
 import '../services/retry.dart';
 import '../utils/permissions.dart';
 import '../widgets/camera_permission_view.dart';
+import '../widgets/camera_permission_priming_view.dart';
 import '../widgets/liveness_avatar.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
@@ -64,6 +65,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   bool _permissionDenied = false;
   // Ensures the camera_permission_denied error is reported to onError once.
   bool _cameraPermissionReported = false;
+  // Show the "Allow camera access" primer before the OS prompt (Stripe-style),
+  // unless the camera is already granted. The camera (and therefore the OS
+  // prompt) only starts once the user taps "Grant access".
+  bool _showPrimer = false;
 
   // Latest camera-stream frame (iOS BGRA), cached so the selfie can be encoded
   // straight from it — avoiding the slow video→photo capture-session switch.
@@ -106,7 +111,19 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     WidgetsBinding.instance.addObserver(this);
     final voice = ref.read(kycConfigProvider).voiceGuidance;
     _tts.initialize(enabled: voice.enabled, language: voice.resolvedLanguage);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrime());
+  }
+
+  /// Show the "Allow camera access" primer before requesting permission, unless
+  /// the camera is already granted (in which case we start straight away).
+  Future<void> _maybePrime() async {
+    if (await hasCameraPermission()) {
+      if (!mounted) return;
+      _init();
+    } else {
+      if (!mounted) return;
+      setState(() => _showPrimer = true);
+    }
   }
 
   @override
@@ -764,6 +781,18 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         }
       }
     });
+
+    // Camera-access primer — shown before the OS prompt (camera not yet started).
+    if (_showPrimer) {
+      return CameraPermissionPrimingView(
+        message:
+            'When prompted, allow camera access to continue your verification.',
+        onGrant: () {
+          setState(() => _showPrimer = false);
+          _init();
+        },
+      );
+    }
 
     // Camera permission denied — show a dedicated screen + report onError once.
     // `_permissionDenied` covers the Android native-recorder path (no

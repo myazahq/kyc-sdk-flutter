@@ -21,6 +21,8 @@ enum Country {
 
 enum IdType {
   bvn,
+  bvnPremium,
+  taxId,
   nin,
   vnin,
   passport,
@@ -47,6 +49,10 @@ class IdTypeConfig {
   final IdType idType;
   final String key;
   final String label;
+
+  /// What the user actually types when it differs from the ID's name — e.g.
+  /// Tax ID lookups are keyed off the person's NIN, so the input asks for a NIN.
+  final String? inputLabel;
   final bool requiresDocumentCapture;
   final ScanSides? scanSides;
   final int? digits;
@@ -56,6 +62,7 @@ class IdTypeConfig {
     required this.idType,
     required this.key,
     required this.label,
+    this.inputLabel,
     required this.requiresDocumentCapture,
     this.scanSides,
     this.digits,
@@ -71,6 +78,21 @@ const Map<Country, List<IdTypeConfig>> kIdTypesByCountry = {
       idType: IdType.bvn,
       key: 'bvn',
       label: 'BVN',
+      requiresDocumentCapture: false,
+      digits: 11,
+    ),
+    IdTypeConfig(
+      idType: IdType.bvnPremium,
+      key: 'bvn-premium',
+      label: 'BVN Premium',
+      requiresDocumentCapture: false,
+      digits: 11,
+    ),
+    IdTypeConfig(
+      idType: IdType.taxId,
+      key: 'tax-id',
+      label: 'Tax ID',
+      inputLabel: 'NIN',
       requiresDocumentCapture: false,
       digits: 11,
     ),

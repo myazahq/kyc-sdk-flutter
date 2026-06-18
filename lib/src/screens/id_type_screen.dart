@@ -113,6 +113,8 @@ class _IdTypeCard extends StatelessWidget {
   // Same lucide icons as the web SDK's IdTypeStep (ID_TYPE_ICONS).
   static IconData _iconFor(IdType type) => switch (type) {
         IdType.bvn            => LucideIcons.landmark, // Bank Verification Number
+        IdType.bvnPremium     => LucideIcons.landmark,
+        IdType.taxId          => LucideIcons.receiptText, // Tax ID (NIN-keyed)
         IdType.nin            => LucideIcons.fingerprint,
         IdType.vnin           => LucideIcons.fingerprint,
         IdType.passport       => LucideIcons.bookUser,

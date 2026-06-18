@@ -105,7 +105,7 @@ void main() {
 
   group('resolveBaseUrl', () {
     test('sandbox / production resolve to the canonical URLs', () {
-      expect(resolveBaseUrl('pk_test_abc'), 'https://sandbox.identity.myaza.app');
+      expect(resolveBaseUrl('pk_test_abc'), 'https://identity.myaza.app');
       expect(resolveBaseUrl('pk_live_abc'), 'https://identity.myaza.app');
     });
 

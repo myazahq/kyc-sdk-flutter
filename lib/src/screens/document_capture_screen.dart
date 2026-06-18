@@ -24,6 +24,7 @@ import '../services/media_compress_service.dart';
 import '../services/retry.dart';
 import '../utils/permissions.dart';
 import '../widgets/camera_permission_view.dart';
+import '../widgets/camera_permission_priming_view.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
 
@@ -60,6 +61,10 @@ class _DocumentCaptureScreenState
   bool _initializing = false;
   // Set when the explicit camera-permission check fails.
   bool _permissionDenied = false;
+  // Show the "Allow camera access" primer before the OS prompt (Stripe-style),
+  // unless the camera is already granted. The camera (and therefore the OS
+  // prompt) only starts once the user taps "Grant access".
+  bool _showPrimer = false;
 
   // Locally held captures — only uploaded + committed to kycProvider on Continue.
   Uint8List? _frontBytes;
@@ -86,7 +91,19 @@ class _DocumentCaptureScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _init());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrime());
+  }
+
+  /// Show the "Allow camera access" primer before requesting permission, unless
+  /// the camera is already granted (in which case we open it straight away).
+  Future<void> _maybePrime() async {
+    if (await hasCameraPermission()) {
+      if (!mounted) return;
+      _init();
+    } else {
+      if (!mounted) return;
+      setState(() => _showPrimer = true);
+    }
   }
 
   @override
@@ -461,6 +478,19 @@ class _DocumentCaptureScreenState
     // as a secondary action. onError is reported once.
     final inCameraPhase =
         _phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack;
+
+    // Camera-access primer — shown before the OS prompt (camera not yet started).
+    if (_showPrimer && inCameraPhase) {
+      return CameraPermissionPrimingView(
+        message:
+            'When prompted, allow camera access to photograph your document.',
+        onGrant: () {
+          setState(() => _showPrimer = false);
+          _init();
+        },
+      );
+    }
+
     if ((cameraState.isPermissionDenied || _permissionDenied) && inCameraPhase) {
       _reportCameraPermissionDenied(cameraState.error);
       // The gallery fallback is always offered here as an escape hatch — even

@@ -1,6 +1,6 @@
 name: myaza_kyc_sdk_flutter
 description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
-version: 2.0.0
+version: 2.0.1
 
 homepage: https://github.com/myazahq/kyc-sdk-flutter
 repository: https://github.com/myazahq/kyc-sdk-flutter

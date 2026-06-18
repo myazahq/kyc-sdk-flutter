@@ -1,3 +1,10 @@
+## 2.0.1
+
+* **Sandbox and production now share one base URL** (`https://identity.myaza.app`).
+  The environment is still derived solely from the API key prefix (`pk_test_…` →
+  sandbox, `pk_live_…` → production); only the host the sandbox keys resolve to
+  changed — no integration code changes are required.
+
 ## 2.0.0
 
 First release on pub.dev, under the package's final name.

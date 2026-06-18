@@ -60,12 +60,12 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
   }
 
   TextInputType _keyboardType(IdType idType) => switch (idType) {
-        IdType.bvn || IdType.nin => TextInputType.number,
+        IdType.bvn || IdType.bvnPremium || IdType.taxId || IdType.nin => TextInputType.number,
         _ => TextInputType.visiblePassword,
       };
 
   List<TextInputFormatter>? _inputFormatters(IdType idType) => switch (idType) {
-        IdType.bvn || IdType.nin => [FilteringTextInputFormatter.digitsOnly],
+        IdType.bvn || IdType.bvnPremium || IdType.taxId || IdType.nin => [FilteringTextInputFormatter.digitsOnly],
         _ => null,
       };
 
@@ -101,7 +101,7 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
       children: [
         // ── ID number field ────────────────────────────────────────────────────
         if (idTypeCfg != null)
-          Text(idTypeCfg.label, style: text.label),
+          Text(idTypeCfg.inputLabel ?? idTypeCfg.label, style: text.label),
         const SizedBox(height: MyazaSpacing.sm),
         MyazaInput(
           hint: _hintFor(idType, idTypeCfg),
@@ -132,8 +132,9 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
 
 String _hintFor(IdType? idType, IdTypeConfig? cfg) {
   if (idType == null || cfg == null) return 'Enter your ID number';
+  final label = cfg.inputLabel ?? cfg.label;
   if (cfg.digits != null) {
-    return 'Enter ${cfg.digits}-digit ${cfg.label}';
+    return 'Enter ${cfg.digits}-digit $label';
   }
-  return 'Enter your ${cfg.label}';
+  return 'Enter your $label';
 }
