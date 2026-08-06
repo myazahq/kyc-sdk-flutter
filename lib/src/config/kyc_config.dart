@@ -289,10 +289,17 @@ class MyazaKYCConfig {
   /// accepted — the SDK is no longer limited to the gov-DB provider countries
   /// (Global Documents). The org's grants gate what's actually available.
   ///
-  /// When [workflowId] is set the country may be omitted here — the resolved
-  /// workflow supplies it (and wins over this value). The launcher merges the
-  /// two before mounting, so this is always non-null by the time the flow runs.
-  final String country;
+  /// OPTIONAL when [workflowId] is set — the resolved workflow supplies it (and
+  /// wins over this value). Mirrors the React SDK, where `country?: C` is
+  /// "required unless workflowId is set".
+  ///
+  /// It was `required` while this comment already claimed it could be omitted, so
+  /// the documented mount did not compile: a workflow user had to invent a country
+  /// purely to satisfy the constructor, then watch the workflow overwrite it.
+  ///
+  /// Null only in the window before the merge. `effectiveCountry` is what the flow
+  /// reads, and the launcher refuses to mount without one.
+  final String? country;
 
   /// Run from a published dashboard workflow (`wf_…`). The SDK resolves it via
   /// `GET /api/kyc/workflows/:id` on launch and the **flow config wins** over
@@ -422,7 +429,7 @@ class MyazaKYCConfig {
 
   const MyazaKYCConfig({
     required this.apiKey,
-    required this.country,
+    this.country,
     this.workflowId,
     this.devUrl,
     this.countries,

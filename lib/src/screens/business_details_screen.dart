@@ -5,6 +5,7 @@ import '../config/business.dart';
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
+import '../providers/step_order.dart' show effectiveCountry;
 import '../widgets/country_flag.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
@@ -33,7 +34,9 @@ class _BusinessDetailsScreenState
 
   WorkflowBusinessConfig get _cfg =>
       ref.read(kycConfigProvider).business ??
-      WorkflowBusinessConfig(country: ref.read(kycConfigProvider).country);
+      WorkflowBusinessConfig(
+        country: effectiveCountry(ref.read(kycConfigProvider), ref.read(kYCNotifierProvider)),
+      );
 
   @override
   void initState() {

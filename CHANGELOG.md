@@ -1,3 +1,26 @@
+## 2.2.0
+
+### `country` is optional when you launch from a workflow
+
+`MyazaKYCConfig.country` was `required` while its own documentation said a
+`workflowId` mount could omit it — so the documented usage did not compile. A
+workflow user had to invent a country purely to satisfy the constructor, then
+watch the resolved flow overwrite it.
+
+It is now optional. Passing one is unchanged; omitting it is only valid
+alongside a `workflowId`, and `MyazaKYC.show` refuses to mount a config that
+reaches it without a country from either source, reporting `onError` with a
+stated reason rather than silently rendering an empty ID-type list.
+
+Everything country-sensitive already read `effectiveCountry(config, state)`;
+the remaining direct reads (business details, contact defaults, the business
+verify payload) now go through it too.
+
+> Existing code is unaffected: `country:` is still accepted exactly as before.
+> The field's type widened from `String` to `String?`, so the rare caller that
+> reads `config.country` back into a non-nullable `String` will need a `?? ''`
+> or a null check.
+
 ## 2.1.0
 
 ### Android document capture rebuilt on native CameraX

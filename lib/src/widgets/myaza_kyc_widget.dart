@@ -173,6 +173,24 @@ class MyazaKYC {
     }
     if (!context.mounted) return;
 
+    // `country` is optional on the config so a workflow mount doesn't have to
+    // invent one — the resolved flow supplies it above. THIS is where that becomes
+    // a guarantee: everything downstream reads `effectiveCountry`, which treats a
+    // country as always present, so a config that reaches the flow without one
+    // would surface as an empty ID-type list rather than a stated problem.
+    //
+    // Only reachable by misconfiguration: no `country` AND no `workflowId`, or a
+    // resolved flow that somehow carries neither (publish rejects a country-less
+    // KYC draft, and a KYB flow's country comes from its business block).
+    if ((effectiveConfig.country ?? '').trim().isEmpty) {
+      onError?.call(const KYCError(
+        code: 'unknown',
+        message: 'No country configured. Pass `country`, or a `workflowId` whose '
+            'published flow carries one.',
+      ));
+      return;
+    }
+
     final overrides = _overridesFor(effectiveConfig, preloaded);
 
     // Android: push a full-screen page modal.

@@ -52,7 +52,7 @@ class ContactChannelSettings {
       required: isPhone ? (phone?.required ?? true) : (email?.required ?? true),
       via: isPhone ? phone?.via : null,
       maxAttempts: isPhone ? phone?.maxAttempts : email?.maxAttempts,
-      defaultCountry: phone?.defaultCountry ?? config.country,
+      defaultCountry: phone?.defaultCountry ?? config.country ?? '',
     );
   }
 }

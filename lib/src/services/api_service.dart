@@ -8,7 +8,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.1.0';
+const String kSdkVersion = '2.2.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 

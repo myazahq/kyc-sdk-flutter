@@ -5,8 +5,14 @@ import 'kyc_state.dart';
 /// (multi-region), else the config's country. Every country-sensitive read
 /// (ID-type filtering, validation, verify payload, liveness gating) goes through
 /// this so a picked country flows through consistently.
+///
+/// Returns non-null: `config.country` is optional only so a `workflowId` mount
+/// need not invent one, and `MyazaKYC.show` refuses to mount without a country
+/// once the workflow has been merged in. The `?? ''` is unreachable in a mounted
+/// flow — it exists so this stays total rather than forcing a bang operator into
+/// every caller.
 String effectiveCountry(MyazaKYCConfig config, KYCState state) =>
-    state.selectedCountry ?? config.country;
+    state.selectedCountry ?? config.country ?? '';
 
 /// Whether the flow offers more than one country (→ a country-select step).
 bool hasCountrySelectStep(MyazaKYCConfig config) =>

@@ -378,7 +378,7 @@ class KYCNotifier extends _$KYCNotifier {
     void Function(int attempt, int total)? onRetry,
   }) async {
     final biz = _config.business;
-    final country = state.businessCountry ?? biz?.country ?? _config.country;
+    final country = state.businessCountry ?? biz?.country ?? effectiveCountry(_config, state);
     final product =
         state.businessProduct ?? (biz?.offeredProducts.first ?? 'business');
     final regNumber = state.registrationNumber?.trim();
