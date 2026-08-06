@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import '../config/id_types.dart';
 import '../config/theme.dart';
 import 'step_header.dart';
 
@@ -54,11 +53,19 @@ class KycBottomSheet extends StatelessWidget {
   /// Org/company name shown beside the logo in the brand bar.
   final String? companyName;
 
-  /// When set, a country flag is shown beside the step title.
-  final Country? country;
+  /// When set (ISO-3166 alpha-2 code), a country flag is shown beside the step
+  /// title.
+  final String? country;
 
   /// The screen content rendered below the header.
   final Widget child;
+
+  /// When true the body is handed the exact remaining height instead of being
+  /// wrapped in a scroll view, so the screen can use [Expanded]/[ListView] and
+  /// own its own scrolling. This is the Flutter equivalent of the web SDK's
+  /// `flex-1 min-h-0` step body — used by long list screens (country select)
+  /// whose list must span the full sheet rather than a fixed fraction of it.
+  final bool fillsViewport;
 
   const KycBottomSheet({
     super.key,
@@ -76,6 +83,7 @@ class KycBottomSheet extends StatelessWidget {
     this.logoAsset,
     this.companyName,
     this.country,
+    this.fillsViewport = false,
     required this.child,
   });
 
@@ -89,10 +97,24 @@ class KycBottomSheet extends StatelessWidget {
             top: Radius.circular(MyazaRadius.xl),
           );
 
+    // Back navigation (Android hardware back + iOS predictive/gesture back) must
+    // walk BACK through the flow one step at a time, not close the SDK. So we
+    // only let the system pop the route when there's nothing to go back to — the
+    // first step (onBack == null) AND the sheet is dismissible. On every other
+    // step we intercept (canPop: false) and route the gesture into onBack
+    // (previousStep). On the terminal / close-disabled step onBack is null and
+    // canPop is false, so the gesture is swallowed — the flow can't be dismissed.
+    // The explicit close (X) button force-pops past this, below.
+    final bool canSystemClose = onBack == null && canDismiss;
+
     return PopScope(
-      canPop: canDismiss,
+      canPop: canSystemClose,
       onPopInvokedWithResult: (didPop, _) {
-        if (didPop) onClose?.call();
+        if (didPop) {
+          onClose?.call();
+          return;
+        }
+        onBack?.call();
       },
       child: Container(
         clipBehavior: Clip.hardEdge,
@@ -159,9 +181,13 @@ class KycBottomSheet extends StatelessWidget {
                         if (canDismiss)
                           _CloseButton(
                             isDark: isDark,
+                            // Explicit close: force-pop past the step-back
+                            // PopScope (canPop is false on mid-flow steps, so
+                            // maybePop would be swallowed there).
                             onTap: () {
-                              Navigator.of(context).maybePop();
                               onClose?.call();
+                              final nav = Navigator.of(context);
+                              if (nav.canPop()) nav.pop();
                             },
                           ),
                       ],
@@ -201,30 +227,67 @@ class KycBottomSheet extends StatelessWidget {
             // actions (e.g. a Column with MainAxisAlignment.spaceBetween, or a
             // button pinned under an Expanded) push those actions to the real
             // bottom of the sheet — while still scrolling when content overflows.
+            // The keyboard inset is applied OUTSIDE the scroll view on purpose:
+            // it shortens the VIEWPORT so its bottom edge sits at the top of
+            // the keyboard. Flutter's focus auto-scroll targets the viewport,
+            // so when the inset was inner content padding the viewport still
+            // ran under the keyboard — a covered field counted as "already
+            // visible" and never scrolled, leaving it (and the step's action
+            // button) behind the keys.
             Expanded(
-              child: LayoutBuilder(
-                builder: (context, constraints) {
+              child: Padding(
+                padding: EdgeInsets.only(
+                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
                   const topPad = MyazaSpacing.md;
-                  final bottomPad = MediaQuery.of(context).viewInsets.bottom +
-                      MediaQuery.of(context).padding.bottom +
+                  // viewInsets is handled above; padding.bottom is already 0
+                  // while the keyboard covers the home indicator.
+                  final bottomPad = MediaQuery.of(context).padding.bottom +
                       MyazaSpacing.xl;
                   final contentMinHeight =
                       (constraints.maxHeight - topPad - bottomPad)
                           .clamp(0.0, double.infinity);
+                  final padding = EdgeInsets.only(
+                    left: MyazaSpacing.md,
+                    right: MyazaSpacing.md,
+                    top: topPad,
+                    bottom: bottomPad,
+                  );
+
+                  // Fill mode: give the screen the remaining height directly so
+                  // it can flex/scroll internally. No outer scroll view, since
+                  // that would hand the child an unbounded height and make
+                  // Expanded impossible.
+                  //
+                  // The bottom inset is deliberately NOT applied here: a list
+                  // that stops short of the screen edge looks clipped on iOS.
+                  // The viewport runs to the bottom and the screen's own list
+                  // carries the home-indicator inset as CONTENT padding, so
+                  // rows scroll fully clear of it. (The keyboard inset is
+                  // already handled by the Padding above.)
+                  if (fillsViewport) {
+                    return Padding(
+                      padding: const EdgeInsets.only(
+                        left: MyazaSpacing.md,
+                        right: MyazaSpacing.md,
+                        top: topPad,
+                      ),
+                      child: child,
+                    );
+                  }
+
                   return SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
-                    padding: EdgeInsets.only(
-                      left: MyazaSpacing.md,
-                      right: MyazaSpacing.md,
-                      top: topPad,
-                      bottom: bottomPad,
-                    ),
+                    padding: padding,
                     child: ConstrainedBox(
                       constraints: BoxConstraints(minHeight: contentMinHeight),
                       child: child,
                     ),
                   );
-                },
+                  },
+                ),
               ),
             ),
           ],

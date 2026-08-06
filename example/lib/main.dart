@@ -29,8 +29,8 @@ class HomeScreen extends StatelessWidget {
         // The environment is derived from the key prefix — a `pk_test_*` key
         // targets staging automatically (no `environment` parameter).
         apiKey: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxx',
-        country: Country.NG,
-        idTypes: [IdType.bvn, IdType.nin, IdType.passport],
+        country: 'NG',
+        idTypes: ['bvn', 'nin', 'passport'],
         enableSelfie: true,
         enableDocumentCapture: true,
         enableLiveness: true,

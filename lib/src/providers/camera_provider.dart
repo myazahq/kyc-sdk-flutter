@@ -80,6 +80,24 @@ class CameraNotifier extends _$CameraNotifier {
   /// Access via `ref.read(cameraNotifierProvider.notifier).controller`.
   CameraController? get controller => _controller;
 
+  /// Freezes/unfreezes auto-exposure.
+  ///
+  /// Used around a flash-liveness sequence: with AE running, the extra light
+  /// from each flash makes the sensor drop its gain, shrinking the very shift
+  /// being measured. Locking holds the ambient exposure so baseline and lit
+  /// frames are comparable.
+  ///
+  /// Best-effort — point metering and mode locking aren't universally
+  /// supported, and a device that refuses just yields a weaker signal.
+  Future<void> setExposureLocked(bool locked) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller
+          .setExposureMode(locked ? ExposureMode.locked : ExposureMode.auto);
+    } catch (_) {/* unsupported on this device — ignore */}
+  }
+
   // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   /// Initialises the camera facing [direction] at the given [resolution].
@@ -126,6 +144,17 @@ class CameraNotifier extends _$CameraNotifier {
       );
 
       await controller.initialize();
+
+      // NOTE: do NOT call controller.lockCaptureOrientation() here. On Android's
+      // camerax backend the preview is two nested RotatedBoxes — CameraPreview's
+      // outer box (device-orientation driven) and the plugin's inner
+      // SurfaceTextureRotatedPreview (= displayRotation − preappliedRotation).
+      // Left alone they CANCEL to a net rotation equal to the DISPLAY rotation.
+      // lockCaptureOrientation freezes only the OUTER box, desyncing the pair so
+      // the net rotation starts following the accelerometer — which is exactly
+      // the "feed rotates after a second" bug. Portrait is instead pinned at the
+      // display level (SystemChrome.setPreferredOrientations in the flow widget),
+      // which keeps displayRotation — and thus the canceled net — at 0/upright.
 
       // Meter exposure + focus on the centre of the frame. The subject (face or
       // document) is always centred, so this stops a bright background (e.g. a
@@ -182,6 +211,21 @@ class CameraNotifier extends _$CameraNotifier {
       direction: next,
       resolution: state.resolution ?? ResolutionPreset.medium,
     );
+  }
+
+  /// Whether this camera can act as a torch. The plugin exposes no capability
+  /// query, so this is "there is a controller" — [setTorch] tolerates a device
+  /// that refuses.
+  bool get hasTorch => _controller?.value.isInitialized == true;
+
+  /// Switches the torch on/off. Best-effort: not every device or lens supports
+  /// it, and a refusal must never break capture.
+  Future<void> setTorch(bool enabled) async {
+    final controller = _controller;
+    if (controller == null || !controller.value.isInitialized) return;
+    try {
+      await controller.setFlashMode(enabled ? FlashMode.torch : FlashMode.off);
+    } catch (_) {/* unsupported on this device — ignore */}
   }
 
   // ── Image stream ───────────────────────────────────────────────────────────

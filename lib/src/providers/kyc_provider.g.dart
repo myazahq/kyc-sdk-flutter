@@ -22,7 +22,7 @@ final kycConfigProvider = Provider<MyazaKYCConfig>.internal(
 @Deprecated('Will be removed in 3.0. Use Ref instead')
 // ignore: unused_element
 typedef KycConfigRef = ProviderRef<MyazaKYCConfig>;
-String _$kYCNotifierHash() => r'2c6c7a08cda938cb715ae1f67cb93d16c04304f2';
+String _$kYCNotifierHash() => r'796041b8f77712c6d2e04171714f38b0ec0e5960';
 
 /// See also [KYCNotifier].
 @ProviderFor(KYCNotifier)

@@ -68,7 +68,7 @@ class LivenessRecorder(
   // Encoder state (guarded on the encoder thread).
   private var encoderThread: HandlerThread? = null
   private var encoderHandler: Handler? = null
-  @Volatile private var encoder: LivenessVideoEncoder? = null
+  @Volatile private var encoder: Mp4FrameEncoder? = null
   @Volatile private var recording = false
   private var videoPath: String? = null
 
@@ -160,7 +160,7 @@ class LivenessRecorder(
           if (enc == null && path != null) {
             try {
               // Rotation is baked in via the muxer orientation hint.
-              enc = LivenessVideoEncoder(w, h, path, sensorRotation)
+              enc = Mp4FrameEncoder(w, h, path, sensorRotation)
               enc.start()
               encoder = enc
             } catch (e: Exception) {
@@ -195,13 +195,14 @@ class LivenessRecorder(
       // face data so the Dart side can drive lighting guidance (the raw frame
       // never reaches Dart on this native-recorder path).
       val luma = meanLuma(nv21, w, h)
+      val rgb = meanRgb(nv21, w, h)
       val image = InputImage.fromByteArray(
         nv21, w, h, rotation, InputImage.IMAGE_FORMAT_NV21,
       )
       detector.process(image)
         .addOnSuccessListener { faces ->
           val face = faces.maxByOrNull { it.boundingBox.width() * it.boundingBox.height() }
-          onFace(face?.let { toPayload(it, w, h, rotation, faces.size, luma) })
+          onFace(face?.let { toPayload(it, w, h, rotation, faces.size, luma, rgb) })
         }
         .addOnFailureListener { onFace(null) }
         .addOnCompleteListener {
@@ -297,7 +298,7 @@ class LivenessRecorder(
     textureEntry = null
   }
 
-  private fun toPayload(face: Face, width: Int, height: Int, rotation: Int, faceCount: Int, brightness: Double): Map<String, Any> {
+  private fun toPayload(face: Face, width: Int, height: Int, rotation: Int, faceCount: Int, brightness: Double, rgb: DoubleArray): Map<String, Any> {
     // After rotation the displayed orientation is portrait; face width relative
     // to the displayed frame. Sensor frames are landscape (rotation 90/270), so
     // portrait-display width maps to the sensor bbox height / sensor height.
@@ -319,12 +320,54 @@ class LivenessRecorder(
       "faceCount" to faceCount,
       // Mean frame luminance (0–255) for lighting guidance.
       "brightness" to brightness,
+      // Mean face-region RGB (0–255 each) — the native-recorder path's frames
+      // never reach Dart, so flash liveness reads its reflection samples from
+      // here (the iOS path samples the CameraImage directly). Center crop
+      // matched to the flash sampler's on both platforms.
+      "rgb" to listOf(rgb[0], rgb[1], rgb[2]),
     )
   }
 
   /** Mean luminance (0–255) of the central frame region, from the NV21 Y plane
    *  (the first width*height bytes). Samples a sparse central grid — cheap, and
    *  mirrors the Dart sampler used on iOS. */
+  /** Mean face-region RGB (0–255 each) of the central 40%×50% crop — the same
+   *  region the flash sampler uses on iOS — converting NV21 YUV→RGB (BT.601)
+   *  per sampled pixel. NV21 = a full-res Y plane (w*h) then interleaved V,U. */
+  private fun meanRgb(nv21: ByteArray, w: Int, h: Int): DoubleArray {
+    if (w <= 0 || h <= 0) return doubleArrayOf(128.0, 128.0, 128.0)
+    val cropW = (w * 0.4).toInt(); val cropH = (h * 0.5).toInt()
+    val x0 = (w - cropW) / 2; val x1 = x0 + cropW
+    val y0 = (h - cropH) / 2; val y1 = y0 + cropH
+    val sx = (cropW / 32).coerceAtLeast(1)
+    val sy = (cropH / 32).coerceAtLeast(1)
+    val ySize = w * h
+    var rt = 0.0; var gt = 0.0; var bt = 0.0; var count = 0
+    var y = y0
+    while (y < y1) {
+      val yRow = y * w
+      val uvRow = ySize + (y / 2) * w
+      var x = x0
+      while (x < x1) {
+        val yi = yRow + x
+        val uvi = uvRow + (x / 2) * 2
+        if (yi < ySize && uvi + 1 < nv21.size) {
+          val yv = (nv21[yi].toInt() and 0xFF).toDouble()
+          val v = (nv21[uvi].toInt() and 0xFF) - 128.0     // NV21: V first
+          val u = (nv21[uvi + 1].toInt() and 0xFF) - 128.0 // then U
+          rt += (yv + 1.370705 * v).coerceIn(0.0, 255.0)
+          gt += (yv - 0.337633 * u - 0.698001 * v).coerceIn(0.0, 255.0)
+          bt += (yv + 1.732446 * u).coerceIn(0.0, 255.0)
+          count++
+        }
+        x += sx
+      }
+      y += sy
+    }
+    return if (count > 0) doubleArrayOf(rt / count, gt / count, bt / count)
+           else doubleArrayOf(128.0, 128.0, 128.0)
+  }
+
   private fun meanLuma(nv21: ByteArray, w: Int, h: Int): Double {
     if (w <= 0 || h <= 0) return 128.0
     val x0 = w / 4; val x1 = w * 3 / 4

@@ -14,19 +14,55 @@ export 'src/config/kyc_config.dart'
         LivenessConfig,
         VoiceGuidanceConfig,
         UserData,
+        WorkflowCountryOption,
         MyazaKYCConfig,
         KYCSubmission,
         KYCError;
 
 export 'src/config/id_types.dart'
     show
-        Country,
-        IdType,
         ScanSides,
         IdTypeConfig,
-        kIdTypesByCountry,
-        getIdTypesForCountry,
-        getIdTypeConfig;
+        kCuratedIdTypes,
+        countryLabel,
+        curatedIdTypesForCountry,
+        curatedIdType,
+        resolveIdTypeDefinition;
+
+export 'src/config/country_names.g.dart' show kCountryNames;
+
+export 'src/config/questionnaire.dart'
+    show
+        QuestionnaireFieldType,
+        QuestionnaireOption,
+        QuestionnaireField,
+        QuestionnaireConfig;
+
+export 'src/config/proof_of_address.dart'
+    show PoaDocumentType, ProofOfAddressConfig;
+
+export 'src/config/contact_verification.dart'
+    show OtpInputStyle, EmailVerificationConfig, PhoneVerificationConfig;
+
+export 'src/config/nfc_config.dart' show NfcConfig;
+
+export 'src/config/business.dart'
+    show
+        BusinessProductInput,
+        BusinessProduct,
+        kBusinessProducts,
+        businessProduct,
+        WorkflowBusinessConfig;
+
+// NFC chip reader — the interface + types are public so hosts can inject a
+// custom/stub reader via `nfcChipReaderOverride` (tests, or a different eMRTD lib).
+export 'src/services/nfc_reader.dart'
+    show
+        NfcMrzKey,
+        NfcChipData,
+        NfcReadException,
+        NfcChipReader,
+        nfcChipReaderOverride;
 
 // Validators — useful for callers who want to pre-validate before calling show()
 export 'src/services/validators.dart'

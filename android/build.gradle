@@ -47,6 +47,11 @@ dependencies {
     // so iOS-simulator builds stay green while Android gets real ML Kit liveness.
     implementation 'com.google.mlkit:face-detection:16.1.6'
 
+    // Native ML Kit text recognition — powers MRZ scanning on the NFC step.
+    // Android-only for the same reason as face detection: no iOS pod (iOS uses
+    // Apple Vision), so simulator builds stay green.
+    implementation 'com.google.mlkit:text-recognition:16.0.1'
+
     // CameraX — used by the native liveness recorder, which runs a single
     // ImageAnalysis stream and fans each frame to BOTH ML Kit (gesture
     // detection) AND a MediaCodec H.264 encoder. This avoids the 3-use-case

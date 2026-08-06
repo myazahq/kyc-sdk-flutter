@@ -14,6 +14,10 @@ import '../config/capture_config.dart';
 import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../liveness/face_detection.dart';
+import '../liveness/capture_tuning.dart';
+import '../liveness/face_rgb_sampler.dart';
+import '../liveness/flash_challenge.dart';
+import '../liveness/flash_detector.dart';
 import '../liveness/liveness_types.dart';
 import '../liveness/native_liveness_recorder.dart';
 import '../providers/camera_provider.dart';
@@ -27,8 +31,11 @@ import '../services/retry.dart';
 import '../utils/permissions.dart';
 import '../widgets/camera_permission_view.dart';
 import '../widgets/camera_permission_priming_view.dart';
+import '../widgets/ready_primer.dart';
+import '../widgets/ready_primer_content.dart';
 import '../widgets/liveness_avatar.dart';
 import '../widgets/myaza_alert.dart';
+import '../widgets/native_camera_preview.dart';
 import '../widgets/myaza_button.dart';
 
 // ─── Liveness screen ──────────────────────────────────────────────────────────
@@ -52,6 +59,17 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
   bool _processing = false;
   bool _capturingHandled = false;
+
+  // Marks the on-screen preview circle so the flash overlay can punch a hole at
+  // its exact position — the real preview shows through, fixed, instead of a
+  // second preview appearing elsewhere and making it jump.
+  final GlobalKey _previewKey = GlobalKey();
+
+  // When a face was last actually detected. Used to refuse a capture when the
+  // face has left — during the flash the fullscreen overlay hides the preview,
+  // so a user who drifts out of frame gets a selfie of nothing, which then
+  // fails facial comparison. Null until the first detection.
+  DateTime? _lastFaceSeenAt;
   bool _completionHandled = false;
   int _sensorOrientation = 0;
   bool _isDim = false;
@@ -68,14 +86,47 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   // Show the "Allow camera access" primer before the OS prompt (Stripe-style),
   // unless the camera is already granted. The camera (and therefore the OS
   // prompt) only starts once the user taps "Grant access".
+  /// Whether the user has acknowledged the "here's what happens next"
+  /// screen. Gates the camera so it never opens unannounced.
+  bool _ready = false;
   bool _showPrimer = false;
 
-  // Latest camera-stream frame (iOS BGRA), cached so the selfie can be encoded
-  // straight from it — avoiding the slow video→photo capture-session switch.
-  Uint8List? _lastFrameBytes;
-  int _lastFrameWidth = 0;
-  int _lastFrameHeight = 0;
-  int _lastFrameStride = 0;
+  // Latest camera-stream frame, kept whole (not just its bytes) so flash
+  // liveness can sample the face region's mean RGB from it (iOS).
+  CameraImage? _latestImage;
+
+  // Latest face-region RGB shipped by the native recorder (Android) — the flash
+  // reflection source there, since the raw frame never reaches Dart.
+  List<double>? _latestNativeRgb;
+
+  /// The per-frame face-region RGB source for the flash, per platform: the
+  /// native recorder's shipped RGB on Android, else sampled from the cached
+  /// CameraImage on iOS.
+  List<double>? _flashRgbSample() {
+    if (_useNativeRecorder) return _latestNativeRgb;
+    final img = _latestImage;
+    return img != null ? sampleFrameRgb(img) : null;
+  }
+
+  /// Fullscreen flash overlay color; null = neutral. A ValueNotifier so painting
+  /// a flash repaints only the overlay — a setState per flash would rebuild the
+  /// camera preview mid-sequence and disturb the very frames being sampled.
+  final ValueNotifier<Color?> _flashColor = ValueNotifier<Color?>(null);
+
+  /// The flash outcome, submitted as the integrity claim. Null = didn't run.
+  FlashResult? _flashResult;
+
+  // The most recent frame DETECTION confirmed holds a face. The selfie (iOS
+  // fast path) is encoded from THIS, not the latest frame — the latest is
+  // already blank the instant the face leaves. Detection lags the stream by
+  // ~100ms, so at capture time the newest frame and the last confirmed-face
+  // frame are different frames; encoding the newest one is how a face pulled
+  // away at the last instant produced a blank selfie. This one always holds a
+  // real face (bounded fresh by the capture gate), never nothing.
+  Uint8List? _lastFaceFrameBytes;
+  int _lastFaceFrameWidth = 0;
+  int _lastFaceFrameHeight = 0;
+  int _lastFaceFrameStride = 0;
 
   bool _isUploadingSelfie = false;
   String? _selfieUploadError;
@@ -101,7 +152,6 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   bool get _useNativeRecorder => Platform.isAndroid;
   NativeLivenessRecorder? _nativeRecorder;
   int? _nativeTextureId;
-  int _nativeRotation = 0;
   int _nativePreviewW = 0;
   int _nativePreviewH = 0;
 
@@ -116,7 +166,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
   /// Show the "Allow camera access" primer before requesting permission, unless
   /// the camera is already granted (in which case we start straight away).
+  /// Re-invoked when the user acknowledges the ready screen — until then the
+  /// camera stays shut, which is the whole point of that screen.
   Future<void> _maybePrime() async {
+    if (!_ready) return;
     if (await hasCameraPermission()) {
       if (!mounted) return;
       _init();
@@ -131,6 +184,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     WidgetsBinding.instance.removeObserver(this);
     _detector.dispose();
     _tts.dispose();
+    _flashColor.dispose();
     _nativeRecorder?.dispose();
     super.dispose();
   }
@@ -154,6 +208,12 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // CameraX's recorder teardown → a fatal "onConfigured in STOPPING state"
     // assertion. So leave Android's camera lifecycle to CameraX.
     if (!Platform.isIOS) return;
+    // Nothing to restore while a pre-camera screen is up — and restoring would
+    // START the camera behind it, which is exactly what those screens exist to
+    // prevent. Backgrounding the app on the ready screen (a notification, an app
+    // switch, the previous step's NFC sheet) used to open the selfie camera with
+    // the primer still on top: filming before the user ever said go.
+    if (!_ready || _showPrimer) return;
     // The system permission prompt also bounces us through inactive→resumed —
     // the in-flight _init() (awaiting initialize()) handles that, so skip while
     // it runs. Don't disturb the selfie-review/complete screen (no live camera).
@@ -302,7 +362,6 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       }
       setState(() {
         _nativeTextureId = textureId;
-        _nativeRotation = recorder.rotationDegrees;
         _nativePreviewW = recorder.previewWidth;
         _nativePreviewH = recorder.previewHeight;
       });
@@ -325,10 +384,12 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     if (!mounted) return;
     final notifier = ref.read(livenessNotifierProvider.notifier);
     if (data != null) {
+      _lastFaceSeenAt = DateTime.now();
       // The native (Android) recorder owns the camera, so the raw frame never
-      // reaches _onCameraImage — it ships the mean luma with the face data so
-      // lighting guidance still works here. (< 0 = not provided.)
+      // reaches _onCameraImage — it ships the mean luma + face-region RGB with
+      // the face data so lighting guidance AND flash liveness work here.
       if (data.brightness >= 0) _checkBrightnessLuma(data.brightness);
+      _latestNativeRgb = data.faceRgb; // flash reflection source on Android
       notifier.processFrame(data);
     } else {
       notifier.reportNoFace();
@@ -341,15 +402,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     if (_processing || !mounted) return;
     _processing = true;
 
-    // Cache the latest frame (iOS: single BGRA plane) so the selfie can be
-    // encoded directly from it at capture time — no slow takePicture/mode-switch.
-    if (_selfieFromCachedFrame && image.planes.isNotEmpty) {
-      final plane = image.planes.first;
-      _lastFrameBytes = plane.bytes;
-      _lastFrameWidth = image.width;
-      _lastFrameHeight = image.height;
-      _lastFrameStride = plane.bytesPerRow;
-    }
+    // Kept whole so flash liveness can sample the face-region RGB. The selfie is
+    // NOT encoded from here — it comes from _lastFaceFrameBytes (the last frame
+    // with a confirmed face), set in the detection callback below.
+    _latestImage = image;
 
     // Sample brightness (throttled to ~800ms). Only update state when it
     // actually changes to avoid unnecessary rebuilds.
@@ -361,6 +417,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       if (!mounted) { _processing = false; return; }
       final notifier = ref.read(livenessNotifierProvider.notifier);
       if (faceData != null) {
+        _lastFaceSeenAt = DateTime.now();
+        // Snapshot THIS frame (the one detection ran on) as the selfie source.
+        // `image` here is the exact frame that was found to contain a face.
+        if (_selfieFromCachedFrame && image.planes.isNotEmpty) {
+          final plane = image.planes.first;
+          _lastFaceFrameBytes = plane.bytes;
+          _lastFaceFrameWidth = image.width;
+          _lastFaceFrameHeight = image.height;
+          _lastFaceFrameStride = plane.bytesPerRow;
+        }
         notifier.processFrame(faceData);
       } else {
         notifier.reportNoFace();
@@ -426,14 +492,182 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     }
   }
 
+  /// Paints the randomized color sequence and correlates the face's reflection.
+  ///
+  /// Never throws and never blocks completion: a null result is submitted as
+  /// "no flash claim" rather than a failure. Ambient light bright enough to
+  /// wash out the reflection is a normal outcome (documented fail-soft), and
+  /// the server independently re-scores the recording either way — so failing
+  /// the user here would lock people out in daylight for no security gain.
+  /// Whether a face has been detected within [within]. Fails closed (no
+  /// detection yet ⇒ false).
+  ///
+  /// Used by the flash-abort with a generous window: a full-screen colour flash
+  /// can make the face momentarily undetectable, and aborting on a single
+  /// dropped frame would be worse than finishing a sequence the face is still
+  /// in.
+  bool _faceRecentlyPresent(Duration within) {
+    final seen = _lastFaceSeenAt;
+    return seen != null && DateTime.now().difference(seen) <= within;
+  }
+
+  /// Waits for a FRESH face detection (one that lands after this call), up to
+  /// [timeout]. Returns false if none arrives.
+  ///
+  /// The capture gate uses this instead of a recency threshold on the last
+  /// timestamp: a stale timestamp from just before the face left could still
+  /// fall inside a short window, and that is exactly the "captured a blank
+  /// selfie" case. Demanding a detection AFTER the flash ends — with the overlay
+  /// gone and detection reliable again — means the face must be there NOW, not
+  /// merely have been there a moment ago.
+  Future<bool> _awaitFreshFace(Duration timeout) async {
+    final since = DateTime.now();
+    final deadline = since.add(timeout);
+    while (mounted && DateTime.now().isBefore(deadline)) {
+      final seen = _lastFaceSeenAt;
+      if (seen != null && seen.isAfter(since)) return true;
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+    }
+    return false;
+  }
+
+  /// Drops back to positioning after the face was lost, instead of capturing an
+  /// empty frame. The camera keeps running, so the user simply re-frames and the
+  /// gate fires again — no teardown, no permission re-prompt.
+  Future<void> _restartAfterFaceLost() async {
+    _capturingHandled = false;
+    _flashResult = null; // a partial flash from the abandoned attempt isn't ours to claim
+    ref.read(livenessNotifierProvider.notifier).reset();
+  }
+
+  /// The preview circle's rect in screen coordinates, for the flash hole. Null
+  /// if it can't be measured (fall back to a plain fullscreen flash).
+  Rect? _previewCircleRect() {
+    final box = _previewKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return null;
+    return box.localToGlobal(Offset.zero) & box.size;
+  }
+
+  Future<void> _runFlashChallenge() async {
+    final config = ref.read(kycConfigProvider);
+    if (!config.livenessMode.runsFlash) return;
+
+    _tts.stop(); // the sequence is visual; spoken guidance would talk over it
+
+    // Painted into the ROOT overlay, above the sheet. The screen is the light
+    // source here, so the color has to fill the display — a fill inside the
+    // sheet's body would leave the status bar and backdrop dark and cut the
+    // emitted light, which is the signal being measured.
+    //
+    // A live preview circle rides ON TOP of the flash so the user can still see
+    // themselves and stay in frame — the fullscreen colour used to blind them,
+    // which is how a drifted face went unnoticed until it captured nothing. The
+    // circle is ~1-2% of the screen, so it barely dents the emitted light, and
+    // because it looks the same in the neutral and lit frames it cancels out of
+    // the baseline-vs-lit comparison rather than corrupting it.
+    final overlay = Overlay.of(context, rootOverlay: true);
+    // Where the real preview circle sits on screen. The flash paints everywhere
+    // EXCEPT here, so the live preview shows through the hole — fixed in place,
+    // never a second preview that jumps in and out (which is what shook).
+    final holeRect = _previewCircleRect();
+    final entry = OverlayEntry(
+      builder: (_) => ValueListenableBuilder<Color?>(
+        valueListenable: _flashColor,
+        builder: (_, color, __) => IgnorePointer(
+          child: color == null
+              ? const SizedBox.shrink()
+              : SizedBox.expand(
+                  child: CustomPaint(
+                    painter: _FlashHolePainter(color: color, hole: holeRect),
+                  ),
+                ),
+        ),
+      ),
+    );
+    overlay.insert(entry);
+
+    // Raise the screen and freeze white balance / exposure BEFORE any sampling.
+    // Auto white balance exists to cancel colour casts, so left running it
+    // erases the reflection we measure; and the screen is the light source, so
+    // a dim display simply produces nothing to measure.
+    final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
+    await beginFlashTuning(
+      lockExposure: () => cameraNotifier.setExposureLocked(true),
+    );
+
+    try {
+      if (!mounted) return;
+      _flashResult = await runFlashChallenge(
+        latestRgb: _flashRgbSample,
+        paint: (color) => _flashColor.value = color,
+        // Per-flow sequence length (default 4), clamped to the palette by
+        // generateFlashSequence.
+        sequence: generateFlashSequence(config.flashSequenceLength),
+        // Abort if the face has been gone for a while — no point flashing at an
+        // empty frame for the full sequence. Generous window so a colour flash
+        // briefly hiding the face doesn't cut a sequence it's still in.
+        // Also stops the moment the session can no longer vouch for who is in
+        // frame — a second face during the flash used to be ignored outright,
+        // which made the one measurement that proves liveness the one moment
+        // anybody could stand in shot.
+        isActive: () =>
+            mounted &&
+            !ref.read(livenessNotifierProvider.notifier).integrityBroken &&
+            _faceRecentlyPresent(const Duration(milliseconds: 1500)),
+      );
+    } finally {
+      _flashColor.value = null;
+      entry.remove();
+      // Unconditional: the user's brightness is theirs, and a still-locked
+      // exposure would degrade the selfie captured moments later.
+      await endFlashTuning(
+        unlockExposure: () => cameraNotifier.setExposureLocked(false),
+      );
+    }
+  }
+
   Future<void> _handleCapture() async {
     if (_capturingHandled) return;
     _capturingHandled = true;
+
+    // Flash liveness runs HERE — after positioning/gestures, before the still,
+    // while the liveness video is recording so the flashes land inside the clip
+    // the server re-scores. Both platforms record continuously by now: iOS via
+    // the gesture recording (since the step opened), Android via the native
+    // CameraX recorder (started at init). _runFlashChallenge no-ops off flash
+    // mode and reads its reflection samples per platform (_flashRgbSample).
+    if (_recordsDuringGestures || _useNativeRecorder) await _runFlashChallenge();
+    if (!mounted) return;
+
+    // A second face appeared while the flash ran. Aborting the flash is not
+    // enough on its own — the still is taken moments later, and capturing it
+    // would attribute somebody else's challenges to whoever is in shot now.
+    final notifier = ref.read(livenessNotifierProvider.notifier);
+    if (notifier.integrityBroken) {
+      _capturingHandled = false;
+      // A partial flash from an attempt we're discarding isn't ours to claim.
+      _flashResult = null;
+      // Report NOW, not during the flash: the overlay is gone, so the screen
+      // can re-lay out without the preview circle sliding away from the hole
+      // that was cut for it.
+      notifier.reportIntegrityFailure();
+      return;
+    }
 
     // Let the face settle after the final gesture (a nod/turn leaves the head
     // still moving for a moment). The frame stream keeps running during this
     // delay, so the cached frame advances to a steadier one before capture.
     await Future<void>.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+
+    // Don't capture an empty frame. The face can leave during the flash and
+    // every branch below would happily save whatever's there. Require a FRESH
+    // detection now — the face must be present at capture time, not merely have
+    // been a moment ago — else drop back to positioning and re-frame.
+    if (!await _awaitFreshFace(const Duration(milliseconds: 1500))) {
+      await _restartAfterFaceLost();
+      return;
+    }
     if (!mounted) return;
 
     // Android native path: grab the selfie still straight from the live analysis
@@ -481,14 +715,17 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // switch was the multi-second stall). The gesture video keeps recording; we
     // stop it in the background after the selfie is shown.
     if (_selfieFromCachedFrame) {
-      final frame = _lastFrameBytes;
+      // The last frame with a CONFIRMED face, not the latest frame — the latest
+      // may be blank if the face just left. The capture gate above guaranteed a
+      // fresh face, so this is both recent AND non-empty.
+      final frame = _lastFaceFrameBytes;
       Uint8List? selfie;
-      if (frame != null && _lastFrameWidth > 0) {
+      if (frame != null && _lastFaceFrameWidth > 0) {
         selfie = await processSelfieFrame(
           bytes: frame,
-          width: _lastFrameWidth,
-          height: _lastFrameHeight,
-          bytesPerRow: _lastFrameStride,
+          width: _lastFaceFrameWidth,
+          height: _lastFaceFrameHeight,
+          bytesPerRow: _lastFaceFrameStride,
           bgra: true,           // iOS stream is BGRA8888
           // The iOS camera plugin already delivers front-camera stream frames
           // mirrored (matching the mirrored preview), so flipping again would
@@ -521,7 +758,14 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       // face rather than the gestures themselves — the working-detection trade.)
       await cameraNotifier.startVideoRecording();
       if (!mounted) return;
-      await Future<void>.delayed(const Duration(seconds: 2));
+      // Flash inside the recording window so the clip carries the sequence the
+      // server verifies. When flash isn't configured this is the original
+      // fixed-length clip.
+      if (ref.read(kycConfigProvider).livenessMode.runsFlash) {
+        await _runFlashChallenge();
+      } else {
+        await Future<void>.delayed(const Duration(seconds: 2));
+      }
       if (!mounted) return;
       final videoPath = await cameraNotifier.stopVideoRecording();
       if (!mounted) return;
@@ -569,6 +813,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   void _handleComplete(String selfieBase64) {
     if (_completionHandled) return;
     _completionHandled = true;
+
+    // Record WHICH liveness method ran and how it went. Submitted with the
+    // verification so the server can re-score the recording against the claimed
+    // flash sequence — without this the capture is unverifiable after the fact.
+    ref.read(kYCNotifierProvider.notifier).setLivenessIntegrity(
+          livenessIntegrityClaim(
+            mode: ref.read(kycConfigProvider).livenessMode,
+            flash: _flashResult,
+          ),
+        );
     // Eagerly upload the selfie (and best-effort liveness video) the moment it's
     // shown, so the network round-trip overlaps the user's review instead of
     // blocking after they tap Continue. Both review buttons are disabled while
@@ -782,6 +1036,18 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       }
     });
 
+    // "Here's what happens next" — shown before the permission primer, so the
+    // selfie camera never opens unannounced.
+    if (!_ready) {
+      return ReadyPrimer(
+        content: readyLiveness,
+        onReady: () {
+          setState(() => _ready = true);
+          _maybePrime(); // now decide: OS prompt, or straight to the camera
+        },
+      );
+    }
+
     // Camera-access primer — shown before the OS prompt (camera not yet started).
     if (_showPrimer) {
       return CameraPermissionPrimingView(
@@ -820,10 +1086,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     }
 
     return _ActiveView(
+      previewKey: _previewKey,
       livenessState: livenessState,
       controller: controller,
       nativeTextureId: _nativeTextureId,
-      nativeRotation: _nativeRotation,
       nativePreviewW: _nativePreviewW,
       nativePreviewH: _nativePreviewH,
       isDim: _isDim,
@@ -1004,12 +1270,12 @@ class _PulseLoader extends StatelessWidget {
 // capturing, complete (selfie review), and failed.
 
 class _ActiveView extends StatelessWidget {
+  final GlobalKey previewKey;
   final LivenessState livenessState;
   final CameraController? controller;
 
   /// Android native CameraX preview texture id (null on iOS / Flutter-camera path).
   final int? nativeTextureId;
-  final int nativeRotation;
   final int nativePreviewW;
   final int nativePreviewH;
   final bool isDim;
@@ -1023,10 +1289,10 @@ class _ActiveView extends StatelessWidget {
   final VoidCallback onDismissUploadError;
 
   const _ActiveView({
+    required this.previewKey,
     required this.livenessState,
     required this.controller,
     required this.nativeTextureId,
-    required this.nativeRotation,
     required this.nativePreviewW,
     required this.nativePreviewH,
     required this.isDim,
@@ -1084,13 +1350,14 @@ class _ActiveView extends StatelessWidget {
         // ── Camera circle ─────────────────────────────────────────────────────
         Center(
           child: _CameraCircle(
+            key: previewKey,
             controller: controller,
             nativeTextureId: nativeTextureId,
-            nativeRotation: nativeRotation,
             nativePreviewW: nativePreviewW,
             nativePreviewH: nativePreviewH,
             phase: phase,
             faceDetected: livenessState.faceDetected,
+            flashReadyProgress: livenessState.flashReadyProgress,
             hasWarning: livenessState.wrongGesture ||
                 livenessState.positionGuidance != null ||
                 livenessState.multipleFaces ||
@@ -1378,7 +1645,6 @@ class _CameraCircle extends StatelessWidget {
 
   /// Android native CameraX preview texture id (null on the Flutter-camera path).
   final int? nativeTextureId;
-  final int nativeRotation;
   final int nativePreviewW;
   final int nativePreviewH;
   final LivenessPhase phase;
@@ -1387,12 +1653,17 @@ class _CameraCircle extends StatelessWidget {
   /// Wrong gesture or wrong distance — turns the ring red (mirrors the web SDK).
   final bool hasWarning;
 
+  /// Flash-only pre-flash dwell, 0..1. Draws a filling ring so the "hold still"
+  /// moment before the screen flashes is visible, not a silent pause.
+  final double flashReadyProgress;
+
   const _CameraCircle({
+    super.key,
     required this.controller,
     required this.phase,
     required this.faceDetected,
+    this.flashReadyProgress = 0,
     this.nativeTextureId,
-    this.nativeRotation = 0,
     this.nativePreviewW = 0,
     this.nativePreviewH = 0,
     this.hasWarning = false,
@@ -1457,9 +1728,8 @@ class _CameraCircle extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (hasNative)
-                _NativePreview(
+                NativeCameraPreview(
                   textureId: nativeTextureId!,
-                  rotationDegrees: nativeRotation,
                   bufferWidth: nativePreviewW,
                   bufferHeight: nativePreviewH,
                 )
@@ -1475,6 +1745,17 @@ class _CameraCircle extends StatelessWidget {
                     color: faceDetected
                         ? MyazaColors.success
                         : colors.gray300,
+                  ),
+                ),
+
+              // Flash-only "getting ready" ring — a solid arc that sweeps as the
+              // pre-flash dwell completes, so the hold reads as progress toward
+              // the flash rather than a stall.
+              if (isReady && flashReadyProgress > 0)
+                CustomPaint(
+                  painter: _ReadyRingPainter(
+                    progress: flashReadyProgress,
+                    color: MyazaColors.success,
                   ),
                 ),
 
@@ -1572,53 +1853,6 @@ class _CameraPreviewFill extends StatelessWidget {
   }
 }
 
-/// Renders the Android native CameraX preview texture upright + cover-fit +
-/// mirrored. The texture carries the raw sensor buffer (landscape); we rotate it
-/// by the sensor rotation to portrait, cover-fit it into the circle, and mirror
-/// horizontally to match a selfie.
-class _NativePreview extends StatelessWidget {
-  final int textureId;
-  final int rotationDegrees;
-  final int bufferWidth;
-  final int bufferHeight;
-
-  const _NativePreview({
-    required this.textureId,
-    required this.rotationDegrees,
-    required this.bufferWidth,
-    required this.bufferHeight,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // CameraX Preview already delivers an UPRIGHT, display-oriented image into
-    // the SurfaceTexture (verified on device: adding any RotatedBox knocked the
-    // face sideways). So we do NOT rotate here — only:
-    //   • cover-fit using the PORTRAIT aspect (the reported buffer dims are the
-    //     sensor's landscape numbers, so swap them for display), which fixes the
-    //     stretched/"fat" look, and
-    //   • mirror horizontally to match a front-camera selfie.
-    final rawW = (bufferWidth > 0 ? bufferWidth : 1280).toDouble();
-    final rawH = (bufferHeight > 0 ? bufferHeight : 720).toDouble();
-    // Display is portrait → the narrower edge is the width.
-    final dispW = rawW < rawH ? rawW : rawH;
-    final dispH = rawW < rawH ? rawH : rawW;
-
-    // No mirror Transform here: CameraX already renders the front-camera Preview
-    // mirrored (selfie-style). Adding our own flip un-mirrored it. Cover-fit at
-    // portrait aspect only.
-    return FittedBox(
-      fit: BoxFit.cover,
-      clipBehavior: Clip.hardEdge,
-      child: SizedBox(
-        width: dispW,
-        height: dispH,
-        child: Texture(textureId: textureId),
-      ),
-    );
-  }
-}
-
 class _CameraPlaceholder extends StatelessWidget {
   final LivenessPhase phase;
 
@@ -1660,6 +1894,81 @@ class _CameraPlaceholder extends StatelessWidget {
       ),
     );
   }
+}
+
+// ─── Flash overlay ────────────────────────────────────────────────────────────
+
+/// Paints the fullscreen flash colour with a circular hole at [hole] (the real
+/// preview's screen rect), so the live preview shows straight through — fixed in
+/// place, never a second preview that pops in at a different spot and shakes.
+///
+/// The hole is a small fraction of the screen, so it barely dents the emitted
+/// light; and because that region looks identical in the neutral and lit frames
+/// it cancels in the reflection measurement rather than skewing it.
+class _FlashHolePainter extends CustomPainter {
+  final Color color;
+  final Rect? hole;
+
+  const _FlashHolePainter({required this.color, required this.hole});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final bounds = Offset.zero & size;
+    final h = hole;
+    if (h == null) {
+      canvas.drawRect(bounds, Paint()..color = color);
+      return;
+    }
+    // saveLayer + BlendMode.clear cuts a real transparent hole so whatever is
+    // BELOW the overlay (the live preview) is revealed, not just painted over.
+    canvas.saveLayer(bounds, Paint());
+    canvas.drawRect(bounds, Paint()..color = color);
+    canvas.drawCircle(
+      h.center,
+      h.width / 2,
+      Paint()..blendMode = BlendMode.clear,
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_FlashHolePainter old) =>
+      old.color != color || old.hole != hole;
+}
+
+// ─── Flash-ready progress ring ────────────────────────────────────────────────
+
+/// A solid arc sweeping clockwise from the top as the pre-flash dwell fills.
+/// Sits just inside the circle's edge so it reads as the ring "charging".
+class _ReadyRingPainter extends CustomPainter {
+  final double progress; // 0..1
+  final Color color;
+
+  const _ReadyRingPainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0) return;
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.0
+      ..strokeCap = StrokeCap.round;
+
+    // Inset by the stroke so the arc sits fully inside the clip.
+    final rect = Rect.fromLTWH(2, 2, size.width - 4, size.height - 4);
+    canvas.drawArc(
+      rect,
+      -math.pi / 2, // 12 o'clock
+      2 * math.pi * progress.clamp(0.0, 1.0),
+      false,
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ReadyRingPainter old) =>
+      old.progress != progress || old.color != color;
 }
 
 // ─── Dashed oval face guide ───────────────────────────────────────────────────

@@ -98,7 +98,11 @@ class NativeLivenessRecorder {
       rightEyeOpenProbability: d('rightEyeOpenProbability'),
       faceSizeRatio: d('faceSizeRatio'),
       faceCount: faceCountRaw is num ? faceCountRaw.toInt() : 1,
+      faceCenterX: (m['faceCenterX'] as num?)?.toDouble(),
+      faceCenterY: (m['faceCenterY'] as num?)?.toDouble(),
+      trackingId: (m['trackingId'] as num?)?.toInt(),
       brightness: m['brightness'] is num ? (m['brightness'] as num).toDouble() : -1,
+      faceRgb: (m['rgb'] as List?)?.map((v) => (v as num).toDouble()).toList(),
     );
   }
 }

@@ -18,8 +18,8 @@ import '../config/kyc_config.dart';
 /// (see the kyc-dashboard environments docs).
 const _baseUrls = <KYCEnvironment, String>{
   // Sandbox and production share the same host; the key prefix selects the env.
-  KYCEnvironment.sandbox: 'https://identity.myaza.app',
-  KYCEnvironment.production: 'https://identity.myaza.app',
+  KYCEnvironment.sandbox: 'https://trust.myaza.app',
+  KYCEnvironment.production: 'https://trust.myaza.app',
 };
 
 /// Default base URL for development keys when no [devUrl] is provided.
@@ -66,4 +66,26 @@ String resolveBaseUrl(String apiKey, {String? devUrl}) {
     return devUrl ?? _defaultDevUrl;
   }
   return _baseUrls[environment]!;
+}
+
+/// Rewrites a server-served absolute URL (e.g. the branding logo) so its HOST
+/// matches the base URL the SDK actually talks to.
+///
+/// The server builds absolute logo/media URLs from its own `PUBLIC_SERVER_URL`,
+/// which can differ from the host the SDK reaches it on — a dev USB tunnel
+/// (`adb reverse` → localhost), a LAN IP vs an mDNS `.local` name, etc. The logo
+/// is served by the SAME server (`/api/kyc/branding/logo/…`), so rebasing its
+/// path onto [baseUrl] makes it load. In production the two hosts already match,
+/// so this is a no-op. Returns the input unchanged if either URL is unparseable.
+String? rebaseServerUrl(String? url, String baseUrl) {
+  if (url == null || url.isEmpty) return url;
+  try {
+    final u = Uri.parse(url);
+    final base = Uri.parse(baseUrl);
+    return base
+        .replace(path: u.path, query: u.hasQuery ? u.query : null)
+        .toString();
+  } catch (_) {
+    return url;
+  }
 }

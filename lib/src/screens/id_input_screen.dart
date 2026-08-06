@@ -6,6 +6,7 @@ import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
+import '../providers/step_order.dart';
 import '../services/validators.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
@@ -39,12 +40,14 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
   }
 
   MyazaKYCConfig get _config => ref.read(kycConfigProvider);
-  IdType? get _idType => ref.read(kYCNotifierProvider).selectedIdType;
+  IdTypeConfig? get _idType => ref.read(kYCNotifierProvider).selectedIdType;
+  String get _country =>
+      effectiveCountry(_config, ref.read(kYCNotifierProvider));
 
   void _onIdChanged(String value) {
     final idType = _idType;
     if (idType == null) return;
-    final result = validateIdNumber(value.trim(), _config.country, idType);
+    final result = validateIdNumber(value.trim(), _country, idType.key);
     setState(() {
       _idError = (result.isValid || value.trim().isEmpty)
           ? null
@@ -56,16 +59,18 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
     final val = _idCtrl.text.trim();
     final idType = _idType;
     if (val.isEmpty || idType == null) return false;
-    return validateIdNumber(val, _config.country, idType).isValid;
+    return validateIdNumber(val, _country, idType.key).isValid;
   }
 
-  TextInputType _keyboardType(IdType idType) => switch (idType) {
-        IdType.bvn || IdType.bvnPremium || IdType.taxId || IdType.nin => TextInputType.number,
+  TextInputType _keyboardType(String key) => switch (key) {
+        'bvn' || 'bvn-premium' || 'tax-id' || 'nin' => TextInputType.number,
         _ => TextInputType.visiblePassword,
       };
 
-  List<TextInputFormatter>? _inputFormatters(IdType idType) => switch (idType) {
-        IdType.bvn || IdType.bvnPremium || IdType.taxId || IdType.nin => [FilteringTextInputFormatter.digitsOnly],
+  List<TextInputFormatter>? _inputFormatters(String key) => switch (key) {
+        'bvn' || 'bvn-premium' || 'tax-id' || 'nin' => [
+            FilteringTextInputFormatter.digitsOnly,
+          ],
         _ => null,
       };
 
@@ -92,9 +97,7 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
   Widget build(BuildContext context) {
     final text   = context.myazaText;
     final state  = ref.watch(kYCNotifierProvider);
-    final idType = state.selectedIdType;
-    final idTypeCfg =
-        idType != null ? getIdTypeConfig(_config.country, idType) : null;
+    final idTypeCfg = state.selectedIdType;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -104,10 +107,13 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
           Text(idTypeCfg.inputLabel ?? idTypeCfg.label, style: text.label),
         const SizedBox(height: MyazaSpacing.sm),
         MyazaInput(
-          hint: _hintFor(idType, idTypeCfg),
+          hint: _hintFor(idTypeCfg),
           controller: _idCtrl,
-          keyboardType: idType != null ? _keyboardType(idType) : TextInputType.text,
-          inputFormatters: idType != null ? _inputFormatters(idType) : null,
+          keyboardType: idTypeCfg != null
+              ? _keyboardType(idTypeCfg.key)
+              : TextInputType.text,
+          inputFormatters:
+              idTypeCfg != null ? _inputFormatters(idTypeCfg.key) : null,
           maxLength: idTypeCfg?.digits,
           errorText: _idError,
           autofocus: true,
@@ -130,8 +136,8 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
 
 // ─── Hint text helper ─────────────────────────────────────────────────────────
 
-String _hintFor(IdType? idType, IdTypeConfig? cfg) {
-  if (idType == null || cfg == null) return 'Enter your ID number';
+String _hintFor(IdTypeConfig? cfg) {
+  if (cfg == null) return 'Enter your ID number';
   final label = cfg.inputLabel ?? cfg.label;
   if (cfg.digits != null) {
     return 'Enter ${cfg.digits}-digit $label';

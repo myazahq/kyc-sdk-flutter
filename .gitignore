@@ -29,3 +29,9 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 /build/
 /coverage/
+
+# Android/Gradle build cache. Gradle rewrites these on every build, so tracking
+# them makes `git pull` abort on any machine that has built the plugin.
+.gradle/
+android/local.properties
+android/.cxx/

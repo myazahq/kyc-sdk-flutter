@@ -37,6 +37,14 @@ void _logSize(String label, int beforeBytes, int afterBytes) {
 /// is unavailable or returns null. [label] is used only for debug logging.
 Future<Uint8List> compressVideoToBytes(String inputPath, {String label = 'video'}) async {
   final originalBytes = await File(inputPath).readAsBytes();
+  // An empty source is never worth compressing OR uploading. A clip whose
+  // encoder never wrote a frame leaves a 0-byte MP4, and every fallback below
+  // returns the original bytes — so without this the empty file is faithfully
+  // carried all the way to the server.
+  if (originalBytes.isEmpty) {
+    _logSize('$label (empty — not uploaded)', 0, 0);
+    return originalBytes;
+  }
   try {
     final info = await VideoCompress.compressVideo(
       inputPath,

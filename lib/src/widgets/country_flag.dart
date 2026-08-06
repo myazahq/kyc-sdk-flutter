@@ -1,8 +1,6 @@
 import 'package:country_flags/country_flags.dart';
 import 'package:flutter/material.dart';
 
-import '../config/id_types.dart';
-
 // ─── Country flag ─────────────────────────────────────────────────────────────
 //
 // Small circular country flag — the Flutter mirror of the web SDK's
@@ -10,8 +8,8 @@ import '../config/id_types.dart';
 // an unknown/null country.
 
 class MyazaCountryFlag extends StatelessWidget {
-  /// The country whose flag to show.
-  final Country? country;
+  /// ISO-3166 alpha-2 code of the country whose flag to show (e.g. `'NG'`).
+  final String? country;
 
   /// Diameter of the circular flag in logical pixels.
   final double size;
@@ -24,8 +22,8 @@ class MyazaCountryFlag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final code = country?.name;
-    if (code == null) return const SizedBox.shrink();
+    final code = country?.toUpperCase();
+    if (code == null || code.isEmpty) return const SizedBox.shrink();
 
     return CountryFlag.fromCountryCode(
       code,

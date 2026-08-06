@@ -6,6 +6,8 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../liveness/challenge_manager.dart';
 import '../liveness/face_detection.dart';
+import '../liveness/flash_ready_gate.dart';
+import '../liveness/face_continuity.dart';
 import '../liveness/liveness_types.dart';
 import '../services/image_service.dart';
 import 'kyc_provider.dart';
@@ -43,8 +45,8 @@ class LivenessState {
   final String? error;
 
   /// Distance guidance — mirrors the web SDK's position check.
-  ///   'too_far'   → face width < 0.2 → "Kindly move closer"
-  ///   'too_close' → face width > 0.7 → "Kindly move further away"
+  ///   'too_far'   → face width < 0.28 → "Kindly move closer"
+  ///   'too_close' → face width > 0.7  → "Kindly move further away"
   ///   null        → correct distance
   /// Checked per-frame during positioning and challenge phases.
   /// Blocks challenge advancement when not null during positioning.
@@ -65,6 +67,11 @@ class LivenessState {
   /// the web SDK's lighting gate.
   final String? lightingGuidance;
 
+  /// Flash-only "hold still" progress, 0..1 across the pre-flash dwell. 0 in
+  /// gesture mode and whenever the hold hasn't started. Drives a subtle
+  /// getting-ready ring so the flash never feels like it jumps out.
+  final double flashReadyProgress;
+
   const LivenessState({
     this.phase = LivenessPhase.loading,
     this.instruction = '',
@@ -79,6 +86,7 @@ class LivenessState {
     this.wrongGesture = false,
     this.multipleFaces = false,
     this.lightingGuidance,
+    this.flashReadyProgress = 0,
   });
 
   double get progress =>
@@ -104,6 +112,7 @@ class LivenessState {
     bool? multipleFaces,
     String? lightingGuidance,
     bool clearLightingGuidance = false,
+    double? flashReadyProgress,
   }) =>
       LivenessState(
         phase: phase ?? this.phase,
@@ -124,6 +133,7 @@ class LivenessState {
         lightingGuidance: clearLightingGuidance
             ? null
             : (lightingGuidance ?? this.lightingGuidance),
+        flashReadyProgress: flashReadyProgress ?? this.flashReadyProgress,
       );
 }
 
@@ -141,16 +151,53 @@ class LivenessNotifier extends _$LivenessNotifier {
   final List<double> _earHistory = []; // eye open probability for blink
   static const int _historySize = 20;
 
+  /// Shown once a flash-only face is framed + lit and the pre-flash hold begins.
+  /// Doubles as the photosensitivity heads-up before the colours appear.
+  static const String _kFlashHoldInstruction =
+      'Hold still — the screen will flash briefly';
+
   bool _challengeProcessing = false;
+
+  /// Tracks that the face performing the challenges is the face still in frame.
+  /// Liveness without it proves a live human was present, not WHICH human.
+  final _continuity = FaceContinuityGuard();
+
+  /// Set when a second face appears at any point from the first challenge
+  /// onwards, INCLUDING during capture. The flash runs in the capturing phase,
+  /// so a guard that stops at capture stops exactly where the measurement that
+  /// matters happens.
+  bool _integrityBroken = false;
+
+  /// True once the session can no longer vouch for who is in frame. The screen
+  /// reads it to abort the flash rather than finish measuring a stranger.
+  bool get integrityBroken => _integrityBroken;
+
+  // Flash-only liveness: the pre-flash "hold still" gate (positioned + lit for a
+  // dwell). Null in gesture / both modes, whose challenges already provide the
+  // framing feedback loop. See FlashReadyGate.
+  FlashReadyGate? _flashGate;
+
+  // Whether the brightness sampler has produced at least one real reading.
+  // Until it has, "no lighting warning" means UNKNOWN, not confirmed-good — so
+  // the flash gate must not treat an unmeasured dim room as acceptable.
+  bool _lightingSampled = false;
 
   @override
   LivenessState build() {
-    final livenessConfig = ref.read(kycConfigProvider).livenessConfig;
+    final config = ref.read(kycConfigProvider);
+    final livenessConfig = config.livenessConfig;
 
-    _manager = ChallengeManager(
-      pool: livenessConfig?.challengePool,
-      count: livenessConfig?.challengeCount ?? 2,
-    );
+    // Flash-only liveness replaces the gesture challenges with the screen's
+    // color sequence, so the state machine runs positioning → capturing and the
+    // flash is performed at the capture seam (see LivenessScreen).
+    final flashOnly = config.livenessMode == 'flash';
+    _flashGate = flashOnly ? FlashReadyGate() : null;
+    _manager = flashOnly
+        ? ChallengeManager.none()
+        : ChallengeManager(
+            pool: livenessConfig?.challengePool,
+            count: livenessConfig?.challengeCount ?? 2,
+          );
 
     ref.onDispose(_cleanup);
 
@@ -163,6 +210,8 @@ class LivenessNotifier extends _$LivenessNotifier {
   /// Call once the camera + ML Kit are ready.
   void startDetection() {
     if (state.phase != LivenessPhase.loading) return;
+    _continuity.reset();
+    _integrityBroken = false;
     state = LivenessState(
       phase: LivenessPhase.positioning,
       instruction: 'Position your face in the circle',
@@ -187,13 +236,35 @@ class LivenessNotifier extends _$LivenessNotifier {
       _onSingleFaceRestored();
     }
 
+    // Same face as a moment ago? Liveness proves a live human performed the
+    // challenges; only continuity ties that human to the one being captured.
+    switch (_continuity.update(data, DateTime.now())) {
+      case FaceContinuity.substituted:
+        _onFaceSubstituted();
+        return;
+      case FaceContinuity.reacquired:
+        // Not proof of anything — people look away — but nothing vouches for
+        // the returning face either, so earned progress does not cross the gap.
+        _onFaceReacquired();
+        return;
+      case FaceContinuity.same:
+        break;
+    }
+
     // Check face size and update position guidance on every frame.
     _checkFacePosition(data.faceSizeRatio);
 
     switch (state.phase) {
       case LivenessPhase.positioning:
-        // Only advance to challenges at the correct distance AND with
-        // acceptable lighting — discourages capture in poor light.
+        final gate = _flashGate;
+        if (gate != null) {
+          _updateFlashReady(gate);
+          return;
+        }
+        // Gesture / both: advance as soon as framed + lit — the challenges
+        // themselves give the feedback and re-check framing. Flash-only can't
+        // rely on that (nothing follows but the flash), so it runs the dwell
+        // gate above instead.
         if (state.positionGuidance == null && state.lightingGuidance == null) {
           _startNextChallenge();
         }
@@ -218,19 +289,98 @@ class LivenessNotifier extends _$LivenessNotifier {
       'Make sure only your face is visible';
 
   void _onMultipleFaces() {
-    // Don't disturb terminal / capture phases.
     if (state.phase == LivenessPhase.complete ||
-        state.phase == LivenessPhase.failed ||
-        state.phase == LivenessPhase.capturing) {
+        state.phase == LivenessPhase.failed) {
+      return;
+    }
+    // CAPTURING is deliberately NOT excused. The flash challenge runs in that
+    // phase, so ignoring a second face there means the one measurement that
+    // proves liveness is the one moment anybody may stand in frame. There is
+    // no useful guidance to show mid-capture, so the session is marked broken
+    // and the screen aborts the flash instead.
+    if (state.phase == LivenessPhase.capturing) {
+      _integrityBroken = true;
       return;
     }
     if (state.multipleFaces) return; // already paused
     // Pause the challenge timer so a second face can't run out the clock.
     _cancelTimer();
+    // A second face invalidates the flash hold — restart it when we're back to
+    // one, rather than resuming a hold that spanned two people.
+    _flashGate?.reset();
     state = state.copyWith(
       multipleFaces: true,
       instruction: multipleFacesGuidance,
       wrongGesture: false,
+      flashReadyProgress: 0,
+    );
+  }
+
+  /// A different face is in frame. Nothing performed so far can be attributed
+  /// to whoever is there now, so the session ends rather than continuing.
+  void _onFaceSubstituted() {
+    if (state.phase == LivenessPhase.complete ||
+        state.phase == LivenessPhase.failed) {
+      return;
+    }
+    _integrityBroken = true;
+    // Mid-capture the verdict is recorded but NOT shown. The flash paints a
+    // full-screen overlay with a hole cut at the preview circle's rect,
+    // measured once when the flash starts; changing the phase here re-lays out
+    // the screen underneath it, the circle moves, and the hole ends up over
+    // nothing. The screen aborts the flash on this flag and reports the failure
+    // once the overlay is gone.
+    if (state.phase == LivenessPhase.capturing) return;
+    _cancelTimer();
+    _flashGate?.reset();
+    state = state.copyWith(
+      phase: LivenessPhase.failed,
+      instruction: 'Let\'s start over — please stay in frame.',
+      error: 'face_swap',
+      clearActiveChallenge: true,
+      clearPositionGuidance: true,
+    );
+  }
+
+  /// Surfaces a failure that was detected mid-flash and deliberately withheld.
+  ///
+  /// Called by the screen once the flash overlay has been removed, so the
+  /// re-layout happens against a plain screen rather than shifting the preview
+  /// circle out from under the overlay's cutout.
+  void reportIntegrityFailure() {
+    if (!_integrityBroken) return;
+    if (state.phase == LivenessPhase.complete) return;
+    _cancelTimer();
+    _flashGate?.reset();
+    state = state.copyWith(
+      phase: LivenessPhase.failed,
+      instruction: 'Let\'s start over — please stay in frame.',
+      error: 'face_swap',
+      clearActiveChallenge: true,
+      clearPositionGuidance: true,
+    );
+  }
+
+  /// The face came back after being away. Restart from positioning: the
+  /// challenges already passed were passed by a face nothing can now vouch for.
+  void _onFaceReacquired() {
+    if (state.phase != LivenessPhase.challenge &&
+        state.phase != LivenessPhase.positioning) {
+      if (state.phase == LivenessPhase.capturing) _integrityBroken = true;
+      return;
+    }
+    _cancelTimer();
+    _flashGate?.reset();
+    _manager.reset();
+    _xHistory.clear();
+    _earHistory.clear();
+    _challengeProcessing = false;
+    state = state.copyWith(
+      phase: LivenessPhase.positioning,
+      instruction: 'Position your face in the circle',
+      completedCount: 0,
+      clearActiveChallenge: true,
+      flashReadyProgress: 0,
     );
   }
 
@@ -259,6 +409,10 @@ class LivenessNotifier extends _$LivenessNotifier {
   /// 'bright', or null (acceptable). While non-null during positioning, the
   /// flow won't start challenges — discouraging capture in poor light.
   void setLightingGuidance(String? guidance) {
+    // The screen only calls this after a genuine brightness reading, so the
+    // first call is proof lighting has been measured — which the flash gate
+    // needs to tell "confirmed OK" apart from "not yet checked".
+    _lightingSampled = true;
     if (guidance == state.lightingGuidance) return;
     // Lighting guidance is only meaningful before/while capturing the selfie.
     if (state.phase == LivenessPhase.complete ||
@@ -278,15 +432,21 @@ class LivenessNotifier extends _$LivenessNotifier {
 
   /// Called when a camera frame produces no faces.
   void reportNoFace() {
+    _continuity.reportNoFace();
     if (!state.faceDetected) return;
     if (state.phase == LivenessPhase.complete ||
         state.phase == LivenessPhase.failed) {
       return;
     }
+    // Losing the face breaks the flash hold — it must be re-earned when the
+    // face returns, not resumed. (reportNoFace clears positionGuidance, which
+    // would otherwise leave `framed` true with no face in the gate.)
+    _flashGate?.reset();
     state = state.copyWith(
       faceDetected: false,
       clearPositionGuidance: true, // no face → no distance guidance
       multipleFaces: false, // no face → certainly not multiple
+      flashReadyProgress: 0,
     );
   }
 
@@ -324,6 +484,13 @@ class LivenessNotifier extends _$LivenessNotifier {
   void reset() {
     _cleanup();
     _manager.reset();
+    _flashGate?.reset();
+    // A retry starts a fresh session: whoever is in frame now becomes the
+    // reference, and the previous attempt's verdict does not carry over.
+    _continuity.reset();
+    _integrityBroken = false;
+    // NOT _lightingSampled — the sampler keeps running across a retry, so
+    // lighting stays confirmed; re-arming it would re-introduce the warmup race.
     _xHistory.clear();
     _earHistory.clear();
     _challengeProcessing = false;
@@ -337,9 +504,10 @@ class LivenessNotifier extends _$LivenessNotifier {
   // ── Internal: face position check ─────────────────────────────────────────
   //
   // Mirrors gesture-detector.ts checkFacePosition() from the web SDK.
-  // Thresholds: < 0.2 = too far, > 0.7 = too close.
-
-  static const double _tooFarThreshold  = 0.20;
+  // Thresholds: < 0.28 = too far, > 0.7 = too close. 0.28 (raised from 0.2) so a
+  // clearly-distant face is prompted to move closer instead of slipping through
+  // — kept in lockstep with the web SDK's MIN_FACE_WIDTH.
+  static const double _tooFarThreshold  = 0.28;
   static const double _tooCloseThreshold = 0.70;
 
   void _checkFacePosition(double faceSizeRatio) {
@@ -370,6 +538,38 @@ class LivenessNotifier extends _$LivenessNotifier {
   }
 
   // ── Internal: challenge transitions ───────────────────────────────────────
+
+  /// Flash-only pre-flash gate: hold a framed + lit face for a short dwell,
+  /// then flash. Keeps the "come closer / more light" guidance visible the
+  /// whole time and shows a "hold still" beat, so the flash never fires off a
+  /// single frame or before lighting has actually been measured.
+  void _updateFlashReady(FlashReadyGate gate) {
+    final framed = state.positionGuidance == null;
+    final lit = state.lightingGuidance == null;
+    final result = gate.update(
+      framed: framed,
+      lit: lit,
+      lightingConfirmed: _lightingSampled,
+      now: DateTime.now(),
+    );
+
+    if (result.ready) {
+      state = state.copyWith(flashReadyProgress: 1);
+      _startNextChallenge(); // → capturing → flash
+      return;
+    }
+
+    // Only overwrite the instruction while the face is actually framed + lit;
+    // otherwise leave the position/lighting guidance to speak for itself.
+    final instruction = (framed && lit) ? _kFlashHoldInstruction : state.instruction;
+    if (state.flashReadyProgress != result.progress ||
+        state.instruction != instruction) {
+      state = state.copyWith(
+        flashReadyProgress: result.progress,
+        instruction: instruction,
+      );
+    }
+  }
 
   void _startNextChallenge() {
     final challenge = _manager.current;

@@ -69,6 +69,15 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
           LucideIcons.scanLine,
           'Capture a photo of your ID document',
         ),
+      // Chip-capable IDs (e-passports, some eID cards) additionally read the
+      // document's NFC chip. Shown when the flow enables NFC so the user knows
+      // to have the physical document to hand — same "what may happen" spirit as
+      // the document/selfie rows (a non-chip ID simply skips it).
+      if (config.nfc?.enabled ?? false)
+        const _ProcessStep(
+          LucideIcons.nfc,
+          'Scan your document’s security chip (NFC)',
+        ),
       if (config.enableSelfie)
         const _ProcessStep(
           LucideIcons.scanFace,

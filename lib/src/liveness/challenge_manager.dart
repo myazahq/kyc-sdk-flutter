@@ -27,6 +27,16 @@ class ChallengeManager {
     return ChallengeManager._(pool: effectivePool, count: clampedCount);
   }
 
+  /// No gesture challenges — flash-only liveness (`livenessMode: 'flash'`),
+  /// where the screen-reflection sequence IS the check.
+  ///
+  /// Deliberately a separate constructor rather than `count: 0`: the factory
+  /// clamps count to at least 1 so a stray `challengeCount: 0` in a consumer's
+  /// config can never silently disable gesture liveness. Skipping gestures has
+  /// to be asked for explicitly.
+  factory ChallengeManager.none() =>
+      ChallengeManager._(pool: const [], count: 0);
+
   ChallengeManager._({required this.pool, required this.count}) {
     _selected = _pickRandom();
   }

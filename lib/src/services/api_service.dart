@@ -8,7 +8,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.0.0';
+const String kSdkVersion = '2.1.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,7 @@ class MediaType {
   static const documentFrontVideo = 'document_front_video';
   static const documentBackVideo = 'document_back_video';
   static const livenessVideo = 'liveness_video';
+  static const proofOfAddress = 'proof_of_address';
 }
 
 /// Response from `POST /api/kyc/upload` — the stored mediaId referenced later
@@ -77,6 +78,7 @@ class VerifyMediaIds {
   final String? documentFrontVideo;
   final String? documentBackVideo;
   final String? livenessVideo;
+  final String? proofOfAddress;
 
   const VerifyMediaIds({
     this.documentFront,
@@ -85,6 +87,7 @@ class VerifyMediaIds {
     this.documentFrontVideo,
     this.documentBackVideo,
     this.livenessVideo,
+    this.proofOfAddress,
   });
 
   Map<String, dynamic> toJson() => {
@@ -94,6 +97,7 @@ class VerifyMediaIds {
         if (documentFrontVideo != null) 'documentFrontVideo': documentFrontVideo,
         if (documentBackVideo != null) 'documentBackVideo': documentBackVideo,
         if (livenessVideo != null) 'livenessVideo': livenessVideo,
+        if (proofOfAddress != null) 'proofOfAddress': proofOfAddress,
       };
 
   bool get isEmpty =>
@@ -102,25 +106,83 @@ class VerifyMediaIds {
       selfie == null &&
       documentFrontVideo == null &&
       documentBackVideo == null &&
-      livenessVideo == null;
+      livenessVideo == null &&
+      proofOfAddress == null;
+}
+
+/// Business (KYB) submission block — the registry lookup inputs. Sent instead of
+/// media; the server derives the subject type from the (required) published KYB
+/// workflow, not this block.
+class VerifyBusiness {
+  final String registrationNumber;
+  final String? registrationName;
+  final String? product;
+
+  const VerifyBusiness({
+    required this.registrationNumber,
+    this.registrationName,
+    this.product,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'registrationNumber': registrationNumber,
+        if (registrationName != null && registrationName!.isNotEmpty)
+          'registrationName': registrationName,
+        if (product != null) 'product': product,
+      };
+}
+
+/// eMRTD chip payload (base64 DG1 + optional EF.SOD + client-reported session
+/// type). Rides the `mediaIds` row json server-side; passive authentication is
+/// server-side (the `chipAuth` flag is informational only).
+class VerifyNfc {
+  final String dg1;
+  final String? sod;
+
+  /// Base64 DG2 (the chip portrait). Authenticated server-side against the SOD's
+  /// DG2 hash; omitted when the portrait couldn't be read.
+  final String? dg2;
+
+  /// STRICTLY `bac` | `pace` | `none` — the server validates it as an enum and
+  /// rejects the whole submission for anything else.
+  final String chipAuth;
+
+  /// Why the session used [chipAuth]. Diagnostic only; free text.
+  final String? paceOutcome;
+  final String? paceDetail;
+
+  const VerifyNfc({
+    required this.dg1,
+    this.sod,
+    this.dg2,
+    this.chipAuth = 'bac',
+    this.paceOutcome,
+    this.paceDetail,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'dg1': dg1,
+        if (sod != null) 'sod': sod,
+        if (dg2 != null) 'dg2': dg2,
+        'chipAuth': chipAuth,
+        if (paceOutcome != null) 'paceOutcome': paceOutcome,
+        if (paceDetail != null) 'paceDetail': paceDetail,
+      };
 }
 
 class VerifyMetadata {
   final String requestId;
-  final String? userId;
   final Map<String, String>? extra;
   final Map<String, dynamic>? device;
 
   const VerifyMetadata({
     required this.requestId,
-    this.userId,
     this.extra,
     this.device,
   });
 
   Map<String, dynamic> toJson() => {
         'requestId': requestId,
-        if (userId != null) 'userId': userId,
         ...?extra,
         if (device != null) 'device': device,
       };
@@ -130,16 +192,64 @@ class VerifyRequest {
   final String country;
   final String idType;
   final String? idNumber;
+
+  /// Attribution to the workflow this submission ran under. The server
+  /// validates-and-drops a stale/foreign id — it never fails the submission.
+  final String? workflowId;
+
+  /// Liveness method (`gestures`/`flash`/`both`) — the server prices by it. Only
+  /// sent for prop-configured mounts; a resolved workflow wins server-side.
+  final String? livenessMode;
+
+  /// The org's user reference → Entity.externalUserId at the seam (not matched).
+  final String? userId;
   final VerifyUserData? userData;
   final VerifyMediaIds? mediaIds;
+
+  /// Questionnaire answers (money fields include their `<key>_currency`
+  /// companion). Validated server-side against the workflow's published
+  /// definition; unknown keys dropped.
+  final Map<String, dynamic>? questionnaire;
+
+  /// The proof-of-address document type (`utility_bill` / `bank_statement` /
+  /// `tenancy_agreement` / `other`), sent alongside `mediaIds.proofOfAddress`.
+  final String? proofOfAddressType;
+
+  /// Device Intelligence toggle — when false the server skips analysis + charge.
+  final bool? deviceIntelligence;
+
+  /// Contact-verification proof tokens (email/phone OTP).
+  final VerifyContact? contact;
+
+  /// eMRTD chip data (base64 DG1 + optional SOD). Dropped by the server for
+  /// non-chip IDs; the SDK also only sends it for chip-capable selected IDs.
+  final VerifyNfc? nfc;
+
+  /// KYB registry block — present for business submissions (`idType` then
+  /// carries the product key).
+  final VerifyBusiness? business;
+
+  /// `'business'` for KYB submissions (omitted for individual). The server
+  /// derives the real subject type from the workflow; this is additive.
+  final String? subjectType;
   final VerifyMetadata metadata;
 
   const VerifyRequest({
     required this.country,
     required this.idType,
     this.idNumber,
+    this.workflowId,
+    this.livenessMode,
+    this.userId,
     this.userData,
     this.mediaIds,
+    this.questionnaire,
+    this.proofOfAddressType,
+    this.deviceIntelligence,
+    this.contact,
+    this.nfc,
+    this.business,
+    this.subjectType,
     required this.metadata,
   });
 
@@ -147,8 +257,21 @@ class VerifyRequest {
         'country': country,
         'idType': idType,
         if (idNumber != null) 'idNumber': idNumber,
+        if (workflowId != null) 'workflowId': workflowId,
+        if (livenessMode != null) 'livenessMode': livenessMode,
+        if (userId != null) 'userId': userId,
         if (userData != null) 'userData': userData!.toJson(),
         if (mediaIds != null && !mediaIds!.isEmpty) 'mediaIds': mediaIds!.toJson(),
+        if (questionnaire != null && questionnaire!.isNotEmpty)
+          'questionnaire': questionnaire,
+        if (proofOfAddressType != null)
+          'proofOfAddressType': proofOfAddressType,
+        if (deviceIntelligence != null)
+          'deviceIntelligence': deviceIntelligence,
+        if (contact != null && !contact!.isEmpty) 'contact': contact!.toJson(),
+        if (nfc != null) 'nfc': nfc!.toJson(),
+        if (business != null) 'business': business!.toJson(),
+        if (subjectType != null) 'subjectType': subjectType,
         'metadata': metadata.toJson(),
       };
 }
@@ -163,6 +286,58 @@ class VerifyResponse {
         verificationId: json['verificationId'] as String,
         status: json['status'] as String,
       );
+}
+
+// ─── Contact verification (email / phone OTP) ────────────────────────────────
+
+/// Response from `POST /api/kyc/contact/send`.
+class ContactSendResponse {
+  final String challengeId;
+  final String? expiresAt;
+  final String? deliveryChannel;
+
+  const ContactSendResponse({
+    required this.challengeId,
+    this.expiresAt,
+    this.deliveryChannel,
+  });
+
+  factory ContactSendResponse.fromJson(Map<String, dynamic> json) =>
+      ContactSendResponse(
+        challengeId: json['challengeId'] as String,
+        expiresAt: json['expiresAt'] as String?,
+        deliveryChannel: json['deliveryChannel'] as String?,
+      );
+}
+
+/// Response from `POST /api/kyc/contact/check` — the single-use proof token.
+class ContactCheckResponse {
+  final bool verified;
+  final String token;
+
+  const ContactCheckResponse({required this.verified, required this.token});
+
+  factory ContactCheckResponse.fromJson(Map<String, dynamic> json) =>
+      ContactCheckResponse(
+        verified: json['verified'] as bool? ?? false,
+        token: json['token'] as String? ?? '',
+      );
+}
+
+/// Contact-verification proof tokens attached to the verify body under
+/// `contact`. Single-use; the server validates + claims them.
+class VerifyContact {
+  final String? emailToken;
+  final String? phoneToken;
+
+  const VerifyContact({this.emailToken, this.phoneToken});
+
+  bool get isEmpty => emailToken == null && phoneToken == null;
+
+  Map<String, dynamic> toJson() => {
+        if (emailToken != null) 'emailToken': emailToken,
+        if (phoneToken != null) 'phoneToken': phoneToken,
+      };
 }
 
 // ─── Status ──────────────────────────────────────────────────────────────────
@@ -287,10 +462,30 @@ class SdkConfigIdType {
   final String idType;
   final SdkIdTypeFeatures features;
 
+  /// Display metadata for pairs the SDK has no curated definition for (Global
+  /// Documents). All nullable — older servers omit them and the resolver falls
+  /// back to a humanized label + document-capture default. See
+  /// [resolveIdTypeDefinition].
+  final String? label;
+  final bool? requiresDocumentCapture;
+
+  /// Raw scan-sides token from the server (`front_only` / `front_and_back`),
+  /// parsed by [parseScanSides] in the resolver.
+  final String? scanSides;
+
+  /// Whether the document carries an eMRTD chip (intrinsic per-ID capability,
+  /// catalogue-driven — not org-gated). Lets the SDK know when to offer the NFC
+  /// chip step.
+  final bool? supportsNfc;
+
   const SdkConfigIdType({
     required this.country,
     required this.idType,
     required this.features,
+    this.label,
+    this.requiresDocumentCapture,
+    this.scanSides,
+    this.supportsNfc,
   });
 
   factory SdkConfigIdType.fromJson(Map<String, dynamic> json) =>
@@ -300,6 +495,10 @@ class SdkConfigIdType {
         features: SdkIdTypeFeatures.fromJson(
           (json['features'] as Map?)?.cast<String, dynamic>() ?? const {},
         ),
+        label: json['label'] as String?,
+        requiresDocumentCapture: json['requiresDocumentCapture'] as bool?,
+        scanSides: json['scanSides'] as String?,
+        supportsNfc: json['supportsNfc'] as bool?,
       );
 }
 
@@ -347,6 +546,112 @@ class SdkConfigResponse {
                 (json['branding'] as Map).cast<String, dynamic>())
             : null,
       );
+}
+
+// ─── Workflow resolution (GET /api/kyc/workflows/:id) ────────────────────────
+
+/// The template config carried by a resolved workflow. Only the keys the
+/// Flutter SDK currently supports are parsed into typed fields; the full
+/// untouched payload is kept in [raw] so later workstreams (country-select,
+/// questionnaire, proof of address, NFC, liveness modes, device intelligence)
+/// can read their keys as they land — no server round-trip changes.
+class WorkflowFlowConfig {
+  final String? subjectType;
+  final String? country;
+  final List<String>? idTypes;
+  final bool? enableSelfie;
+  final bool? enableDocumentCapture;
+  final bool? allowDocumentUpload;
+  final bool? enableLiveness;
+  final bool? showThemeToggle;
+  final bool? disableClose;
+  final Map<String, dynamic>? appearance;
+  final Map<String, dynamic>? consent;
+  final Map<String, dynamic>? success;
+
+  /// `bool` or `{ enabled, language }` — parsed by [VoiceGuidanceConfig.fromDynamic].
+  final Object? voiceGuidance;
+  final Map<String, dynamic> raw;
+
+  const WorkflowFlowConfig({
+    this.subjectType,
+    this.country,
+    this.idTypes,
+    this.enableSelfie,
+    this.enableDocumentCapture,
+    this.allowDocumentUpload,
+    this.enableLiveness,
+    this.showThemeToggle,
+    this.disableClose,
+    this.appearance,
+    this.consent,
+    this.success,
+    this.voiceGuidance,
+    this.raw = const {},
+  });
+
+  factory WorkflowFlowConfig.fromJson(Map<String, dynamic> json) =>
+      WorkflowFlowConfig(
+        subjectType: json['subjectType'] as String?,
+        country: json['country'] as String?,
+        idTypes: (json['idTypes'] as List?)
+            ?.map((e) => e as String)
+            .toList(growable: false),
+        enableSelfie: json['enableSelfie'] as bool?,
+        enableDocumentCapture: json['enableDocumentCapture'] as bool?,
+        allowDocumentUpload: json['allowDocumentUpload'] as bool?,
+        enableLiveness: json['enableLiveness'] as bool?,
+        showThemeToggle: json['showThemeToggle'] as bool?,
+        disableClose: json['disableClose'] as bool?,
+        appearance: (json['appearance'] as Map?)?.cast<String, dynamic>(),
+        consent: (json['consent'] as Map?)?.cast<String, dynamic>(),
+        success: (json['success'] as Map?)?.cast<String, dynamic>(),
+        voiceGuidance: json['voiceGuidance'],
+        raw: json,
+      );
+}
+
+/// Response from `GET /api/kyc/workflows/:id` — one round trip hydrates the SDK
+/// (config + granted idTypes + branding), so `/config` is skipped.
+class WorkflowResolution {
+  final String flowId;
+  final String flowName;
+  final int flowVersion;
+  final WorkflowFlowConfig config;
+  final String environment;
+  final List<SdkConfigIdType> idTypes;
+  final SdkConfigBranding? branding;
+
+  const WorkflowResolution({
+    required this.flowId,
+    required this.flowName,
+    required this.flowVersion,
+    required this.config,
+    required this.environment,
+    required this.idTypes,
+    this.branding,
+  });
+
+  factory WorkflowResolution.fromJson(Map<String, dynamic> json) {
+    final flow = (json['flow'] as Map?)?.cast<String, dynamic>() ?? const {};
+    return WorkflowResolution(
+      flowId: flow['id'] as String? ?? '',
+      flowName: flow['name'] as String? ?? '',
+      flowVersion: (flow['version'] as num?)?.toInt() ?? 0,
+      config: WorkflowFlowConfig.fromJson(
+        (json['config'] as Map?)?.cast<String, dynamic>() ?? const {},
+      ),
+      environment: json['environment'] as String? ?? 'SANDBOX',
+      idTypes: ((json['idTypes'] as List?) ?? const [])
+          .cast<Map<String, dynamic>>()
+          .map(SdkConfigIdType.fromJson)
+          .toList(growable: false),
+      branding: json['branding'] != null
+          ? SdkConfigBranding.fromJson(
+              (json['branding'] as Map).cast<String, dynamic>())
+          : null,
+    );
+  }
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────
@@ -400,6 +705,7 @@ class KYCApiService {
         'image/webp' => 'webp',
         'video/webm' => 'webm',
         'video/mp4' => 'mp4',
+        'application/pdf' => 'pdf',
         _ => 'bin',
       };
       final form = FormData.fromMap({
@@ -470,6 +776,72 @@ class KYCApiService {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/api/kyc/config');
       return SdkConfigResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  // ── Workflow resolution — hydrate the SDK from a published flow ──────────────
+  //
+  // GET /api/kyc/workflows/:id. Auth: publishable key (Bearer pk_*). Returns the
+  // flow config + granted idTypes + branding in one round trip, so /config is
+  // skipped. A wrong org / environment / unpublished / unknown id is a uniform
+  // 404 (mapped to `workflow_not_found` by the server).
+
+  Future<WorkflowResolution> workflow(String workflowId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/kyc/workflows/${Uri.encodeComponent(workflowId)}',
+      );
+      return WorkflowResolution.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  // ── Contact verification — send + check an email/phone OTP ─────────────────
+
+  /// Sends an OTP. [channel] is `email` | `phone`; [via] (`sms`/`whatsapp`) and
+  /// [country] apply to phone. Returns the `challengeId` to check against.
+  Future<ContactSendResponse> contactSend({
+    required String channel,
+    required String destination,
+    String? country,
+    String? via,
+    int? codeLength,
+    int? maxAttempts,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/kyc/contact/send',
+        data: {
+          'channel': channel,
+          'destination': destination,
+          if (country != null) 'country': country,
+          if (via != null) 'via': via,
+          if (codeLength != null) 'codeLength': codeLength,
+          if (maxAttempts != null) 'maxAttempts': maxAttempts,
+        },
+        options: Options(contentType: 'application/json'),
+      );
+      return ContactSendResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Checks an OTP against a challenge. Returns the single-use proof `token`.
+  Future<ContactCheckResponse> contactCheck({
+    required String challengeId,
+    required String code,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/kyc/contact/check',
+        data: {'challengeId': challengeId, 'code': code},
+        options: Options(contentType: 'application/json'),
+      );
+      return ContactCheckResponse.fromJson(response.data!);
     } on DioException catch (e) {
       throw _mapDioError(e);
     }

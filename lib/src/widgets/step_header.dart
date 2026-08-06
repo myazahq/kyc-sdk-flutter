@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../config/id_types.dart';
 import '../config/theme.dart';
 import 'country_flag.dart';
 
@@ -20,8 +19,9 @@ class StepHeader extends StatelessWidget {
   /// Optional trailing widget shown in the header row (e.g. a close button).
   final Widget? trailing;
 
-  /// When set, a small circular country flag is shown beside the title.
-  final Country? country;
+  /// When set (ISO-3166 alpha-2 code), a small circular country flag is shown
+  /// beside the title.
+  final String? country;
 
   const StepHeader({
     super.key,

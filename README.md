@@ -122,8 +122,8 @@ base URL) from the API key prefix, the single source of truth:
 
 | Key prefix | Environment | Base URL |
 |---|---|---|
-| `pk_test_…` / `sk_test_…` | sandbox | `https://identity.myaza.app` |
-| `pk_live_…` / `sk_live_…` | production | `https://identity.myaza.app` |
+| `pk_test_…` / `sk_test_…` | sandbox | `https://trust.myaza.app` |
+| `pk_live_…` / `sk_live_…` | production | `https://trust.myaza.app` |
 
 An unrecognized or malformed key throws an `ArgumentError` from `MyazaKYC.show()`
 (it never silently defaults).
@@ -277,4 +277,4 @@ gallery-upload fallback on that screen as an escape hatch.
 
 ## Documentation
 
-Full documentation, configuration options, and webhook setup: **[identity.myaza.co/documentation/sdks](https://identity.myaza.co/documentation/sdks)**.
+Full documentation, configuration options, and webhook setup: **[trust.myaza.co/documentation/sdks](https://trust.myaza.co/documentation/sdks)**.

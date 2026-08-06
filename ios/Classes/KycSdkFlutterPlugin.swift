@@ -24,6 +24,23 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
       binaryMessenger: registrar.messenger()
     )
     registrar.addMethodCallDelegate(KycSdkFlutterPlugin(), channel: channel)
+
+    // MRZ text recognition rides its own channel (see TextRecognizer.swift).
+    TextRecognizer.register(with: registrar)
+
+    // Document-edge detection for auto-capture (see DocumentDetector.swift).
+    DocumentDetector.register(with: registrar)
+
+    // JPEG 2000 → JPEG, so the passport chip's portrait can be shown
+    // (see ImageDecoder.swift).
+    ImageDecoder.register(with: registrar)
+
+    // Camera authorization, read from AVFoundation rather than
+    // permission_handler (see CameraPermission.swift for why).
+    CameraPermission.register(with: registrar)
+
+    // Screen brightness + AWB/AE lock for flash liveness (see CaptureTuning).
+    CaptureTuning.register(with: registrar)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -114,6 +131,11 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
         fromEAR: Self.eyeAspectRatio(face.landmarks?.rightEye))
       let smile = Self.smileProbability(face.landmarks)
       let faceSizeRatio = Double(face.boundingBox.width)
+      // Centre of the face in normalised frame coordinates. The liveness flow
+      // uses it to tell "the same face moved" from "a different face appeared":
+      // size alone cannot, since two people at the same distance measure alike.
+      let faceCenterX = Double(face.boundingBox.midX)
+      let faceCenterY = Double(face.boundingBox.midY)
 
       let payload: [String: Any] = [
         // NOTE: ML Kit's nod uses headEulerAngleX<0 == looking down. If nod
@@ -125,6 +147,8 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
         "leftEyeOpenProbability": leftOpen,
         "rightEyeOpenProbability": rightOpen,
         "faceSizeRatio": faceSizeRatio,
+        "faceCenterX": faceCenterX,
+        "faceCenterY": faceCenterY,
         // Number of faces in frame — the Dart liveness flow pauses on > 1.
         "faceCount": faces.count,
       ]
@@ -134,7 +158,7 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
 
   // MARK: - Pixel buffer
 
-  private static func makeBGRAPixelBuffer(
+  static func makeBGRAPixelBuffer(
     data: Data, width: Int, height: Int, bytesPerRow: Int
   ) -> CVPixelBuffer? {
     var pb: CVPixelBuffer?

@@ -39,9 +39,9 @@ class LivenessFaceData {
 
   /// Normalized face width relative to the display frame (0.0–1.0).
   /// Mirrors the web SDK's faceWidth metric:
-  ///   < 0.2  → too far   ("Kindly move closer")
+  ///   < 0.28 → too far   ("Kindly move closer")
   ///   > 0.7  → too close ("Kindly move further away")
-  ///   0.2–0.7 → correct distance
+  ///   0.28–0.7 → correct distance
   final double faceSizeRatio;
 
   /// Number of faces the native detector found in the frame. The gesture
@@ -50,11 +50,29 @@ class LivenessFaceData {
   /// to 1 for detectors that don't report a count.
   final int faceCount;
 
+  /// Face centre in normalised frame coordinates (0..1), or null when the
+  /// detector doesn't report it. Together with [faceSizeRatio] this is what
+  /// distinguishes "the same face moved" from "a different face appeared".
+  final double? faceCenterX;
+  final double? faceCenterY;
+
+  /// ML Kit's per-face tracking id (Android only; null on iOS, whose Vision
+  /// framework has no cross-frame equivalent). When present a CHANGE is proof
+  /// of a different face — which is why it supplements the geometric guard
+  /// rather than being relied on alone.
+  final int? trackingId;
+
   /// Mean frame luminance (0–255), or `< 0` when not provided. Supplied by the
   /// Android native recorder (which owns the camera, so the raw frame never
   /// reaches Dart) to drive lighting guidance. iOS computes brightness from the
   /// Flutter-camera frame directly, so it leaves this unset.
   final double brightness;
+
+  /// Mean face-region RGB (`[r, g, b]`, 0–255 each), or null when not provided.
+  /// Supplied by the Android native recorder so flash liveness can read its
+  /// reflection samples here (the raw frame never reaches Dart on that path).
+  /// iOS samples the CameraImage directly and leaves this null.
+  final List<double>? faceRgb;
 
   /// Convenience: average of both eye-open probabilities.
   double get eyeAverageOpenProbability =>
@@ -70,6 +88,10 @@ class LivenessFaceData {
     required this.faceSizeRatio,
     this.faceCount = 1,
     this.brightness = -1,
+    this.faceRgb,
+    this.faceCenterX,
+    this.faceCenterY,
+    this.trackingId,
   });
 }
 
@@ -190,6 +212,9 @@ class NativeFaceDetectorService implements FaceDetectorService {
         faceSizeRatio: d('faceSizeRatio'),
         // Older native plugins don't send a count — default to 1.
         faceCount: faceCountRaw is num ? faceCountRaw.toInt() : 1,
+        faceCenterX: (result['faceCenterX'] as num?)?.toDouble(),
+        faceCenterY: (result['faceCenterY'] as num?)?.toDouble(),
+        trackingId: (result['trackingId'] as num?)?.toInt(),
       );
     } on PlatformException {
       return null;

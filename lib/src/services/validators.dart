@@ -1,5 +1,3 @@
-import '../config/id_types.dart';
-
 // ─── Result type ──────────────────────────────────────────────────────────────
 
 class ValidationResult {
@@ -213,34 +211,38 @@ ValidationResult validateCiResidenceCard(String value) {
 
 // ─── Dispatch helper ──────────────────────────────────────────────────────────
 
-/// Validates [value] for the given [country] + [idType] combination.
-/// Returns [ValidationResult.ok()] if the combination has no format rule.
+/// Validates [value] for the given ISO-2 [country] + [idType] key combination.
+/// Curated (country, idType) pairs get a format-specific rule; any other pair
+/// (Global-Document IDs the SDK has no local rule for) falls back to a
+/// non-empty check, matching the web SDK.
 ValidationResult validateIdNumber(
   String value,
-  Country country,
-  IdType idType,
+  String country,
+  String idType,
 ) {
   return switch ((country, idType)) {
-    (Country.NG, IdType.bvn)            => validateBvn(value),
-    (Country.NG, IdType.bvnPremium)     => validateBvn(value),
+    ('NG', 'bvn')             => validateBvn(value),
+    ('NG', 'bvn-premium')     => validateBvn(value),
     // Tax ID lookups are keyed off the person's NIN — the typed number is a NIN.
-    (Country.NG, IdType.taxId)          => validateNin(value),
-    (Country.NG, IdType.nin)            => validateNin(value),
-    (Country.NG, IdType.vnin)           => validateVnin(value),
-    (Country.NG, IdType.passport)       => validateNgPassport(value),
-    (Country.NG, IdType.driversLicense) => validateNgDriversLicense(value),
-    (Country.NG, IdType.pvc)            => validateNgPvc(value),
-    (Country.GH, IdType.ghanaCard)      => validateGhanaCard(value),
-    (Country.GH, IdType.voters)         => validateGhanaVoters(value),
-    (Country.GH, IdType.driversLicense) => validateGhanaDriversLicense(value),
-    (Country.GH, IdType.ssnit)          => validateGhanaSsnit(value),
-    (Country.GH, IdType.passport)       => validateGhanaPassport(value),
-    (Country.KE, IdType.nationalId)     => validateKeNationalId(value),
-    (Country.KE, IdType.passport)       => validateKePassport(value),
-    (Country.ZA, IdType.nationalId)     => validateZaNationalId(value),
-    (Country.CI, IdType.cni)            => validateCiCni(value),
-    (Country.CI, IdType.residenceCard)  => validateCiResidenceCard(value),
-    _                                   => const ValidationResult.ok(),
+    ('NG', 'tax-id')          => validateNin(value),
+    ('NG', 'nin')             => validateNin(value),
+    ('NG', 'vnin')            => validateVnin(value),
+    ('NG', 'passport')        => validateNgPassport(value),
+    ('NG', 'drivers-license') => validateNgDriversLicense(value),
+    ('NG', 'pvc')             => validateNgPvc(value),
+    ('GH', 'ghana-card')      => validateGhanaCard(value),
+    ('GH', 'voters')          => validateGhanaVoters(value),
+    ('GH', 'drivers-license') => validateGhanaDriversLicense(value),
+    ('GH', 'ssnit')           => validateGhanaSsnit(value),
+    ('GH', 'passport')        => validateGhanaPassport(value),
+    ('KE', 'national-id')     => validateKeNationalId(value),
+    ('KE', 'passport')        => validateKePassport(value),
+    ('ZA', 'national-id')     => validateZaNationalId(value),
+    ('CI', 'cni')             => validateCiCni(value),
+    ('CI', 'residence-card')  => validateCiResidenceCard(value),
+    _ => value.trim().isEmpty
+        ? const ValidationResult.fail('ID number is required')
+        : const ValidationResult.ok(),
   };
 }
 

@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
+
+import '../config/document_guide.dart';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
@@ -411,13 +414,14 @@ Uint8List _cropCardWorker(_CropCardParams p) {
   final ox = (imgW * f - p.viewW) / 2;
   final oy = (imgH * f - p.viewH) / 2;
 
-  // Card guide rect in viewfinder logical pixels (mirrors _CardGuidePainter).
-  const widthFraction = 0.88;
-  final idAspect = p.aspect;
-  final cardW = p.viewW * widthFraction;
-  final cardH = cardW / idAspect;
-  final left = (p.viewW - cardW) / 2;
-  final top  = (p.viewH - cardH) / 2 - 20.0;
+  // Guide rect in viewfinder logical pixels — from the SAME function the
+  // on-screen overlay paints, so the crop can never take a different rectangle
+  // than the one the user framed against.
+  final guide = documentGuideRect(ui.Size(p.viewW, p.viewH), p.aspect);
+  final cardW = guide.width;
+  final cardH = guide.height;
+  final left = guide.left;
+  final top = guide.top;
 
   // Convert to image pixels: logical px → scaled-image px → image px.
   final cropX = ((left + ox) / f).round().clamp(0, decoded.width - 1);
@@ -498,3 +502,66 @@ String stripDataUri(String input) {
   final idx = input.indexOf(',');
   return idx == -1 ? input : input.substring(idx + 1);
 }
+
+// ─── MRZ band ─────────────────────────────────────────────────────────────────
+//
+// The machine-readable zone lives in the bottom band of a passport data page.
+// Handing a general text recogniser the WHOLE page makes it compete with the
+// printed fields, the portrait and the background pattern; handing it just the
+// band, enlarged, is the single biggest thing that makes OCR-B read reliably.
+// The same reasoning as the server's local MRZ scanner, which crops the lower
+// portion and upscales before recognition.
+
+class _MrzBandParams {
+  final Uint8List bytes;
+  final double bandFraction;
+  final int minWidth;
+  const _MrzBandParams(this.bytes, this.bandFraction, this.minWidth);
+}
+
+Uint8List? _mrzBandWorker(_MrzBandParams p) {
+  final img.Image? decoded;
+  try {
+    // Throws rather than returning null on bytes it cannot make sense of. The
+    // band is one extra candidate, never a requirement, so a failure here must
+    // leave the full-frame attempts to run.
+    decoded = img.decodeImage(p.bytes);
+  } catch (_) {
+    return null;
+  }
+  if (decoded == null) return null;
+
+  final bandHeight = (decoded.height * p.bandFraction).round();
+  if (bandHeight <= 0) return null;
+  var band = img.copyCrop(
+    decoded,
+    x: 0,
+    y: decoded.height - bandHeight,
+    width: decoded.width,
+    height: bandHeight,
+  );
+
+  // Upscale a small band: OCR-B at low pixel height is where recognisers give
+  // up, and the cost of resampling is trivial next to a failed read.
+  if (band.width < p.minWidth) {
+    final scale = p.minWidth / band.width;
+    band = img.copyResize(
+      band,
+      width: p.minWidth,
+      height: (band.height * scale).round(),
+      interpolation: img.Interpolation.cubic,
+    );
+  }
+
+  return Uint8List.fromList(img.encodeJpg(band, quality: 92));
+}
+
+/// The bottom [bandFraction] of an image, upscaled to at least [minWidth] —
+/// the strip a passport's machine-readable zone occupies. Returns null when the
+/// image cannot be decoded; callers treat that as "no extra candidate".
+Future<Uint8List?> cropMrzBand(
+  Uint8List bytes, {
+  double bandFraction = 0.42,
+  int minWidth = 1600,
+}) =>
+    compute(_mrzBandWorker, _MrzBandParams(bytes, bandFraction, minWidth));

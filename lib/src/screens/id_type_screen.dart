@@ -3,10 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/id_types.dart';
+import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../providers/kyc_state.dart';
-import '../widgets/myaza_button.dart';
+import '../providers/step_order.dart';
 import '../widgets/myaza_pulse_loader.dart';
 
 // ─── ID type selection screen ─────────────────────────────────────────────────
@@ -22,25 +23,36 @@ class IdTypeScreen extends ConsumerWidget {
     final colors   = context.myazaColors;
     final text     = context.myazaText;
 
-    // Start from the consumer's `idTypes` prop (if any), then intersect with
-    // the server-driven access list. Server is authoritative — IDs not
-    // granted are stripped silently. While the config is loading we render a
-    // placeholder. On error we fall back to the prop list (server still 403s
-    // anything actually disabled, so this is at worst as restrictive as the
-    // server).
-    final propList = getIdTypesForCountry(
-      config.country,
-      allowedTypes: config.idTypes,
-    );
+    // The server's granted list is authoritative — every offered ID is resolved
+    // through [resolveIdTypeDefinition] so Global-Document IDs (no curated
+    // entry) still render from the server row's metadata. The consumer's
+    // `idTypes` prop, when set, narrows the offering by key. While config is
+    // loading we render a placeholder; on error we fall back to the curated
+    // list for the country (server still 403s anything actually disabled).
     final serverConfig = state.serverConfig;
-    final grantedKeys = <String>{
-      for (final row in serverConfig.idTypes)
-        if (row.country == config.country.name) row.idType,
-    };
+    final country = effectiveCountry(config, state);
+    // In a multi-region flow the picked country's own idTypes narrow the list;
+    // otherwise the top-level `idTypes` prop applies. Null/empty = all granted.
+    final propKeys = _countryIdTypeFilter(config, country) ?? config.idTypes;
+    bool allowed(String key) =>
+        propKeys == null || propKeys.isEmpty || propKeys.contains(key);
+
     final available = switch (serverConfig.status) {
-      ServerConfigStatus.ready =>
-        propList.where((t) => grantedKeys.contains(t.key)).toList(),
-      ServerConfigStatus.error => propList,
+      ServerConfigStatus.ready => [
+          for (final row in serverConfig.idTypes)
+            if (row.country == country && allowed(row.idType))
+              resolveIdTypeDefinition(
+                country,
+                row.idType,
+                label: row.label,
+                requiresDocumentCapture: row.requiresDocumentCapture,
+                scanSides: row.scanSides,
+                supportsNfc: row.supportsNfc,
+              ),
+        ],
+      ServerConfigStatus.error => curatedIdTypesForCountry(country)
+          .where((c) => allowed(c.key))
+          .toList(),
       ServerConfigStatus.loading => const <IdTypeConfig>[],
     };
 
@@ -74,27 +86,40 @@ class IdTypeScreen extends ConsumerWidget {
       children: [
         // ── ID type cards ────────────────────────────────────────────────────
         ...available.map((idTypeConfig) {
-          final isSelected = state.selectedIdType == idTypeConfig.idType;
+          final isSelected = state.selectedIdType?.key == idTypeConfig.key;
           return Padding(
             padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
             child: _IdTypeCard(
               config: idTypeConfig,
               isSelected: isSelected,
-              onTap: () => notifier.setIdType(idTypeConfig.idType),
+              // Picking an ID type ADVANCES — there is no Continue button. It's
+              // a single-select list with nothing else on the step to confirm,
+              // so a second tap only restates a decision already made. It also
+              // matches country-select, which advances on tap: one list
+              // advancing and the next not was the inconsistency worth
+              // removing. A mis-tap costs one Back.
+              onTap: () {
+                notifier.setIdType(idTypeConfig);
+                notifier.nextStep();
+              },
             ),
           );
         }),
-
-        const SizedBox(height: MyazaSpacing.lg),
-
-        // ── Continue ─────────────────────────────────────────────────────────
-        MyazaButton(
-          label: 'Continue',
-          onPressed: state.selectedIdType != null ? notifier.nextStep : null,
-        ),
       ],
     );
   }
+}
+
+/// The per-country ID-type filter for a multi-region flow: the picked country's
+/// `idTypes` from the `countries` list. Null for single-country flows (the
+/// top-level `idTypes` prop then applies).
+List<String>? _countryIdTypeFilter(MyazaKYCConfig config, String country) {
+  final countries = config.countries;
+  if (countries == null || countries.length <= 1) return null;
+  for (final opt in countries) {
+    if (opt.country.toUpperCase() == country.toUpperCase()) return opt.idTypes;
+  }
+  return null;
 }
 
 // ─── Individual ID type card ──────────────────────────────────────────────────
@@ -110,22 +135,16 @@ class _IdTypeCard extends StatelessWidget {
     required this.onTap,
   });
 
-  // Same lucide icons as the web SDK's IdTypeStep (ID_TYPE_ICONS).
-  static IconData _iconFor(IdType type) => switch (type) {
-        IdType.bvn            => LucideIcons.landmark, // Bank Verification Number
-        IdType.bvnPremium     => LucideIcons.landmark,
-        IdType.taxId          => LucideIcons.receiptText, // Tax ID (NIN-keyed)
-        IdType.nin            => LucideIcons.fingerprint,
-        IdType.vnin           => LucideIcons.fingerprint,
-        IdType.passport       => LucideIcons.bookUser,
-        IdType.driversLicense => LucideIcons.idCard,
-        IdType.pvc            => LucideIcons.contact, // Permanent Voter's Card
-        IdType.ghanaCard      => LucideIcons.idCard,
-        IdType.voters         => LucideIcons.contact,
-        IdType.ssnit          => LucideIcons.idCard,
-        IdType.nationalId     => LucideIcons.idCard,
-        IdType.cni            => LucideIcons.idCard,
-        IdType.residenceCard  => LucideIcons.idCard,
+  // Same lucide icons as the web SDK's IdTypeStep (ID_TYPE_ICONS). Keyed by the
+  // server ID key so Global-Document IDs get a sensible default icon.
+  static IconData _iconFor(String key) => switch (key) {
+        'bvn' || 'bvn-premium' => LucideIcons.landmark, // Bank Verification
+        'tax-id'               => LucideIcons.receiptText, // Tax ID (NIN-keyed)
+        'nin' || 'vnin'        => LucideIcons.fingerprint,
+        'passport'             => LucideIcons.bookUser,
+        'drivers-license'      => LucideIcons.idCard,
+        'pvc' || 'voters'      => LucideIcons.contact, // Voter's Card
+        _                      => LucideIcons.idCard,
       };
 
   @override
@@ -175,7 +194,7 @@ class _IdTypeCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(MyazaRadius.sm),
                   ),
                   child: Icon(
-                    _iconFor(config.idType),
+                    _iconFor(config.key),
                     size: 22,
                     color: isSelected ? colors.primary : colors.textSecondary,
                   ),
@@ -192,51 +211,20 @@ class _IdTypeCard extends StatelessWidget {
 
                 const SizedBox(width: MyazaSpacing.md),
 
-                // ── Radio circle ─────────────────────────────────────────────
-                _RadioCircle(isSelected: isSelected, colors: colors),
+                // ── Forward chevron ──────────────────────────────────────────
+                // Tapping a row ADVANCES immediately (no Continue button), so
+                // the affordance is a "go to next step" chevron — not a radio,
+                // which would imply a select-then-confirm the flow doesn't have.
+                Icon(
+                  LucideIcons.chevronRight,
+                  size: 20,
+                  color: isSelected ? colors.primary : colors.gray400,
+                ),
               ],
             ),
           ),
         ),
       ),
-    );
-  }
-}
-
-// ─── Radio circle ─────────────────────────────────────────────────────────────
-
-class _RadioCircle extends StatelessWidget {
-  final bool isSelected;
-  final MyazaColorScheme colors;
-
-  const _RadioCircle({required this.isSelected, required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      width: 22,
-      height: 22,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: Colors.transparent,
-        border: Border.all(
-          color: isSelected ? colors.primary : colors.gray300,
-          width: 1.5,
-        ),
-      ),
-      child: isSelected
-          ? Center(
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colors.primary,
-                ),
-              ),
-            )
-          : null,
     );
   }
 }

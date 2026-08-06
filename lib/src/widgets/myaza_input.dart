@@ -93,6 +93,12 @@ class _MyazaInputState extends State<MyazaInput> {
     }
 
     final field = TextField(
+      // Space kept BELOW the caret when the field is auto-scrolled into view on
+      // focus. Flutter's 20px default only guarantees the caret itself clears
+      // the keyboard, which leaves the step's action button hidden right under
+      // it — so reserve roughly a button's height and the gap above it, and the
+      // Continue action scrolls into view along with the field.
+      scrollPadding: const EdgeInsets.only(bottom: 140),
       controller: widget.controller,
       focusNode: widget.focusNode,
       keyboardType: widget.keyboardType,

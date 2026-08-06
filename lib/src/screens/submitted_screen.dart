@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/kyc_config.dart';
 import '../config/theme.dart';
+import '../widgets/check_badge.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/kyc_error_mapper.dart';
@@ -238,7 +239,6 @@ class _SuccessView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.myazaColors;
     final text = context.myazaText;
 
     return Column(
@@ -249,17 +249,7 @@ class _SuccessView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             const SizedBox(height: MyazaSpacing.xl),
-            Center(
-              child: _CheckBadge(colors: colors)
-                  .animate()
-                  .scale(
-                    begin: const Offset(0.4, 0.4),
-                    end: const Offset(1.0, 1.0),
-                    duration: 450.ms,
-                    curve: Curves.easeOutBack,
-                  )
-                  .fadeIn(duration: 200.ms),
-            ),
+            const Center(child: CheckBadge()),
             const SizedBox(height: MyazaSpacing.lg),
             Text(
               title,
@@ -379,36 +369,6 @@ class _ErrorView extends StatelessWidget {
 }
 
 // ─── Check badge ──────────────────────────────────────────────────────────────
-
-class _CheckBadge extends StatelessWidget {
-  final MyazaColorScheme colors;
-
-  const _CheckBadge({required this.colors});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 88,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: colors.successBg,
-        border: Border.all(
-          color: MyazaColors.success.withValues(alpha: 0.3),
-          width: 2,
-        ),
-      ),
-      child: const Icon(
-        Icons.check_rounded,
-        size: 44,
-        color: MyazaColors.success,
-      ),
-    );
-  }
-}
-
-// ─── Error badge ──────────────────────────────────────────────────────────────
-
 class _ErrorBadge extends StatelessWidget {
   final MyazaColorScheme colors;
 

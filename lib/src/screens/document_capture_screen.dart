@@ -1,21 +1,29 @@
 import 'dart:io' show Platform;
+import 'dart:async';
 import 'dart:typed_data';
-import 'dart:ui' as ui;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import '../config/capture_config.dart';
+import '../config/document_guide.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/camera_provider.dart';
+import '../providers/step_order.dart' show effectiveCountry;
+import '../services/document_detection.dart';
+import '../services/document_framing_gate.dart';
+import '../services/document_identity.dart';
+import '../services/document_text_gate.dart';
+import '../services/mrz_extract.dart';
+import '../services/native_document_camera.dart';
+import '../services/text_recognition.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/image_service.dart';
@@ -23,9 +31,14 @@ import '../services/kyc_error_mapper.dart';
 import '../services/media_compress_service.dart';
 import '../services/retry.dart';
 import '../utils/permissions.dart';
+import '../widgets/document_review.dart';
 import '../widgets/camera_permission_view.dart';
 import '../widgets/camera_permission_priming_view.dart';
+import '../widgets/ready_primer.dart';
+import '../widgets/ready_primer_content.dart';
 import '../widgets/myaza_alert.dart';
+import '../widgets/document_cropper.dart';
+import '../widgets/document_viewfinder.dart';
 import '../widgets/myaza_button.dart';
 
 // ─── Scan phase ───────────────────────────────────────────────────────────────
@@ -36,6 +49,12 @@ import '../widgets/myaza_button.dart';
 // review        → both (or all) sides captured; upload runs from Continue
 
 enum _ScanPhase { cameraFront, frontPreview, cameraBack, review }
+
+/// Thrown to skip a side clip that recorded no frames. Caught by the same
+/// best-effort handler that already tolerates a failed video upload.
+class _EmptyClip implements Exception {
+  const _EmptyClip();
+}
 
 // ─── Document capture screen ──────────────────────────────────────────────────
 
@@ -64,6 +83,9 @@ class _DocumentCaptureScreenState
   // Show the "Allow camera access" primer before the OS prompt (Stripe-style),
   // unless the camera is already granted. The camera (and therefore the OS
   // prompt) only starts once the user taps "Grant access".
+  /// Whether the user has acknowledged the "here's what happens next"
+  /// screen. Gates the camera so it never opens unannounced.
+  bool _ready = false;
   bool _showPrimer = false;
 
   // Locally held captures — only uploaded + committed to kycProvider on Continue.
@@ -78,7 +100,61 @@ class _DocumentCaptureScreenState
   String? _frontVideoPath;
   String? _backVideoPath;
 
-  bool _isCapturing = false; // still-photo in progress
+  bool _isCapturing = false;
+
+  // Android's native CameraX camera (see NativeDocumentCamera). Null on iOS and
+  // on the Android fallback, where the Flutter camera plugin drives the feed.
+  NativeDocumentCamera? _nativeCamera;
+  int? _nativeTextureId;
+  int _nativePreviewW = 0;
+  int _nativePreviewH = 0;
+
+  // Set when the native camera failed to start, so the fallback sticks for the
+  // rest of the screen instead of retrying native on every side/retake.
+  bool _nativeFailed = false;
+
+  // Latest identity verdict from text recognition (iOS path). Null means it
+  // could not be established this frame — never a reason to block a capture.
+  DocumentIdentity? _identity;
+
+  // The viewfinder's actual laid-out size, recorded during build. The crop maps
+  // the guide rect back into the still against exactly this box, and in
+  // full-screen mode it is the whole display rather than anything derivable
+  // from a constant — so it is measured, not assumed.
+  Size? _viewfinderSize;
+
+  // Mirrors what we last told the provider, so the flag is only pushed on a
+  // real change (and never from inside build).
+  bool _immersiveWanted = false;
+
+  // Torch state + whether this camera has a flash unit at all.
+  bool _torchOn = false;
+  bool _hasTorch = false;
+
+  // True while the side clip is being restarted — auto-capture must not fire
+  // into that window (see _resumeCaptureForSide).
+  bool _restartingClip = false;
+
+  // Auto-capture: native detector + the framing/stability policy.
+  final _detector = DocumentDetectionService();
+  late final DocumentFramingGate _gate = DocumentFramingGate(
+    // Shape is what stops auto-capture firing on a book or a receipt, so the
+    // gate is built per ID type: a card is 1.586, a passport page 1.42. The
+    // card aspect is the fallback — every document ID uses one of the two, and
+    // the guide the user is aiming at already shows which.
+    expectedAspect: () {
+      final idType = ref.read(kYCNotifierProvider).selectedIdType;
+      return idType == null ? kCardGuideAspect : documentGuideAspect(idType);
+    }(),
+  );
+  // Android has no rectangle detector, so it auto-captures off on-device text
+  // recognition instead (see _detectFrameText / DocumentTextGate).
+  final _textRecognizer = TextRecognitionService();
+  final _textGate = DocumentTextGate();
+
+  DocumentFraming _framing = DocumentFraming.none;
+  DocumentHint _hint = DocumentHint.searching;
+  DateTime _lastDetect = DateTime.fromMillisecondsSinceEpoch(0); // still-photo in progress
   bool _isUploading = false; // upload in progress
 
   String? _uploadError;
@@ -94,9 +170,18 @@ class _DocumentCaptureScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrime());
   }
 
+  /// True while a capture phase is on screen — the phases that need the camera.
+  bool get _inCameraPhase =>
+      _phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack;
+
   /// Show the "Allow camera access" primer before requesting permission, unless
   /// the camera is already granted (in which case we open it straight away).
+  ///
+  /// Re-invoked when the user acknowledges the ready screen: opening the camera
+  /// behind that screen is precisely what it exists to prevent, so while it is
+  /// up this is a no-op.
   Future<void> _maybePrime() async {
+    if (!_ready && _inCameraPhase) return;
     if (await hasCameraPermission()) {
       if (!mounted) return;
       _init();
@@ -109,6 +194,11 @@ class _DocumentCaptureScreenState
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    // The plugin controller is released by the camera provider's onDispose; the
+    // native camera is ours to tear down.
+    final native = _nativeCamera;
+    _nativeCamera = null;
+    if (native != null) unawaited(native.dispose());
     super.dispose();
   }
 
@@ -123,10 +213,15 @@ class _DocumentCaptureScreenState
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (!mounted || state != AppLifecycleState.resumed) return;
-    // iOS only — see LivenessScreen. On Android the CameraX-backed camera plugin
-    // is lifecycle-aware; a manual reinit on resume races CameraX's video
-    // recorder teardown (fatal "onConfigured in STOPPING state" assertion).
+    // iOS only — see LivenessScreen. On Android nothing is re-initialised on
+    // resume: the native camera holds its own CameraX session, which reopens the
+    // device by itself once it's free again (same as the native liveness
+    // recorder), and on the plugin fallback a manual reinit races CameraX's
+    // video recorder teardown (fatal "onConfigured in STOPPING state").
     if (!Platform.isIOS) return;
+    // A pre-camera screen is up — restoring here would open the camera behind
+    // it, which is what those screens exist to prevent. See LivenessScreen.
+    if (!_ready || _showPrimer) return;
     if (_initializing) return;
     if (_phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack) {
       _restartCamera();
@@ -140,6 +235,10 @@ class _DocumentCaptureScreenState
   Future<void> _restartCamera() async {
     if (_initializing || !mounted) return;
     _initializing = true;
+    // Start the settle window here, not only after a capture: on the FIRST
+    // camera open there is no previous shot to reset from, and an unset window
+    // would leave auto-capture disarmed forever.
+    _armedAt = DateTime.now();
     try {
       // Android: explicit permission gate before opening the camera. iOS is
       // left to the camera controller's own denial signal (and avoids needing
@@ -153,6 +252,10 @@ class _DocumentCaptureScreenState
           return;
         }
         if (_permissionDenied) setState(() => _permissionDenied = false);
+
+        // The native camera is Android's normal path; the plugin below is the
+        // fallback if it can't start.
+        if (!_nativeFailed && await _startNativeCamera()) return;
       }
 
       await ref.read(cameraNotifierProvider.notifier).initialize(
@@ -162,9 +265,105 @@ class _DocumentCaptureScreenState
         resolution: CaptureConfig.documentResolution,
       );
       if (!mounted) return;
+      setState(() =>
+          _hasTorch = ref.read(cameraNotifierProvider.notifier).hasTorch);
       await _startVideoRecording();
     } finally {
       _initializing = false;
+    }
+  }
+
+  /// Starts the Android native camera + its first side clip. Returns false when
+  /// it couldn't start, which latches [_nativeFailed] so the caller falls back
+  /// to the Flutter camera plugin for the rest of the screen.
+  Future<bool> _startNativeCamera() async {
+    final camera = NativeDocumentCamera();
+    try {
+      final textureId = await camera.start(onText: _onNativeText);
+      if (!mounted) {
+        unawaited(camera.dispose());
+        return true; // screen is gone; nothing to fall back to
+      }
+      if (textureId < 0) {
+        // Bound without producing a texture — nothing to render, so fall back
+        // rather than showing a dead preview.
+        unawaited(camera.dispose());
+        _nativeFailed = true;
+        return false;
+      }
+      await camera.startRecording();
+      if (!mounted) {
+        unawaited(camera.dispose());
+        return true;
+      }
+      final hasTorch = await camera.hasTorch();
+      if (!mounted) {
+        unawaited(camera.dispose());
+        return true;
+      }
+      setState(() {
+        _hasTorch = hasTorch;
+        _nativeCamera = camera;
+        _nativeTextureId = textureId;
+        _nativePreviewW = camera.previewWidth;
+        _nativePreviewH = camera.previewHeight;
+      });
+      return true;
+    } catch (_) {
+      unawaited(camera.dispose());
+      _nativeFailed = true;
+      return false;
+    }
+  }
+
+  /// Tells the shell whether the full-bleed camera is on screen. Deferred to
+  /// after the frame because it is decided during build, and a provider write
+  /// mid-build would rebuild the tree underneath us.
+  void _syncImmersive(bool wanted) {
+    if (_immersiveWanted == wanted) return;
+    _immersiveWanted = wanted;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(kYCNotifierProvider.notifier).setImmersiveCapture(wanted);
+    });
+  }
+
+  /// Toggles the torch on whichever camera is driving the feed. Best-effort:
+  /// a device that refuses simply stays dark.
+  Future<void> _toggleTorch() async {
+    final next = !_torchOn;
+    setState(() => _torchOn = next);
+    final native = _nativeCamera;
+    if (native != null) {
+      await native.setTorch(next);
+    } else {
+      await ref.read(cameraNotifierProvider.notifier).setTorch(next);
+    }
+  }
+
+  /// Readies the camera for the next side (or a retake).
+  ///
+  /// On the native path the session stays up and only the clip restarts — that
+  /// is what removes the visible camera reload between front and back, which a
+  /// full re-initialisation used to cost on every side change.
+  Future<void> _resumeCaptureForSide() async {
+    final native = _nativeCamera;
+    if (native == null) {
+      await _restartCamera();
+      return;
+    }
+    // Hold auto-capture off until the new clip is live. Without this the gate
+    // can fire in the gap below and stop a clip that has not recorded a single
+    // frame — which is how a fast retake produced an empty side video.
+    _restartingClip = true;
+    try {
+      // A clip may still be open if the user backed out of a side without
+      // capturing; stopping first is a no-op when there isn't one.
+      await native.stopRecording();
+      if (!mounted) return;
+      await native.startRecording();
+    } finally {
+      _restartingClip = false;
     }
   }
 
@@ -174,16 +373,210 @@ class _DocumentCaptureScreenState
   Future<void> _startVideoRecording() async {
     final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
     if (cameraNotifier.isRecordingVideo) return;
-    await cameraNotifier.startVideoRecording();
+    // Frames ride the RECORDING's stream — the camera can't serve a separate
+    // image stream while recording, and the side video is not optional.
+    await cameraNotifier.startVideoRecording(onImage: _onDetectionFrame);
+  }
+
+  // ── Auto-capture ───────────────────────────────────────────────────────────
+  //
+  // Detection is an accelerator, never the only route: the manual shutter stays
+  // live. iOS auto-captures off Apple Vision's rectangle detector; Android off
+  // on-device text recognition (ML Kit) via the text gate — a document is
+  // text-dense, and a valid MRZ is an even stronger signal. If a platform can't
+  // detect, nothing below fires and the manual flow is exactly as it was.
+
+  void _onDetectionFrame(CameraImage image) {
+    if (!mounted || _isCapturing || _isUploading) return;
+    if (_phase != _ScanPhase.cameraFront && _phase != _ScanPhase.cameraBack) {
+      return;
+    }
+    final now = DateTime.now();
+    if (now.difference(_lastDetect) < const Duration(milliseconds: 250)) return;
+    _lastDetect = now;
+    // iOS: Apple Vision rectangle detector. Android: no rectangle detector in ML
+    // Kit, so auto-capture rides on-device TEXT recognition instead — a KYC
+    // document is text-dense, and a check-digit-valid MRZ is an even stronger
+    // "framed & readable" signal (see _detectFrameText).
+    if (Platform.isAndroid) {
+      if (_textRecognizer.isBusy) return;
+      _detectFrameText(image);
+    } else {
+      // iOS runs BOTH checks, so a capture clears the same bar as Android:
+      // Apple Vision's rectangle detector answers "is it framed like a
+      // document", and text recognition answers "is it the RIGHT document" —
+      // which geometry alone cannot, since an aspect ratio cannot tell a
+      // passport from a driver's licence. It also reads the MRZ ahead of the
+      // shutter, so the chip step needs no second scan here either.
+      if (!_textRecognizer.isBusy) unawaited(_updateIdentity(image));
+      if (_detector.isUnsupported || _detector.isBusy) return;
+      _detectFrame(image);
+    }
+  }
+
+  /// iOS: recognize text purely to establish identity (and bank the MRZ). The
+  /// verdict is consumed by [_detectFrame], which owns the framing decision.
+  Future<void> _updateIdentity(CameraImage image) async {
+    final controller = ref.read(cameraNotifierProvider.notifier).controller;
+    final sensor = controller?.description.sensorOrientation ?? 0;
+    final lines =
+        await _textRecognizer.recognize(image, sensorOrientation: sensor);
+    if (!mounted) return;
+
+    // Nothing readable this frame — leave the verdict UNKNOWN rather than
+    // "unidentified". A glossy or badly-lit document that OCR can't read must
+    // not become a document iOS refuses to ever capture.
+    if (lines.isEmpty) {
+      _identity = null;
+      return;
+    }
+
+    final state = ref.read(kYCNotifierProvider);
+    final mrz = extractMrz(lines);
+    final wantsMrz = _wantsMrz;
+    if (mrz != null && wantsMrz && state.mrzScan == null) {
+      ref.read(kYCNotifierProvider.notifier).setMrzScan(mrz);
+    }
+    final idType = state.selectedIdType;
+    if (idType == null) return;
+    _identity = verifyDocumentIdentity(
+      lines,
+      country: effectiveCountry(ref.read(kycConfigProvider), state),
+      idType: idType.key,
+      requireValidMrz: wantsMrz,
+      hasValidMrz: mrz != null,
+      mrzAlreadyCaptured: state.mrzScan != null,
+    );
+  }
+
+  /// Android auto-capture: recognize text on the frame, read the MRZ live (for
+  /// passports — it both stores the chip key and triggers capture), and let the
+  /// text gate decide when a document is framed steadily enough to shoot.
+  Future<void> _detectFrameText(CameraImage image) async {
+    final controller = ref.read(cameraNotifierProvider.notifier).controller;
+    final sensor = controller?.description.sensorOrientation ?? 0;
+    final lines =
+        await _textRecognizer.recognize(image, sensorOrientation: sensor);
+    if (!mounted || _isCapturing) return;
+    await _applyTextLines(lines);
+  }
+
+  /// Same auto-capture decision, fed by the NATIVE camera — which runs ML Kit on
+  /// frames it already owns and streams the recognized lines here, so no camera
+  /// frame crosses the method channel per tick.
+  void _onNativeText(RecognizedFrame frame) {
+    if (!mounted || _isCapturing || _isUploading || _restartingClip) return;
+    if (!_inCameraPhase) return;
+    unawaited(_applyTextLines(frame.lines, bounds: frame.bounds));
+  }
+
+  /// Turns one frame's recognized lines into framing guidance, storing a valid
+  /// MRZ on the way through (the chip key), and fires auto-capture when the gate
+  /// says the document has been held steady enough.
+  Future<void> _applyTextLines(List<String> lines, {Rect? bounds}) async {
+    final state = ref.read(kYCNotifierProvider);
+    final mrz = extractMrz(lines);
+    final wantsMrz = _wantsMrz;
+    if (mrz != null && wantsMrz && state.mrzScan == null) {
+      ref.read(kYCNotifierProvider.notifier).setMrzScan(mrz);
+    }
+
+    final idType = state.selectedIdType;
+    if (idType == null) return;
+    if (kDebugMode && mrz != null && state.mrzScan == null) {
+      debugPrint('[MyazaKYC] MRZ read live during framing');
+    }
+    final guidance = _textGate.update(
+      lines,
+      country: effectiveCountry(ref.read(kycConfigProvider), state),
+      idType: idType.key,
+      textBounds: bounds,
+      // The chip step reads the MRZ off this capture, so don't shoot a frame
+      // whose MRZ we couldn't read — that is what forced a second scan.
+      requireMrz: wantsMrz,
+      // This frame's MRZ vs the session's: a stored MRZ satisfies the chip
+      // step, but only a legible one right now justifies shooting instantly.
+      hasValidMrz: mrz != null,
+      mrzAlreadyCaptured: state.mrzScan != null,
+    );
+    if (guidance.framing != _framing || guidance.hint != _hint) {
+      setState(() {
+        _framing = guidance.framing;
+        _hint = guidance.hint;
+      });
+    }
+    // Armed check LAST, so the gates still guide the user during the settle
+    // window — they simply may not shoot yet.
+    if (guidance.framing == DocumentFraming.ready &&
+        !_isCapturing &&
+        _autoCaptureArmed) {
+      await _onCapture();
+    }
+  }
+
+  /// True when the selected ID carries an MRZ we want to read (a chip-capable
+  /// document with NFC enabled) — the passport case.
+  bool get _wantsMrz {
+    final idType = ref.read(kYCNotifierProvider).selectedIdType;
+    return idType != null &&
+        idType.supportsNfc &&
+        ref.read(kycConfigProvider).nfc?.enabled == true;
+  }
+
+  Future<void> _detectFrame(CameraImage image) async {
+    final detection = await _detector.detect(image);
+    if (!mounted) return;
+    var guidance = _gate.update(
+      detection?.box,
+      brightness: detection?.brightness ?? 0.5,
+    );
+
+    // Framed like a document, but text recognition says it is not the document
+    // the user picked — hold, and say why. A null verdict means identity could
+    // not be established at all this frame, which must not block the shot.
+    final identity = _identity;
+    if (guidance.framing == DocumentFraming.ready &&
+        identity != null &&
+        !identity.identified) {
+      guidance = DocumentGuidance(
+        identity.hint == DocumentHint.wrongDocument
+            ? DocumentFraming.wrongShape
+            : DocumentFraming.adjust,
+        identity.hint,
+      );
+    }
+
+    if (guidance.framing != _framing || guidance.hint != _hint) {
+      setState(() {
+        _framing = guidance.framing;
+        _hint = guidance.hint;
+      });
+    }
+    // Armed check LAST, so the gates still guide the user during the settle
+    // window — they simply may not shoot yet.
+    if (guidance.framing == DocumentFraming.ready &&
+        !_isCapturing &&
+        _autoCaptureArmed) {
+      await _onCapture();
+    }
   }
 
   /// Stops the active recording and stores the file path for the side
   /// currently being captured. Returns silently if no recording is active.
   /// The video is compressed later, at upload time, under the loading state.
   Future<void> _stopAndStoreVideoForCurrentSide() async {
-    final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
-    if (!cameraNotifier.isRecordingVideo) return;
-    final path = await cameraNotifier.stopVideoRecording();
+    final String? path;
+    final native = _nativeCamera;
+    if (native != null) {
+      path = await native.stopRecording();
+    } else {
+      final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
+      if (!cameraNotifier.isRecordingVideo) return;
+      path = await cameraNotifier.stopVideoRecording();
+    }
+    if (kDebugMode) {
+      debugPrint('[MyazaKYC] side clip stored: phase=$_phase path=$path');
+    }
     if (path == null) return;
     if (_phase == _ScanPhase.cameraFront) {
       _frontVideoPath = path;
@@ -195,10 +588,41 @@ class _DocumentCaptureScreenState
   // ── Phase helpers ──────────────────────────────────────────────────────────
 
   bool get _needsBack {
-    final config = ref.read(kycConfigProvider);
-    final idType = ref.read(kYCNotifierProvider).selectedIdType;
-    final cfg = getIdTypeConfig(config.country, idType!);
+    final cfg = ref.read(kYCNotifierProvider).selectedIdType;
     return cfg?.scanSides == ScanSides.frontAndBack;
+  }
+
+  /// Clears the auto-capture latch so the next side (or a retake) starts a
+  /// fresh dwell instead of inheriting the previous shot's "already fired".
+  /// How long after the camera appears before auto-capture may fire.
+  ///
+  /// Without it the shutter can go the instant a document drifts through the
+  /// frame — before the user has the phone where they want it — and the photo
+  /// they get is the one they were still lining up. The gates' own stability
+  /// dwell (~700ms) is about holding STILL, which is a different thing from
+  /// giving someone time to get into position.
+  static const _settleDelay = Duration(milliseconds: 2500);
+
+  DateTime? _armedAt;
+
+  /// False while the camera is still settling — the gates keep measuring and
+  /// guiding, they just may not pull the trigger yet.
+  bool get _autoCaptureArmed {
+    final armed = _armedAt;
+    return armed != null &&
+        DateTime.now().difference(armed) >= _settleDelay;
+  }
+
+  void _resetAutoCapture() {
+    _armedAt = DateTime.now();
+    _gate.reset();
+    _textGate.reset();
+    if (_framing != DocumentFraming.none || _hint != DocumentHint.searching) {
+      setState(() {
+        _framing = DocumentFraming.none;
+        _hint = DocumentHint.searching;
+      });
+    }
   }
 
   void _setPhase(_ScanPhase phase) {
@@ -220,29 +644,44 @@ class _DocumentCaptureScreenState
     setState(() => _isCapturing = true);
 
     try {
-      // Stop recording first — `takePicture` cannot run concurrently with
-      // video recording on Android. Save the recorded bytes so they can be
-      // uploaded alongside the still image on Continue.
-      await _stopAndStoreVideoForCurrentSide();
-      if (!mounted) return;
-
-      final bytes =
-          await ref.read(cameraNotifierProvider.notifier).captureImage();
+      final Uint8List? bytes;
+      final native = _nativeCamera;
+      if (native != null) {
+        // Shoot first: the native still is an independent ImageCapture use case,
+        // so nothing has to be torn down for it and the clip ends up covering
+        // the moment of capture.
+        bytes = await native.captureStill(
+          quality: CaptureConfig.documentImageQuality,
+        );
+        if (!mounted) return;
+        await _stopAndStoreVideoForCurrentSide();
+      } else {
+        // Plugin path: stop recording first — `takePicture` cannot run
+        // concurrently with video recording on Android.
+        await _stopAndStoreVideoForCurrentSide();
+        if (!mounted) return;
+        bytes = await ref.read(cameraNotifierProvider.notifier).captureImage();
+      }
       if (!mounted || bytes == null) {
-        setState(() => _isCapturing = false);
+        if (mounted) _abortCapture();
         return;
       }
 
       // Crop the full camera frame down to the card-guide rectangle.
-      // viewW = screen width minus the bottom sheet's 16 px left+right padding.
+      // viewW = screen width minus the bottom sheet's 16 px left+right padding;
+      // viewH is the shared constant the viewfinder is built from.
       // A large maxBytes keeps the crop at full quality here — the OCR-grade
       // sizing happens in compressDocumentImage below (quality 90, ≥1080 px).
       final idType = ref.read(kYCNotifierProvider).selectedIdType!;
-      final viewW = MediaQuery.of(context).size.width - 2 * MyazaSpacing.md;
+      // Measured during build; the fallback only covers a capture fired before
+      // the first layout, which the shutter and the gate both make impossible.
+      // It mirrors the full-screen layout, so even that path crops the region
+      // the user actually framed.
+      final view = _viewfinderSize ?? MediaQuery.of(context).size;
       final croppedRaw = await cropCardRegionBytes(
         bytes,
-        viewW: viewW,
-        viewH: 300.0,
+        viewW: view.width,
+        viewH: view.height,
         // Mirror the guide aspect so the crop matches what the user framed —
         // taller for passports so the bottom MRZ band isn't cut off.
         aspect: documentGuideAspect(idType),
@@ -257,17 +696,112 @@ class _DocumentCaptureScreenState
           _frontBytes = cropped;
           _isCapturing = false;
         });
+        _maybeReadMrz([bytes, cropped]);
+        _resetAutoCapture();
         _setPhase(_needsBack ? _ScanPhase.frontPreview : _ScanPhase.review);
       } else {
         setState(() {
           _backBytes = cropped;
           _isCapturing = false;
         });
+        _resetAutoCapture();
         _setPhase(_ScanPhase.review);
       }
     } catch (_) {
-      if (mounted) setState(() => _isCapturing = false);
+      if (mounted) _abortCapture();
     }
+  }
+
+  /// Recovers from a shot that produced nothing.
+  ///
+  /// The gate LATCHED when it fired, so it must be reset or the next frame
+  /// re-triggers capture — on the plugin path that was hidden (a failed capture
+  /// also killed the frame stream), but the native camera's analysis stream
+  /// keeps running, which would turn a single failure into a capture loop.
+  void _abortCapture() {
+    _resetAutoCapture();
+    setState(() => _isCapturing = false);
+    // The side clip was closed before the shot — start a fresh one so a retry
+    // still records the side. (The plugin path restores its own recording
+    // through _restartCamera.) Only while a camera phase is actually on screen:
+    // a capture that failed because the screen was leaving would otherwise open
+    // a clip nothing will ever record into.
+    final native = _nativeCamera;
+    if (native != null && _inCameraPhase) unawaited(native.startRecording());
+  }
+
+  // ── MRZ (chip key) read off the captured photo ──────────────────────────────
+  //
+  // The eMRTD chip's BAC key IS the printed MRZ, and the photo page the user
+  // just captured already contains it — so we read it here rather than making
+  // the chip step run a second camera pass. Merging the two is the whole point:
+  // scanning the same document twice is a step users shouldn't have to take.
+  //
+  // Best-effort by contract: the chip step falls back to its own scanner when
+  // this finds nothing (a gallery photo cropped past the MRZ band, a blurry
+  // capture), and a failure here never blocks document capture.
+
+  /// Reads the chip key off the photo just taken, when the live pass didn't
+  /// already have it.
+  ///
+  /// [candidates] are tried in order — the FULL still first, then the cropped
+  /// one. The crop is taken to the guide rectangle, so a document framed a
+  /// little low loses its MRZ band to the crop while the full frame still has
+  /// it; trying only the crop threw away the better image. Whichever hits
+  /// first wins, and failing both simply leaves the chip step to scan for
+  /// itself, exactly as before.
+  void _maybeReadMrz(List<Uint8List> candidates) {
+    final state = ref.read(kYCNotifierProvider);
+    final idType = state.selectedIdType;
+    if (idType == null || !idType.supportsNfc) return;
+    if (ref.read(kycConfigProvider).nfc?.enabled != true) return;
+    if (state.mrzScan != null) return; // already have one
+
+    unawaited(() async {
+      final recognizer = TextRecognitionService();
+
+      // The MRZ band, enlarged, tried FIRST. A general text recogniser handed a
+      // whole data page competes with the printed fields, the portrait and the
+      // security pattern; handed just the strip it needs, at a workable pixel
+      // height, OCR-B reads far more reliably. Failing to produce the crop is
+      // not a failure — the full frames below still get their turn.
+      final ordered = <Uint8List>[];
+      for (final bytes in candidates) {
+        try {
+          final band = await cropMrzBand(bytes);
+          if (band != null) ordered.add(band);
+        } catch (_) {
+          // Never fatal — the full frames below still get their turn.
+        }
+      }
+      ordered.addAll(candidates);
+
+      for (final bytes in ordered) {
+        try {
+          final lines = await recognizer.recognizeBytes(bytes);
+          if (!mounted) return;
+          if (lines.isEmpty) continue;
+          final scan = extractMrz(lines);
+          if (scan == null) {
+            if (kDebugMode) {
+              debugPrint('[MyazaKYC] MRZ: ${lines.length} lines, no valid zone');
+            }
+            continue;
+          }
+          if (kDebugMode) {
+            debugPrint('[MyazaKYC] MRZ read from captured photo');
+          }
+          ref.read(kYCNotifierProvider.notifier).setMrzScan(scan);
+          return;
+        } catch (_) {
+          // Never surfaces — the chip step's own scanner is the fallback.
+        }
+      }
+      if (kDebugMode) {
+        debugPrint('[MyazaKYC] MRZ: not found in the capture — chip step will '
+            'need its own scan');
+      }
+    }());
   }
 
   // ── Upload from gallery (opens interactive cropper before storing) ───────────
@@ -287,7 +821,7 @@ class _DocumentCaptureScreenState
     final cropped = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => _DocumentCropperScreen(imageBytes: rawBytes),
+        builder: (_) => DocumentCropperScreen(imageBytes: rawBytes),
       ),
     );
     if (!mounted || cropped == null) return; // user cancelled
@@ -296,9 +830,14 @@ class _DocumentCaptureScreenState
     try {
       // Stop and discard the in-progress recording — a gallery photo is not
       // a representation of what the camera was filming.
-      final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
-      if (cameraNotifier.isRecordingVideo) {
-        await cameraNotifier.stopVideoRecording();
+      final native = _nativeCamera;
+      if (native != null) {
+        await native.stopRecording();
+      } else {
+        final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
+        if (cameraNotifier.isRecordingVideo) {
+          await cameraNotifier.stopVideoRecording();
+        }
       }
       if (!mounted) return;
 
@@ -312,6 +851,8 @@ class _DocumentCaptureScreenState
           _frontVideoPath = null;
           _isCapturing = false;
         });
+        _maybeReadMrz([compressed]);
+        _resetAutoCapture();
         _setPhase(_needsBack ? _ScanPhase.frontPreview : _ScanPhase.review);
       } else {
         setState(() {
@@ -319,10 +860,14 @@ class _DocumentCaptureScreenState
           _backVideoPath = null;
           _isCapturing = false;
         });
+        _resetAutoCapture();
         _setPhase(_ScanPhase.review);
       }
     } catch (_) {
-      if (mounted) setState(() => _isCapturing = false);
+      if (mounted) {
+        _resetAutoCapture();
+        setState(() => _isCapturing = false);
+      }
     }
   }
 
@@ -330,7 +875,7 @@ class _DocumentCaptureScreenState
 
   void _proceedToBack() {
     _setPhase(_ScanPhase.cameraBack);
-    _restartCamera();
+    unawaited(_resumeCaptureForSide());
   }
 
   /// Reports a denied camera permission to onError exactly once (deferred so it
@@ -356,7 +901,7 @@ class _DocumentCaptureScreenState
       _uploadError = null;
     });
     _setPhase(_ScanPhase.cameraFront);
-    _restartCamera();
+    unawaited(_resumeCaptureForSide());
   }
 
   void _retakeBack() {
@@ -366,7 +911,7 @@ class _DocumentCaptureScreenState
       _uploadError = null;
     });
     _setPhase(_ScanPhase.cameraBack);
-    _restartCamera();
+    unawaited(_resumeCaptureForSide());
   }
 
   // ── Continue — upload to /api/kyc/upload, then advance ────────────────────
@@ -405,6 +950,9 @@ class _DocumentCaptureScreenState
             label: 'document front video',
           );
           if (!mounted) return;
+          // The side clip is best-effort — an empty one is simply no clip, and
+          // uploading zero bytes would be worse than omitting it.
+          if (frontVideoBytes.isEmpty) throw const _EmptyClip();
           final frontVideoMediaId = await withRetry(
             () => api.upload(frontVideoBytes, 'video/mp4', MediaType.documentFrontVideo),
           );
@@ -431,6 +979,9 @@ class _DocumentCaptureScreenState
             label: 'document back video',
           );
           if (!mounted) return;
+          // The side clip is best-effort — an empty one is simply no clip, and
+          // uploading zero bytes would be worse than omitting it.
+          if (backVideoBytes.isEmpty) throw const _EmptyClip();
           final backVideoMediaId = await withRetry(
             () => api.upload(backVideoBytes, 'video/mp4', MediaType.documentBackVideo),
           );
@@ -470,14 +1021,49 @@ class _DocumentCaptureScreenState
     final kycState     = ref.watch(kYCNotifierProvider);
     final cameraState  = ref.watch(cameraNotifierProvider);
     final controller   = ref.read(cameraNotifierProvider.notifier).controller;
-    final config       = ref.read(kycConfigProvider);
-    final idTypeConfig = getIdTypeConfig(config.country, kycState.selectedIdType!)!;
+    final idTypeConfig = kycState.selectedIdType!;
 
     // Camera permission denied during a capture phase — show a dedicated screen.
     // Document capture still offers a gallery-upload fallback, so we surface that
     // as a secondary action. onError is reported once.
-    final inCameraPhase =
-        _phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack;
+    final inCameraPhase = _inCameraPhase;
+
+    // The full-bleed camera is on screen only for the capture phases, and only
+    // once the primer and permission screens are out of the way — those, the
+    // preview and the review all keep the sheet's chrome.
+    _syncImmersive(inCameraPhase &&
+        _ready &&
+        !_showPrimer &&
+        !(cameraState.isPermissionDenied || _permissionDenied));
+
+    // "Here's what happens next" — shown before the permission primer, so the
+    // viewfinder never appears unannounced. Ordering matters: what we're about
+    // to do, THEN the OS prompt.
+    if (!_ready && inCameraPhase) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The web shows which document is expected on this screen too — it
+          // is the last point before the camera where the user can still go
+          // back and pick a different ID.
+          _RequiredPill(idTypeLabel: idTypeConfig.label),
+          const SizedBox(height: MyazaSpacing.md),
+          // Expanded, because the step now fills the viewport rather than
+          // sitting inside the sheet's scroll view: the primer scrolls itself,
+          // and an unbounded child in a bounded Column overflows instead of
+          // scrolling — which is exactly how it broke on a short screen.
+          Expanded(
+            child: ReadyPrimer(
+              content: readyDocument,
+              onReady: () {
+                setState(() => _ready = true);
+                _maybePrime(); // now: OS prompt, or straight to the camera
+              },
+            ),
+          ),
+        ],
+      );
+    }
 
     // Camera-access primer — shown before the OS prompt (camera not yet started).
     if (_showPrimer && inCameraPhase) {
@@ -518,8 +1104,11 @@ class _DocumentCaptureScreenState
     return switch (_phase) {
       _ScanPhase.cameraFront || _ScanPhase.cameraBack => _buildCamera(
           controller: cameraState.isReady ? controller : null,
-          isLoading: cameraState.isLoading,
-          error: cameraState.error,
+          // Native and plugin never run together — a live texture means the
+          // native camera owns the feed and the plugin state is irrelevant.
+          isLoading: _nativeTextureId == null &&
+              (cameraState.isLoading || _initializing),
+          error: _nativeTextureId == null ? cameraState.error : null,
           phase: _phase,
           idTypeConfig: idTypeConfig,
           isTwoSided: _needsBack,
@@ -540,95 +1129,63 @@ class _DocumentCaptureScreenState
     required bool isTwoSided,
   }) {
     final isBack = phase == _ScanPhase.cameraBack;
-    final sideHint = isTwoSided
-        ? (isBack ? ' — back side' : ' — front side')
-        : '';
-    final isReady = controller != null;
+    final nativeTextureId = _nativeTextureId;
+    final isReady = nativeTextureId != null || controller != null;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // ── Subtitle + required pill ─────────────────────────────────────────
-        Text(
-          'Photograph your ${idTypeConfig.label}$sideHint — position it within the frame and hold steady.',
-          style: context.myazaText.bodyMedium,
-        ),
-        const SizedBox(height: MyazaSpacing.sm),
-        _RequiredPill(
-          idTypeLabel: idTypeConfig.label,
-          sideBadge: isTwoSided ? (isBack ? 'Back Side' : 'Front Side') : null,
-          stepLabel: isTwoSided ? (isBack ? 'Step 2 of 2' : 'Step 1 of 2') : null,
-        ),
-
-        // Flip hint when switching to back
-        if (isBack) ...[
-          const SizedBox(height: MyazaSpacing.sm),
-          Row(
-            children: [
-              Icon(LucideIcons.creditCard, size: 14,
-                  color: context.myazaColors.primary),
-              const SizedBox(width: 4),
-              Text(
-                'Flip the card over and scan the other side',
-                style: context.myazaText.bodySmall.copyWith(
-                  color: context.myazaColors.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          )
-              .animate()
-              .fadeIn(duration: 400.ms, delay: 200.ms)
-              .slideX(begin: 0.2, end: 0, duration: 400.ms, delay: 200.ms),
-        ],
-
-        const SizedBox(height: MyazaSpacing.md),
-
-        // ── Camera viewfinder ────────────────────────────────────────────────
-        _DocumentViewfinder(
-          controller: isReady ? controller : null,
+    Widget viewfinder() => DocumentViewfinder(
+          controller: controller,
+          nativeTextureId: nativeTextureId,
+          nativePreviewW: _nativePreviewW,
+          nativePreviewH: _nativePreviewH,
           isLoading: isLoading,
           error: error,
           isBack: isBack,
           isProcessing: _isCapturing,
-          guideAspect: documentGuideAspect(idTypeConfig.idType),
+          guideAspect: documentGuideAspect(idTypeConfig),
+          torchOn: _torchOn,
+          onToggleTorch:
+              _hasTorch && isReady ? () => unawaited(_toggleTorch()) : null,
+          framing: _framing,
+          scanProgress: Platform.isAndroid
+              ? _textGate.progress(DateTime.now())
+              : _gate.progress(DateTime.now()),
+          hint: _hint,
+          hintLabel: idTypeConfig.label,
+          // Which document, and from where — the header that used to say so is
+          // gone in full-screen.
+          idType: idTypeConfig,
+          country: effectiveCountry(ref.read(kycConfigProvider),
+              ref.read(kYCNotifierProvider)),
+          showMrzBand: idTypeConfig.key == 'passport',
           onCapture: isReady && !_isCapturing ? _onCapture : null,
-        ),
-        const SizedBox(height: MyazaSpacing.md),
+          onBack: _onImmersiveBack,
+          onUpload: ref.read(kycConfigProvider).allowDocumentUpload
+              ? _onUpload
+              : null,
+        );
 
-        // ── Hint + upload link ───────────────────────────────────────────────
-        if (!_isCapturing) ...[
-          Text(
-            'Tap the button to capture manually',
-            style: context.myazaText.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-          // "Upload a photo instead" — hidden when device upload is disabled.
-          if (ref.read(kycConfigProvider).allowDocumentUpload) ...[
-            const SizedBox(height: MyazaSpacing.sm),
-            GestureDetector(
-              onTap: _onUpload,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text('Having trouble? ', style: context.myazaText.bodySmall),
-                  Icon(LucideIcons.upload,
-                      size: 14, color: context.myazaColors.primary),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Upload a photo instead',
-                    style: context.myazaText.bodySmall.copyWith(
-                      color: context.myazaColors.primary,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ],
+    // ── Full-screen camera ────────────────────────────────────────────────
+    // The boxed viewfinder left the shutter below the fold on a short phone,
+    // so the camera owns the display here: the sheet's header and padding are
+    // dropped (see setImmersiveCapture) and every control moves in-frame.
+    //
+    // LayoutBuilder is not decoration — the crop maps the guide back into the
+    // still against the viewfinder's box, so it records the size actually laid
+    // out rather than one recomputed from a constant that could drift.
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _viewfinderSize = constraints.biggest;
+        return viewfinder();
+      },
     );
+  }
+
+  /// Back from the full-screen camera. The sheet's own back control is hidden,
+  /// so this stands in for it: leave the camera, and let the shell restore its
+  /// chrome before the previous step draws.
+  void _onImmersiveBack() {
+    _syncImmersive(false);
+    ref.read(kYCNotifierProvider.notifier).previousStep();
   }
 
   // ── Front preview ──────────────────────────────────────────────────────────
@@ -645,10 +1202,16 @@ class _DocumentCaptureScreenState
         ),
         const SizedBox(height: MyazaSpacing.md),
 
-        // Captured front image
-        ClipRRect(
-          borderRadius: BorderRadius.circular(MyazaRadius.md),
-          child: Image.memory(_frontBytes!, fit: BoxFit.cover),
+        // Captured front image. Expanded + contain rather than natural height
+        // + cover: the step fills the viewport now, so an image sized to its
+        // own aspect pushes the buttons off a short screen with nothing to
+        // scroll. Letting it take the room that's left keeps the whole
+        // document visible AND the actions on screen.
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(MyazaRadius.md),
+            child: Image.memory(_frontBytes!, fit: BoxFit.contain),
+          ),
         )
             .animate()
             .fadeIn(duration: 300.ms)
@@ -712,101 +1275,55 @@ class _DocumentCaptureScreenState
   // ── Review ─────────────────────────────────────────────────────────────────
 
   Widget _buildReview(IdTypeConfig idTypeConfig) {
-    final hasBack = _backBytes != null;
+    final busyOverlay = _isUploading
+        ? DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.black.withValues(alpha: 0.45),
+            ),
+            child: Center(
+              child: _PulseLoader(color: context.myazaColors.primary),
+            ),
+          ).animate().fadeIn(duration: 200.ms)
+        : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // Required pill
         _RequiredPill(idTypeLabel: idTypeConfig.label),
-        const SizedBox(height: MyazaSpacing.lg),
-
-        // ── Front ──────────────────────────────────────────────────────────
-        Text(
-          'Front',
-          style: context.myazaText.bodySmall
-              .copyWith(fontWeight: FontWeight.w600),
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: MyazaSpacing.xs),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(MyazaRadius.md),
-          child: Stack(
-            children: [
-              Image.memory(_frontBytes!, fit: BoxFit.cover),
-              // Uploading loader rendered INSIDE the preview frame (replaces the
-              // old standalone "Uploading…" pill). Mirrors the liveness selfie /
-              // submitting screen's pulse-ring + spinner loader.
-              if (_isUploading)
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.45),
-                    ),
-                    child: Center(
-                      child: _PulseLoader(color: context.myazaColors.primary),
-                    ),
-                  ).animate().fadeIn(duration: 200.ms),
-                ),
-            ],
+        const SizedBox(height: MyazaSpacing.md),
+        Expanded(
+          child: DocumentReview(
+            front: _frontBytes!,
+            back: _backBytes,
+            aspect: documentGuideAspect(idTypeConfig),
+            isBusy: _isUploading,
+            busyOverlay: busyOverlay,
+            onRetakeFront: _retakeFront,
+            onRetakeBack: _retakeBack,
+            footer: _buildReviewFooter(),
           ),
         ),
-        const SizedBox(height: MyazaSpacing.sm),
-        _RetakeButton(
-          label: hasBack ? 'Retake Front' : 'Retake Photo',
-          onTap: _isUploading ? null : _retakeFront,
-        ),
+      ],
+    );
+  }
 
-        // ── Back (if captured) ─────────────────────────────────────────────
-        if (hasBack) ...[
-          const SizedBox(height: MyazaSpacing.lg),
-          Text(
-            'Back',
-            style: context.myazaText.bodySmall
-                .copyWith(fontWeight: FontWeight.w600),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: MyazaSpacing.xs),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(MyazaRadius.md),
-            child: Stack(
-              children: [
-                Image.memory(_backBytes!, fit: BoxFit.cover),
-                if (_isUploading)
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.45),
-                      ),
-                      child: Center(
-                        child: _PulseLoader(color: context.myazaColors.primary),
-                      ),
-                    ).animate().fadeIn(duration: 200.ms),
-                  ),
-              ],
-            ),
-          ),
-          const SizedBox(height: MyazaSpacing.sm),
-          _RetakeButton(
-            label: 'Retake Back',
-            onTap: _isUploading ? null : _retakeBack,
-          ),
-        ],
-
-        // ── Upload retry note ──────────────────────────────────────────────
+  /// Errors, the retry notice and the primary action — pinned by
+  /// [DocumentReview] so they can never fall below the fold.
+  Widget _buildReviewFooter() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: [
         if (_uploadRetryInfo != null && _isUploading) ...[
-          const SizedBox(height: MyazaSpacing.md),
           Text(
             'Upload failed — retrying (${_uploadRetryInfo!.attempt}/${_uploadRetryInfo!.total})…',
             style: context.myazaText.bodySmall
                 .copyWith(color: const Color(0xFF92400E)), // amber-800
             textAlign: TextAlign.center,
           ),
+          const SizedBox(height: MyazaSpacing.sm),
         ],
-
-        // ── Upload error ───────────────────────────────────────────────────
         if (_uploadError != null) ...[
-          const SizedBox(height: MyazaSpacing.md),
           MyazaAlert(
             variant: MyazaAlertVariant.error,
             title: 'Upload failed',
@@ -816,21 +1333,16 @@ class _DocumentCaptureScreenState
               .animate()
               .fadeIn(duration: 250.ms)
               .slideY(begin: -0.2, end: 0, duration: 250.ms),
+          const SizedBox(height: MyazaSpacing.sm),
         ],
-
-        // ── Continue button ────────────────────────────────────────────────
-        if (!_isUploading) ...[
-          const SizedBox(height: MyazaSpacing.lg),
+        if (!_isUploading)
           MyazaButton(
             label: _uploadError != null ? 'Try Again' : 'Continue',
             onPressed: _onContinue,
             leadingIcon: Icon(
-              _uploadError != null
-                  ? LucideIcons.rotateCcw
-                  : LucideIcons.check,
+              _uploadError != null ? LucideIcons.rotateCcw : LucideIcons.check,
             ),
           ),
-        ],
       ],
     );
   }
@@ -909,800 +1421,6 @@ class _RequiredPill extends StatelessWidget {
     );
   }
 }
-
-// ─── Retake ghost button ──────────────────────────────────────────────────────
-
-class _RetakeButton extends StatelessWidget {
-  final String label;
-  final VoidCallback? onTap;
-
-  const _RetakeButton({required this.label, this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text   = context.myazaText;
-    final iconColor = onTap != null ? colors.textSecondary : colors.gray300;
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(LucideIcons.rotateCcw, size: 15, color: iconColor),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: text.bodySmall.copyWith(
-              color: iconColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Document viewfinder ──────────────────────────────────────────────────────
-
-class _DocumentViewfinder extends StatelessWidget {
-  final CameraController? controller;
-  final bool isLoading;
-  final String? error;
-  final bool isBack;
-  final bool isProcessing;
-  final double guideAspect;
-  final VoidCallback? onCapture;
-
-  const _DocumentViewfinder({
-    required this.controller,
-    required this.isLoading,
-    required this.error,
-    required this.isBack,
-    required this.isProcessing,
-    required this.guideAspect,
-    required this.onCapture,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(MyazaRadius.md),
-      child: SizedBox(
-        height: 300,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (controller != null && controller!.value.isInitialized)
-              SizedBox.expand(
-                child: FittedBox(
-                  fit: BoxFit.cover,
-                  child: SizedBox(
-                    width: controller!.value.previewSize!.height,
-                    height: controller!.value.previewSize!.width,
-                    child: CameraPreview(controller!),
-                  ),
-                ),
-              )
-            else
-              _ViewfinderPlaceholder(isLoading: isLoading, error: error),
-
-            CustomPaint(
-                painter: _CardGuidePainter(isBack: isBack, aspect: guideAspect)),
-
-            // Side badge
-            Positioned(
-              top: 10,
-              right: 10,
-              child: _SideBadge(isBack: isBack),
-            ),
-
-            // "Align your ID" hint
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 88,
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: Colors.black.withValues(alpha: 0.45),
-                    borderRadius:
-                        BorderRadius.circular(MyazaRadius.full),
-                  ),
-                  child: Text(
-                    isBack
-                        ? 'Align the BACK of your card'
-                        : 'Align your ID within the frame',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-            // Shutter / processing overlay at bottom
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 16,
-              child: Center(
-                child: isProcessing
-                    ? _ProcessingPill()
-                    : _ShutterButton(onCapture: onCapture),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ViewfinderPlaceholder extends StatelessWidget {
-  final bool isLoading;
-  final String? error;
-
-  const _ViewfinderPlaceholder({required this.isLoading, this.error});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFF111111),
-      child: Center(
-        child: error != null
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(LucideIcons.videoOff,
-                      color: Colors.white54, size: 36),
-                  const SizedBox(height: MyazaSpacing.sm),
-                  Text('Camera unavailable',
-                      style: context.myazaText.bodySmall
-                          .copyWith(color: Colors.white70)),
-                ],
-              )
-            : CircularProgressIndicator(
-                color: context.myazaColors.primary, strokeWidth: 2),
-      ),
-    );
-  }
-}
-
-class _SideBadge extends StatelessWidget {
-  final bool isBack;
-
-  const _SideBadge({required this.isBack});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: isBack ? MyazaColors.success : context.myazaColors.primary,
-        borderRadius: BorderRadius.circular(MyazaRadius.full),
-      ),
-      child: Text(
-        isBack ? 'BACK' : 'FRONT',
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.8,
-        ),
-      ),
-    );
-  }
-}
-
-class _ShutterButton extends StatelessWidget {
-  final VoidCallback? onCapture;
-
-  const _ShutterButton({required this.onCapture});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final isEnabled = onCapture != null;
-    return GestureDetector(
-      onTap: onCapture,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        width: 60,
-        height: 60,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: isEnabled ? colors.primary : colors.gray400,
-          boxShadow: isEnabled
-              ? [
-                  BoxShadow(
-                    color: colors.primary.withValues(alpha: 0.45),
-                    blurRadius: 14,
-                    spreadRadius: 2,
-                  ),
-                ]
-              : null,
-        ),
-        child: Icon(
-          LucideIcons.camera,
-          size: 26,
-          color: isEnabled ? Colors.white : Colors.white54,
-        ),
-      ),
-    );
-  }
-}
-
-class _ProcessingPill extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(MyazaRadius.full),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 14,
-            height: 14,
-            child: CircularProgressIndicator(
-              color: Colors.white,
-              strokeWidth: 2,
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            'Capturing…',
-            style: context.myazaText.bodySmall.copyWith(color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Card guide painter ───────────────────────────────────────────────────────
-
-// Passport data pages are taller than a credit card and carry the 2-line MRZ
-// band at the bottom — which the server OCR relies on for the passport number
-// and nationality. A 1.586 card crop centred on the visual zone cuts the MRZ
-// off, so passports use a taller guide/crop (≈ the ICAO TD3 125×88 mm page
-// ratio) that frames the whole data page, MRZ included.
-const double kCardGuideAspect = 1.586;
-const double kPassportGuideAspect = 1.42;
-
-double documentGuideAspect(IdType idType) =>
-    idType == IdType.passport ? kPassportGuideAspect : kCardGuideAspect;
-
-class _CardGuidePainter extends CustomPainter {
-  final bool isBack;
-  final double aspect;
-
-  const _CardGuidePainter({required this.isBack, this.aspect = kCardGuideAspect});
-
-  static const double _widthFraction = 0.88;
-  static const double _cornerLen     = 18.0;
-  static const double _cornerRadius  = 6.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cardWidth  = size.width * _widthFraction;
-    final cardHeight = cardWidth / aspect;
-    // Shift upward so the shutter button fits below
-    final top    = (size.height - cardHeight) / 2 - 20;
-    final left   = (size.width - cardWidth) / 2;
-    final right  = left + cardWidth;
-    final bottom = top + cardHeight;
-    final rect   = Rect.fromLTRB(left, top, right, bottom);
-
-    // Dark overlay around the card window
-    final overlay = Paint()..color = Colors.black.withValues(alpha: 0.55);
-    canvas.drawRect(Rect.fromLTRB(0, 0, size.width, top), overlay);
-    canvas.drawRect(
-        Rect.fromLTRB(0, bottom, size.width, size.height), overlay);
-    canvas.drawRect(Rect.fromLTRB(0, top, left, bottom), overlay);
-    canvas.drawRect(
-        Rect.fromLTRB(right, top, size.width, bottom), overlay);
-
-    // Card border
-    final borderColor = isBack ? MyazaColors.success : Colors.white;
-    final border = Paint()
-      ..color = borderColor.withValues(alpha: 0.7)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-          rect, const Radius.circular(_cornerRadius)),
-      border,
-    );
-
-    // Corner markers
-    final corner = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.0
-      ..strokeCap = StrokeCap.round;
-
-    const r = _cornerRadius;
-    canvas.drawLine(Offset(left + r, top),
-        Offset(left + r + _cornerLen, top), corner);
-    canvas.drawLine(Offset(left, top + r),
-        Offset(left, top + r + _cornerLen), corner);
-    canvas.drawLine(Offset(right - r - _cornerLen, top),
-        Offset(right - r, top), corner);
-    canvas.drawLine(Offset(right, top + r),
-        Offset(right, top + r + _cornerLen), corner);
-    canvas.drawLine(Offset(left + r, bottom),
-        Offset(left + r + _cornerLen, bottom), corner);
-    canvas.drawLine(Offset(left, bottom - r - _cornerLen),
-        Offset(left, bottom - r), corner);
-    canvas.drawLine(Offset(right - r - _cornerLen, bottom),
-        Offset(right - r, bottom), corner);
-    canvas.drawLine(Offset(right, bottom - r - _cornerLen),
-        Offset(right, bottom - r), corner);
-  }
-
-  @override
-  bool shouldRepaint(_CardGuidePainter old) =>
-      old.isBack != isBack || old.aspect != aspect;
-}
-
-// ─── Crop params ──────────────────────────────────────────────────────────────
-//
-// A plain data class sent across the isolate boundary via compute().
-// All fields must be sendable (primitives + Uint8List).
-
-class _CropParams {
-  final Uint8List bytes;
-  final int srcX;
-  final int srcY;
-  final int srcW;
-  final int srcH;
-
-  const _CropParams({
-    required this.bytes,
-    required this.srcX,
-    required this.srcY,
-    required this.srcW,
-    required this.srcH,
-  });
-}
-
-// Top-level so compute() can run it in a separate isolate.
-Uint8List _doCropImage(_CropParams p) {
-  final decoded = img.decodeImage(p.bytes);
-  if (decoded == null) throw Exception('Could not decode image');
-  final baked = img.bakeOrientation(decoded);
-  final sw = p.srcW.clamp(1, baked.width - p.srcX);
-  final sh = p.srcH.clamp(1, baked.height - p.srcY);
-  final cropped = img.copyCrop(baked, x: p.srcX, y: p.srcY, width: sw, height: sh);
-  return Uint8List.fromList(img.encodeJpg(cropped, quality: 92));
-}
-
-// ─── Crop handle ──────────────────────────────────────────────────────────────
-
-enum _CropHandle { none, move, tl, tr, bl, br }
-
-// ─── Document cropper screen ──────────────────────────────────────────────────
-
-class _DocumentCropperScreen extends StatefulWidget {
-  final Uint8List imageBytes;
-
-  const _DocumentCropperScreen({required this.imageBytes});
-
-  @override
-  State<_DocumentCropperScreen> createState() => _DocumentCropperScreenState();
-}
-
-class _DocumentCropperScreenState extends State<_DocumentCropperScreen> {
-  // ISO/IEC 7810 ID-1 standard: 85.6 mm × 53.98 mm → AR ≈ 1.5858
-  static const double _idAR = 85.6 / 53.98;
-
-  Size? _naturalSize;
-  Rect _imgRect = Rect.zero;
-  Rect _cropRect = Rect.zero;
-  bool _cropInitialized = false;
-  bool _isProcessing = false;
-
-  _CropHandle _handle = _CropHandle.none;
-  Offset _panStart = Offset.zero;
-  Rect _cropAtPanStart = Rect.zero;
-
-  // ── Lifecycle ────────────────────────────────────────────────────────────
-
-  @override
-  void initState() {
-    super.initState();
-    _loadNaturalSize();
-  }
-
-  Future<void> _loadNaturalSize() async {
-    final codec = await ui.instantiateImageCodec(widget.imageBytes);
-    final frame = await codec.getNextFrame();
-    final image = frame.image;
-    final size = Size(image.width.toDouble(), image.height.toDouble());
-    image.dispose();
-    codec.dispose();
-    if (mounted) setState(() => _naturalSize = size);
-  }
-
-  // ── Geometry helpers ─────────────────────────────────────────────────────
-
-  /// Returns the rect of the rendered image (object-contain) within [container].
-  Rect _computeImgRect(Size container) {
-    if (_naturalSize == null) return Rect.zero;
-    final natAR = _naturalSize!.width / _naturalSize!.height;
-    final conAR = container.width / container.height;
-    final double rw, rh;
-    if (natAR > conAR) {
-      rw = container.width;
-      rh = container.width / natAR;
-    } else {
-      rh = container.height;
-      rw = container.height * natAR;
-    }
-    return Rect.fromLTWH(
-      (container.width - rw) / 2,
-      (container.height - rh) / 2,
-      rw,
-      rh,
-    );
-  }
-
-  /// Initial crop box: 85% of image width, centered, respecting ID AR.
-  Rect _initCropRect(Rect imgRect) {
-    double cropW = imgRect.width * 0.85;
-    double cropH = cropW / _idAR;
-    if (cropH > imgRect.height * 0.9) {
-      cropH = imgRect.height * 0.9;
-      cropW = cropH * _idAR;
-    }
-    return Rect.fromLTWH(
-      imgRect.left + (imgRect.width - cropW) / 2,
-      imgRect.top + (imgRect.height - cropH) / 2,
-      cropW,
-      cropH,
-    );
-  }
-
-  /// Clamps the crop rect to stay within [bounds], maintaining _idAR.
-  Rect _clampCrop(Rect crop, Rect bounds) {
-    double w = crop.width.clamp(60.0, bounds.width);
-    double h = w / _idAR;
-    if (h > bounds.height) {
-      h = bounds.height;
-      w = h * _idAR;
-      if (w > bounds.width) {
-        w = bounds.width;
-        h = w / _idAR;
-      }
-    }
-    final maxLeft = (bounds.right - w).clamp(bounds.left, bounds.right);
-    final maxTop  = (bounds.bottom - h).clamp(bounds.top, bounds.bottom);
-    return Rect.fromLTWH(
-      crop.left.clamp(bounds.left, maxLeft),
-      crop.top.clamp(bounds.top, maxTop),
-      w,
-      h,
-    );
-  }
-
-  // ── Gesture handling ─────────────────────────────────────────────────────
-
-  _CropHandle _hitTest(Offset pos) {
-    const double r = 28.0;
-    if ((pos - _cropRect.topLeft).distance     < r) return _CropHandle.tl;
-    if ((pos - _cropRect.topRight).distance    < r) return _CropHandle.tr;
-    if ((pos - _cropRect.bottomLeft).distance  < r) return _CropHandle.bl;
-    if ((pos - _cropRect.bottomRight).distance < r) return _CropHandle.br;
-    if (_cropRect.inflate(8).contains(pos)) return _CropHandle.move;
-    return _CropHandle.none;
-  }
-
-  void _onPanStart(DragStartDetails d) {
-    _handle = _hitTest(d.localPosition);
-    _panStart = d.localPosition;
-    _cropAtPanStart = _cropRect;
-  }
-
-  void _onPanUpdate(DragUpdateDetails d) {
-    if (_handle == _CropHandle.none || _imgRect.isEmpty) return;
-    final dx = d.localPosition.dx - _panStart.dx;
-    final dy = d.localPosition.dy - _panStart.dy;
-    final bottomEdge = _cropAtPanStart.bottom;
-
-    final Rect newCrop;
-    switch (_handle) {
-      case _CropHandle.none:
-        return;
-      case _CropHandle.move:
-        newCrop = _cropAtPanStart.translate(dx, dy);
-      case _CropHandle.br:
-        final w = _cropAtPanStart.width + dx;
-        newCrop = Rect.fromLTWH(_cropAtPanStart.left, _cropAtPanStart.top, w, w / _idAR);
-      case _CropHandle.bl:
-        final w = _cropAtPanStart.width - dx;
-        newCrop = Rect.fromLTWH(_cropAtPanStart.left + dx, _cropAtPanStart.top, w, w / _idAR);
-      case _CropHandle.tr:
-        final w = _cropAtPanStart.width + dx;
-        final h = w / _idAR;
-        newCrop = Rect.fromLTWH(_cropAtPanStart.left, bottomEdge - h, w, h);
-      case _CropHandle.tl:
-        final w = _cropAtPanStart.width - dx;
-        final h = w / _idAR;
-        newCrop = Rect.fromLTWH(_cropAtPanStart.left + dx, bottomEdge - h, w, h);
-    }
-
-    setState(() => _cropRect = _clampCrop(newCrop, _imgRect));
-  }
-
-  void _onPanEnd(DragEndDetails _) {
-    setState(() => _handle = _CropHandle.none);
-  }
-
-  // ── Confirm: crop image in isolate, pop with result ──────────────────────
-
-  Future<void> _onConfirm() async {
-    if (_naturalSize == null || _imgRect.isEmpty || _isProcessing) return;
-    setState(() => _isProcessing = true);
-
-    final scaleX = _naturalSize!.width / _imgRect.width;
-    final scaleY = _naturalSize!.height / _imgRect.height;
-
-    final sx = ((_cropRect.left - _imgRect.left) * scaleX)
-        .round()
-        .clamp(0, _naturalSize!.width.toInt() - 1);
-    final sy = ((_cropRect.top - _imgRect.top) * scaleY)
-        .round()
-        .clamp(0, _naturalSize!.height.toInt() - 1);
-    final sw = (_cropRect.width * scaleX).round();
-    final sh = (_cropRect.height * scaleY).round();
-
-    try {
-      final result = await compute(
-        _doCropImage,
-        _CropParams(bytes: widget.imageBytes, srcX: sx, srcY: sy, srcW: sw, srcH: sh),
-      );
-      if (mounted) Navigator.of(context).pop<Uint8List>(result);
-    } catch (_) {
-      if (mounted) setState(() => _isProcessing = false);
-    }
-  }
-
-  // ── Build ─────────────────────────────────────────────────────────────────
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.black,
-      appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A2E),
-        foregroundColor: Colors.white,
-        leadingWidth: 48,
-        leading: IconButton(
-          icon: const Icon(LucideIcons.x, size: 20),
-          onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
-          tooltip: 'Cancel',
-        ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text(
-              'Crop to ID Card',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              'Drag to reposition · handles to resize',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
-            ),
-          ],
-        ),
-        titleSpacing: 4,
-      ),
-      body: Column(
-        children: [
-          // ── Image + crop overlay ─────────────────────────────────────────
-          Expanded(
-            child: _naturalSize == null
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
-                : LayoutBuilder(builder: (ctx, cons) {
-                    final imgR = _computeImgRect(cons.biggest);
-                    if (imgR != _imgRect) {
-                      _imgRect = imgR;
-                      if (!_cropInitialized && !imgR.isEmpty) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          if (mounted) {
-                            setState(() {
-                              _cropRect = _initCropRect(imgR);
-                              _cropInitialized = true;
-                            });
-                          }
-                        });
-                      }
-                    }
-                    return GestureDetector(
-                      onPanStart: _onPanStart,
-                      onPanUpdate: _onPanUpdate,
-                      onPanEnd: _onPanEnd,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          Image.memory(
-                            widget.imageBytes,
-                            fit: BoxFit.contain,
-                            width: double.infinity,
-                            height: double.infinity,
-                          ),
-                          if (_cropInitialized)
-                            CustomPaint(
-                              painter: _CropOverlayPainter(
-                                imgRect: _imgRect,
-                                cropRect: _cropRect,
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  }),
-          ),
-
-          // ── Action bar ───────────────────────────────────────────────────
-          Container(
-            color: const Color(0xFF1A1A2E),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: _isProcessing
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Processing…',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: _cropInitialized ? _onConfirm : null,
-                        icon: const Icon(LucideIcons.check, size: 18),
-                        label: const Text('Crop & Use'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: MyazaColors.primary,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.white12,
-                          disabledForegroundColor: Colors.white38,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Crop overlay painter ─────────────────────────────────────────────────────
-
-class _CropOverlayPainter extends CustomPainter {
-  final Rect imgRect;
-  final Rect cropRect;
-
-  const _CropOverlayPainter({required this.imgRect, required this.cropRect});
-
-  static const double _armLen = 22.0;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // ── 4 dim rects around the crop window ──────────────────────────────────
-    final dim = Paint()..color = Colors.black.withValues(alpha: 0.6);
-    canvas.drawRect(Rect.fromLTRB(0, 0, size.width, cropRect.top), dim);
-    canvas.drawRect(Rect.fromLTRB(0, cropRect.bottom, size.width, size.height), dim);
-    canvas.drawRect(Rect.fromLTRB(0, cropRect.top, cropRect.left, cropRect.bottom), dim);
-    canvas.drawRect(Rect.fromLTRB(cropRect.right, cropRect.top, size.width, cropRect.bottom), dim);
-
-    // ── White 2px border ─────────────────────────────────────────────────────
-    canvas.drawRect(
-      cropRect,
-      Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0,
-    );
-
-    // ── Rule-of-thirds grid (25 % opacity) ──────────────────────────────────
-    final grid = Paint()
-      ..color = Colors.white.withValues(alpha: 0.25)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    canvas.drawLine(
-      Offset(cropRect.left + cropRect.width / 3, cropRect.top),
-      Offset(cropRect.left + cropRect.width / 3, cropRect.bottom),
-      grid,
-    );
-    canvas.drawLine(
-      Offset(cropRect.left + cropRect.width * 2 / 3, cropRect.top),
-      Offset(cropRect.left + cropRect.width * 2 / 3, cropRect.bottom),
-      grid,
-    );
-    canvas.drawLine(
-      Offset(cropRect.left, cropRect.top + cropRect.height / 3),
-      Offset(cropRect.right, cropRect.top + cropRect.height / 3),
-      grid,
-    );
-    canvas.drawLine(
-      Offset(cropRect.left, cropRect.top + cropRect.height * 2 / 3),
-      Offset(cropRect.right, cropRect.top + cropRect.height * 2 / 3),
-      grid,
-    );
-
-    // ── L-shaped corner brackets (3.5 px, round caps) ────────────────────────
-    final corner = Paint()
-      ..color = Colors.white
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 3.5
-      ..strokeCap = StrokeCap.round;
-
-    canvas.drawLine(cropRect.topLeft, cropRect.topLeft + const Offset(_armLen, 0), corner);
-    canvas.drawLine(cropRect.topLeft, cropRect.topLeft + const Offset(0, _armLen), corner);
-    canvas.drawLine(cropRect.topRight, cropRect.topRight + const Offset(-_armLen, 0), corner);
-    canvas.drawLine(cropRect.topRight, cropRect.topRight + const Offset(0, _armLen), corner);
-    canvas.drawLine(cropRect.bottomLeft, cropRect.bottomLeft + const Offset(_armLen, 0), corner);
-    canvas.drawLine(cropRect.bottomLeft, cropRect.bottomLeft + const Offset(0, -_armLen), corner);
-    canvas.drawLine(cropRect.bottomRight, cropRect.bottomRight + const Offset(-_armLen, 0), corner);
-    canvas.drawLine(cropRect.bottomRight, cropRect.bottomRight + const Offset(0, -_armLen), corner);
-  }
-
-  @override
-  bool shouldRepaint(_CropOverlayPainter old) =>
-      old.cropRect != cropRect || old.imgRect != imgRect;
-}
-
-// ─── Pulse loader ─────────────────────────────────────────────────────────────
-//
-// Pulsing ring + tinted spinner badge — mirrors the liveness selfie / submitting
-// screen's loader. Rendered inside the document preview frame while uploading.
 
 class _PulseLoader extends StatelessWidget {
   final Color color;
