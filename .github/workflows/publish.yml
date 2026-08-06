@@ -1,11 +1,13 @@
-name: Publish to pub.dev
-
-# Lives in the PUBLIC repo myazahq/kyc-sdk-flutter. The monorepo sync preserves
-# this repo's .github/, so it survives every release sync.
-# Required secret: PUB_CREDENTIALS
+# Lives in the PUBLIC repo myazahq/kyc-sdk-flutter as .github/workflows/publish.yml.
+# The monorepo sync preserves this repo's .github/, so it survives every release
+# sync. A canonical copy is kept alongside the source in the monorepo at
+# packages/kyc-sdk-flutter/.github/workflows/ — keep the two in step by hand.
+#
+# Required secret in myazahq/kyc-sdk-flutter: PUB_CREDENTIALS
 #   Contents of the pub credentials file created locally by `flutter pub login`
 #   (~/.config/dart/pub-credentials.json on newer Dart;
 #    ~/.pub-cache/credentials.json on older).
+name: Publish to pub.dev
 
 on:
   push:
@@ -23,6 +25,19 @@ jobs:
         with:
           channel: stable
 
+      - name: Resolve dependencies
+        run: flutter pub get
+
+      # Gates BEFORE the credentials are written, so a failing check can never
+      # reach a step that holds the pub.dev token. A pub.dev release cannot be
+      # deleted — only retracted — so the cost of publishing a broken version is
+      # permanent and these two minutes are the cheapest insurance available.
+      - name: Analyze
+        run: flutter analyze
+
+      - name: Test
+        run: flutter test
+
       # Restore pub.dev OAuth credentials from the secret. Write both the modern
       # and legacy locations so it works regardless of the Dart version.
       - name: Write pub credentials
@@ -32,16 +47,15 @@ jobs:
           mkdir -p "$HOME/.pub-cache"
           printf '%s' '${{ secrets.PUB_CREDENTIALS }}' > "$HOME/.pub-cache/credentials.json"
 
-      - name: Resolve dependencies
-        run: flutter pub get
-
+      # Every push to main runs this job, but only a version bump should publish.
+      # pub.dev returns 200 for an existing version and 404 otherwise, so a
+      # re-run on an already-published version exits cleanly instead of failing.
       - name: Publish to pub.dev (skip if this version already exists)
         run: |
           NAME=$(grep -E '^name:' pubspec.yaml | head -1 | awk '{print $2}')
           VERSION=$(grep -E '^version:' pubspec.yaml | head -1 | awk '{print $2}')
           echo "Resolved package: $NAME@$VERSION"
 
-          # pub.dev returns 200 for an existing version, 404 otherwise.
           CODE=$(curl -s -o /dev/null -w '%{http_code}' \
             "https://pub.dev/api/packages/$NAME/versions/$VERSION")
 
