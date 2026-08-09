@@ -13,6 +13,7 @@ class MyazaInput extends StatefulWidget {
   final TextEditingController? controller;
   final FocusNode? focusNode;
   final TextInputType keyboardType;
+  final TextCapitalization textCapitalization;
   final TextInputAction? textInputAction;
   final List<TextInputFormatter>? inputFormatters;
   final bool obscureText;
@@ -35,6 +36,7 @@ class MyazaInput extends StatefulWidget {
     this.controller,
     this.focusNode,
     this.keyboardType = TextInputType.text,
+    this.textCapitalization = TextCapitalization.none,
     this.textInputAction,
     this.inputFormatters,
     this.obscureText = false,
@@ -102,6 +104,7 @@ class _MyazaInputState extends State<MyazaInput> {
       controller: widget.controller,
       focusNode: widget.focusNode,
       keyboardType: widget.keyboardType,
+      textCapitalization: widget.textCapitalization,
       textInputAction: widget.textInputAction,
       inputFormatters: widget.inputFormatters,
       obscureText: _obscured,

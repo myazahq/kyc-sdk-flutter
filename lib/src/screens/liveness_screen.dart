@@ -597,6 +597,8 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
     try {
       if (!mounted) return;
+      // The flash is a step in the progress indicator; the provider cannot see
+      // the sequence finish, so it is told.
       _flashResult = await runFlashChallenge(
         latestRgb: _flashRgbSample,
         paint: (color) => _flashColor.value = color,
@@ -615,6 +617,9 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
             !ref.read(livenessNotifierProvider.notifier).integrityBroken &&
             _faceRecentlyPresent(const Duration(milliseconds: 1500)),
       );
+      if (mounted) {
+        ref.read(livenessNotifierProvider.notifier).markFlashStepComplete();
+      }
     } finally {
       _flashColor.value = null;
       entry.remove();
@@ -1932,8 +1937,8 @@ class _FlashHolePainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_FlashHolePainter old) =>
-      old.color != color || old.hole != hole;
+  bool shouldRepaint(_FlashHolePainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.hole != hole;
 }
 
 // ─── Flash-ready progress ring ────────────────────────────────────────────────
@@ -1967,8 +1972,8 @@ class _ReadyRingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_ReadyRingPainter old) =>
-      old.progress != progress || old.color != color;
+  bool shouldRepaint(_ReadyRingPainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }
 
 // ─── Dashed oval face guide ───────────────────────────────────────────────────
@@ -2019,7 +2024,8 @@ class _DashedOvalPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_DashedOvalPainter old) => old.color != color;
+  bool shouldRepaint(_DashedOvalPainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 // ─── Step indicators ──────────────────────────────────────────────────────────

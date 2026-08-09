@@ -15,8 +15,12 @@ import '../providers/kyc_state.dart';
 import '../providers/liveness_provider.dart';
 import '../providers/step_order.dart';
 import '../providers/theme_provider.dart';
+import '../screens/applicant_role_screen.dart';
 import '../screens/business_details_screen.dart';
+import '../screens/business_documents_screen.dart';
+import '../screens/business_key_people_screen.dart';
 import '../screens/consent_screen.dart';
+import '../screens/contact_verification_channel.dart';
 import '../screens/contact_verification_screen.dart';
 import '../screens/country_select_screen.dart';
 import '../screens/document_capture_screen.dart';
@@ -59,13 +63,15 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   ),
   // Optional steps (populated with real copy by their workstreams). Present
   // here so the `_kStepMeta[step]!` lookup never misses once a step is enabled.
+  // Wording matches the web and React Native SDKs so the same flow reads
+  // identically on every platform.
   KYCStep.contactEmail: _StepMeta(
-    'Verify Your Email',
-    'Confirm your email address with a one-time code.',
+    'Verify your email',
+    "We'll send a one-time code to confirm this email belongs to you.",
   ),
   KYCStep.contactPhone: _StepMeta(
-    'Verify Your Phone',
-    'Confirm your phone number with a one-time code.',
+    'Verify your phone number',
+    "We'll send a one-time code to confirm this number belongs to you.",
   ),
   KYCStep.countrySelect: _StepMeta(
     'Where was your ID issued?',
@@ -75,17 +81,27 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
     'Scan Document Chip',
     'Hold your document to the back of your phone.',
   ),
-  KYCStep.proofOfAddress: _StepMeta(
-    'Proof of Address',
-    'Upload a recent document showing your address.',
-  ),
+  // proofOfAddress description is computed dynamically from maxAgeDays.
+  KYCStep.proofOfAddress: _StepMeta('Proof of address'),
   KYCStep.questionnaire: _StepMeta(
     'A Few More Questions',
     'Please answer the following to complete your verification.',
   ),
   KYCStep.businessDetails: _StepMeta(
     'Business Details',
-    'Tell us about the business you’re verifying.',
+    'Provide your business registration details for verification against the official registry.',
+  ),
+  KYCStep.businessKeyPeople: _StepMeta(
+    'Directors & Owners',
+    "List the company's directors and owners of 25% or more. Each will receive a link to verify their identity.",
+  ),
+  KYCStep.businessDocuments: _StepMeta(
+    'Business documents',
+    'Upload the supporting documents for your business. Required documents are marked with *.',
+  ),
+  KYCStep.applicantRole: _StepMeta(
+    'Now verify your own identity',
+    'Tell us your role at the business, then verify your identity with a government-issued ID.',
   ),
   // submitted has no title — the screen owns its layout.
   KYCStep.submitted: _StepMeta(''),
@@ -123,11 +139,11 @@ MyazaColorScheme _applyAppearance(
 }
 
 /// Maps the appearance's initial theme to a ThemeMode. Null appearance/theme
-/// follows the device setting.
+/// and the explicit `system` value both follow the device setting.
 ThemeMode _initialThemeMode(MyazaKYCAppearance? a) => switch (a?.theme) {
       MyazaThemeMode.light => ThemeMode.light,
       MyazaThemeMode.dark => ThemeMode.dark,
-      null => ThemeMode.system,
+      MyazaThemeMode.system || null => ThemeMode.system,
     };
 
 // ─── Public entry points ──────────────────────────────────────────────────────
@@ -190,6 +206,15 @@ class MyazaKYC {
       ));
       return;
     }
+
+    // Shape + type from the RESOLVED appearance (so a workflow's branding wins
+    // over props). Applied here, before the flow builds, because both are
+    // module-level scales read during build — see MyazaRadius.applyScale.
+    MyazaRadius.applyScale(effectiveConfig.appearance?.borderRadius);
+    applyBrandFonts(
+      body: effectiveConfig.appearance?.fontFamily,
+      heading: effectiveConfig.appearance?.headingFontFamily,
+    );
 
     final overrides = _overridesFor(effectiveConfig, preloaded);
 
@@ -452,6 +477,49 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       );
     }
 
+    // Proof of address states its own recency window, so the description has to
+    // carry the workflow's maxAgeDays rather than say "recent".
+    if (step == KYCStep.proofOfAddress) {
+      final days = config.proofOfAddress?.maxAgeDays ?? 90;
+      meta = _StepMeta(
+        meta.title,
+        'Upload a document that shows your name and home address, issued '
+        'within the last $days days.',
+      );
+    }
+
+    // The contact steps turn their description from a promise ("we'll send a
+    // code…") into an instruction ("enter the code we sent to…") once a code is
+    // out, and name the delivery channel the user picked — matching the web
+    // SDK. The screen publishes that via contactChannel/Via/Destination,
+    // because the header lives out here and cannot see its state.
+    if (step == KYCStep.contactEmail || step == KYCStep.contactPhone) {
+      final isPhone = step == KYCStep.contactPhone;
+      // Only trust state raised by THIS step: both contact steps are the same
+      // screen, so a leftover email entry must never caption the phone step.
+      final live = state.contactChannel == (isPhone ? 'phone' : 'email');
+      final by = isPhone && live && state.contactVia.isNotEmpty
+          ? ' by ${kChannelLabels[state.contactVia] ?? state.contactVia}'
+          : '';
+
+      if (live && state.contactDestination.isNotEmpty) {
+        final length = (isPhone
+                ? config.phoneVerification?.codeLength
+                : config.emailVerification?.codeLength) ??
+            6;
+        meta = _StepMeta(
+          meta.title,
+          'Enter the $length-digit code we sent to '
+          '${state.contactDestination}$by.',
+        );
+      } else if (isPhone) {
+        meta = _StepMeta(
+          meta.title,
+          "We'll send a one-time code$by to confirm this number belongs to you.",
+        );
+      }
+    }
+
     // For document capture, swap title/description based on the review phase
     // communicated by DocumentCaptureScreen via docReviewPhase.
     if (step == KYCStep.documentCapture) {
@@ -499,7 +567,11 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         (themeMode == ThemeMode.system &&
             systemBrightness == Brightness.dark);
     final baseScheme = isDark ? MyazaColorScheme.dark : MyazaColorScheme.light;
-    final colorScheme = _applyAppearance(baseScheme, config.appearance);
+    // Fold in the dark overrides FIRST: the appearance is applied on top of the
+    // active base scheme, so a light background would otherwise overwrite the
+    // dark one and the toggle would do nothing on a branded flow.
+    final colorScheme =
+        _applyAppearance(baseScheme, config.appearance?.forBrightness(isDark));
 
     // ── Resolve org branding for the persistent header ─────────────────────
     // `appearance.logo = 'default'` pulls the org logo from the server config
@@ -752,6 +824,17 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         // switch exhaustive; each WS replaces its case with the real screen.
         KYCStep.questionnaire   => const QuestionnaireScreen(),
         KYCStep.businessDetails => const BusinessDetailsScreen(),
+        KYCStep.businessKeyPeople => const BusinessKeyPeopleScreen(),
+        KYCStep.applicantRole   => const ApplicantRoleScreen(),
+        KYCStep.businessDocuments => BusinessDocumentsScreen(
+            onError: (e) => widget.onError?.call(
+              e is KYCError
+                  ? e
+                  : const KYCError(
+                      code: 'upload_failed',
+                      message: 'Business document upload failed.'),
+            ),
+          ),
         KYCStep.proofOfAddress  =>
           ProofOfAddressScreen(onError: (e) => widget.onError?.call(
                 e is KYCError

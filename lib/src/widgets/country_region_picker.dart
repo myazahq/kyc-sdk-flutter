@@ -76,13 +76,10 @@ class _CountryRegionPickerState extends State<CountryRegionPicker> {
                       style: text.bodyMedium),
                 )
               : ListView(
-                  // Content padding, not viewport padding: the list runs to the
-                  // sheet's bottom edge (no dead safe-area band) while the last
-                  // row can still scroll clear of the home indicator.
-                  padding: EdgeInsets.only(
-                    bottom: MediaQuery.paddingOf(context).bottom +
-                        MyazaSpacing.md,
-                  ),
+                  // The list runs to the PoweredBy footer, which owns the
+                  // home-indicator clearance for the whole sheet — so only the
+                  // visual gap is needed here.
+                  padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
                   children: [
                     for (final g in groups) ...[
                       Padding(

@@ -8,7 +8,7 @@ Add the dependency to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  myaza_kyc_sdk_flutter: ^2.0.0
+  myaza_kyc_sdk_flutter: ^2.2.0
 ```
 
 Then run `flutter pub get`.
@@ -50,6 +50,49 @@ permission — voice guidance is text-to-speech output only).
 
 `MyazaKYC.show()` opens the full modal flow as a bottom sheet.
 
+### Recommended — mount a workflow
+
+Build the flow once in the Myaza dashboard as a **workflow**, then mount it by
+id. The country, ID types, capture steps, add-ons, branding and copy all come
+from the workflow, so changing the flow is a re-publish in the dashboard rather
+than an app release and an app-store review.
+
+```dart
+import 'package:flutter/material.dart';
+import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
+
+void startKYC(BuildContext context) {
+  MyazaKYC.show(
+    context: context,
+    config: const MyazaKYCConfig(
+      apiKey: 'pk_live_xxx',
+      workflowId: 'wf_AbC123dEf456',
+      // Runtime data — a workflow is a shared template and cannot carry any of it.
+      userId: 'usr_123',
+      userData: UserData(firstName: 'Jane', lastName: 'Doe'),
+      metadata: {'orderId': 'ord_456'},
+    ),
+    onSubmit: (submission) => debugPrint('Submitted: ${submission.verificationId}'),
+    onError: (error) => debugPrint('Error: ${error.code} — ${error.message}'),
+    onClose: () => debugPrint('KYC closed'),
+  );
+}
+```
+
+**`userData` is worth passing.** It is the name you believe the user has, and it
+is compared against the name read off their document — that comparison is what
+produces `dataMatch` on the verification. It cannot live on the workflow:
+`userId`, `userData` and `metadata` are per-user runtime values, and a workflow
+is a template shared by every visitor, so these stay in code even when
+everything else moves to the dashboard.
+
+### Or configure everything in code
+
+Skip the workflow and pass the flow's shape in `MyazaKYCConfig`. Useful for a
+quick start or a single fixed flow; anything you'd change later means an app
+release. `country` is any ISO-2 string and `idTypes` are the same kebab-case
+keys as the React SDKs — there is no enum.
+
 ```dart
 import 'package:flutter/material.dart';
 import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
@@ -59,8 +102,8 @@ void startKYC(BuildContext context) {
     context: context,
     config: MyazaKYCConfig(
       apiKey: 'pk_live_xxx',
-      country: Country.NG,
-      idTypes: const [IdType.passport, IdType.bvn, IdType.nin, IdType.pvc],
+      country: 'NG',
+      idTypes: const ['passport', 'bvn', 'nin', 'pvc'],
       userData: const UserData(firstName: 'Jane', lastName: 'Doe'),
       enableSelfie: true,
       enableDocumentCapture: true,
@@ -79,7 +122,8 @@ void startKYC(BuildContext context) {
         title: "You're all set, {firstName}!",
         description: "We'll email you once your verification is reviewed.",
       ),
-      metadata: const {'userId': 'test_user_123'},
+      userId: 'test_user_123',
+      metadata: const {'orderId': 'ord_456'},
     ),
     onSubmit: (submission) {
       // Fires as soon as the server accepts the request.
@@ -101,8 +145,10 @@ void startKYC(BuildContext context) {
 | Field                   | Type                    | Default               | Description                                                                                                     |
 | ----------------------- | ----------------------- | --------------------- | --------------------------------------------------------------------------------------------------------------- |
 | `apiKey`                | `String`                | —                     | **Required.** Sent as `Authorization: Bearer`. The **environment is derived from the key prefix** (`pk_test_…` → sandbox, `pk_live_…` → production); an unrecognized prefix throws. |
-| `country`               | `Country`               | —                     | **Required.** Country whose ID types are offered.                                                               |
-| `idTypes`               | `List<IdType>?`         | all for country       | Subset of ID types to offer. `null` shows all for `country`.                                                    |
+| `workflowId`            | `String?`               | —                     | **Recommended.** Id of a **published** workflow (`wf_…`) built in the dashboard. Its configuration is resolved on mount and **takes precedence over these fields**; makes `country` optional. Required for [business (KYB)](#business-verification-kyb) verification. |
+| `country`               | `String?` (ISO-2)       | —                     | **Required unless `workflowId` is set** (the workflow carries its own country). Any ISO-2 code works (`'NG'`, `'GH'`, …) — the org's grants are enforced server-side. |
+| `idTypes`               | `List<String>?`         | all for country       | Subset of ID-type keys to offer (`['bvn', 'passport']` — the same kebab-case keys as the React SDKs). `null` shows all for `country`. |
+| `userId`                | `String?`               | —                     | Your own reference for the person or business being verified. Sent with the verification so results correlate back to your record. Not matched against the ID. |
 | `enableSelfie`          | `bool`                  | `true`                | Capture a selfie during liveness.                                                                               |
 | `enableDocumentCapture` | `bool`                  | `true`                | Enable the document-scan step for document IDs.                                                                 |
 | `allowDocumentUpload`   | `bool`                  | `true`                | Allow picking a document photo from the device gallery as an alternative to the camera. `false` hides the "upload instead" option (still offered on the camera-permission-denied screen as an escape hatch). |
@@ -216,6 +262,54 @@ success: const KYCSuccessContent(
 ),
 ```
 
+## Business verification (KYB)
+
+The SDK can verify a **business** instead of a person — a company-registry
+lookup, with no document capture and no liveness.
+
+This is **workflow-driven**: build and publish a business workflow in the Myaza
+dashboard, then pass its id as `workflowId`. There is no prop to turn it on — the
+SDK reads the subject type from the resolved workflow.
+
+```dart
+MyazaKYC.show(
+  context: context,
+  config: const MyazaKYCConfig(
+    apiKey: 'pk_test_xxxxxxxx',
+    workflowId: 'wf_xxxxxxxx',    // a PUBLISHED business workflow
+    userId: 'usr_123',
+    // no `country` — the workflow sets the registry country
+  ),
+  onSubmit: (submission) => print(submission.verificationId),
+  onError: (error) => print('${error.code} — ${error.message}'),
+  onClose: () {},
+);
+```
+
+The steps come from your workflow — you don't configure them here:
+
+| Step | Shown when | What the user does |
+| ---- | ---------- | ------------------ |
+| Consent | always | Agrees to the business verification |
+| Business details | always | Picks the registry country (if the workflow offers several) and the verification product (if it offers several), then enters the registration number — or a TIN, for the TIN product — plus the registered business name and any company details the workflow asks for |
+| Directors & owners | workflow collects key people | Lists directors and 25%+ owners (name, role, ownership %, country, email). Each person with an email is sent a link to verify their identity |
+| Business documents | workflow requests documents | Uploads each requested document (photo or PDF) — from the photo library, the camera, or Files |
+| Verify your identity | workflow requires applicant verification | Declares their role at the business, then verifies their **own** identity with the normal ID + liveness steps |
+| Questionnaire | workflow configures one | Answers your custom questions |
+| Submitted | always | Sees the confirmation |
+
+Submission works exactly like an individual verification: `onSubmit` fires with a
+`verificationId` and `status: 'pending'`, and the outcome arrives later by webhook
+or via the status endpoint.
+
+> When the workflow requires applicant verification, the applicant's own identity
+> is submitted as a **separate** verification, linked to the business application
+> server-side. `onSubmit` reports the **business** `verificationId`.
+
+**Sandbox.** With a `pk_test_…` key only published test registration numbers are
+accepted (e.g. `RC0000001`, `RC0000002`); anything else returns a
+`Sandbox mode accepts only published test registration numbers` error.
+
 ## Robustness & error handling
 
 The SDK is resilient to flaky networks, denied permissions, and poor capture
@@ -245,6 +339,7 @@ onError: (KYCError error) {
 | `upload_failed`            | A media upload failed, **after retries are exhausted**.            |
 | `camera_permission_denied` | The user denied (or the OS blocks) camera access.                  |
 | `feature_disabled`         | Server returned `403` (ID type / feature not enabled for the org). |
+| `invalid_workflow`         | The `workflowId` is unknown, unpublished, or misconfigured for this submission. See [Business verification (KYB)](#business-verification-kyb). |
 | `unknown`                  | Anything else.                                                      |
 
 > Voice guidance is TTS **output** — it never records audio, so there is **no

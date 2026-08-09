@@ -1,4 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myaza_kyc_sdk_flutter/src/services/document_framing_gate.dart'
+    show DocumentHint;
 import 'package:myaza_kyc_sdk_flutter/src/services/document_identity.dart';
 import 'package:myaza_kyc_sdk_flutter/src/services/document_type_signals.dart';
 
@@ -72,5 +74,43 @@ void main() {
       idType: 'passport',
     );
     expect(id.identified, isFalse);
+  });
+
+  group('the back of a card', () {
+    // What a PVC back actually shows: no branding, no document name — an
+    // address block, a polling unit, small print. The front's keyword demand
+    // can never be met here, which is why the side matters.
+    const pvcBack = [
+      'NO 12 ADEOLA STREET',
+      'IKEJA LAGOS',
+      'POLLING UNIT 004',
+      'ISSUED 2023',
+    ];
+
+    test('accepts an unbranded back once the front established identity', () {
+      final id = verifyDocumentIdentity(
+        pvcBack,
+        country: 'NG',
+        idType: 'pvc',
+        isBack: true,
+      );
+      expect(id.identified, isTrue);
+    });
+
+    test('still demands keywords on the FRONT — the back rule must not leak', () {
+      final id = verifyDocumentIdentity(pvcBack, country: 'NG', idType: 'pvc');
+      expect(id.identified, isFalse);
+    });
+
+    test("rejects a different document's front swapped in as the 'back'", () {
+      final id = verifyDocumentIdentity(
+        const ['FRSC', 'FEDERAL ROAD SAFETY', 'DRIVER'],
+        country: 'NG',
+        idType: 'pvc',
+        isBack: true,
+      );
+      expect(id.identified, isFalse);
+      expect(id.hint, DocumentHint.wrongDocument);
+    });
   });
 }

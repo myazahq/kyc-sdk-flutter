@@ -16,7 +16,7 @@ import '../config/document_guide.dart';
 // cropped off the bottom edge — which auto-capture then refuses, because that
 // band is the chip's key and the proof the page is a passport.
 //
-// Drawn in the same language as PassportIllustration: placeholder BARS and
+// Drawn in the same language as NfcScanIllustration: placeholder BARS and
 // BLOCKS, never literal drawings. An earlier version sketched a face from a
 // circle and an arc, which is a worse thing to show a user than nothing at all.
 // Nothing here is meant to be read — only recognised as a shape.
@@ -177,6 +177,7 @@ class _GhostPainter extends CustomPainter {
       canvas.drawRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)), paint);
 
   @override
-  bool shouldRepaint(_GhostPainter old) =>
-      old.aspect != aspect || old.showMrzBand != showMrzBand;
+  bool shouldRepaint(_GhostPainter oldDelegate) =>
+      oldDelegate.aspect != aspect ||
+      oldDelegate.showMrzBand != showMrzBand;
 }

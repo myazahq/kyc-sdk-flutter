@@ -1,7 +1,12 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/business.dart';
+import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../services/api_service.dart';
@@ -227,6 +232,25 @@ class KYCNotifier extends _$KYCNotifier {
     state = state.copyWith(docReviewPhase: phase);
   }
 
+  /// Publish what the contact step is doing so the sheet header can caption it.
+  /// Pass an empty [destination] while the user is still entering one.
+  void setContactHeader({
+    required String channel,
+    String via = '',
+    String destination = '',
+  }) {
+    if (state.contactChannel == channel &&
+        state.contactVia == via &&
+        state.contactDestination == destination) {
+      return;
+    }
+    state = state.copyWith(
+      contactChannel: channel,
+      contactVia: via,
+      contactDestination: destination,
+    );
+  }
+
   /// Raised while a full-bleed camera is on screen so the sheet drops its
   /// chrome; lowered the moment it leaves.
   void setImmersiveCapture(bool immersive) {
@@ -315,16 +339,72 @@ class KYCNotifier extends _$KYCNotifier {
     required String product,
     required String registrationNumber,
     String? registrationName,
+    String? contactEmail,
+    String? address,
+    String? email,
+    String? phone,
+    String? website,
   }) {
     state = state.copyWith(
       businessCountry: country,
       businessProduct: product,
       registrationNumber: registrationNumber,
       registrationName: registrationName,
+      businessContactEmail: contactEmail,
+      businessAddress: address,
+      businessEmail: email,
+      businessPhone: phone,
+      businessWebsite: website,
+    );
+  }
+
+  /// Replaces the applicant-declared directors/owners (business-key-people).
+  void setKeyPeople(List<KeyPersonEntry> people) {
+    state = state.copyWith(keyPeople: people);
+  }
+
+  /// Records one uploaded supporting document, replacing any prior upload for
+  /// the same slot (re-picking a file must not submit both).
+  void setBusinessDocument(BusinessDocumentUpload upload) {
+    state = state.copyWith(
+      businessDocuments: [
+        ...state.businessDocuments.where((d) => d.type != upload.type),
+        upload,
+      ],
+    );
+  }
+
+  /// Drops the upload for one document slot.
+  void removeBusinessDocument(String type) {
+    state = state.copyWith(
+      businessDocuments:
+          state.businessDocuments.where((d) => d.type != type).toList(),
+    );
+  }
+
+  /// Stores the applicant's declared role + optional full name.
+  /// [keyPersonIndex] = the applicant picked THEMSELVES from the entered key
+  /// people (index into state.keyPeople); null = they're someone else.
+  void setApplicant({required ApplicantRole role, String? name, int? keyPersonIndex}) {
+    state = state.copyWith(
+      applicantRole: role,
+      applicantName: name,
+      applicantKeyPersonIndex: keyPersonIndex,
+      clearApplicantKeyPersonIndex: keyPersonIndex == null,
     );
   }
 
   /// Stores the uploaded proof-of-address document (its mediaId + type key).
+  /// Drops the uploaded proof-of-address document, returning the step to its
+  /// empty state (the user tapped the row's X, or switched document kind —
+  /// keeping the file would mislabel it).
+  void clearProofOfAddress() {
+    state = state.copyWith(
+      mediaIds: state.mediaIds.copyWith(clearProofOfAddress: true),
+      clearPoaDocumentType: true,
+    );
+  }
+
   void setProofOfAddress(String mediaId, String typeKey) {
     state = state.copyWith(
       mediaIds: state.mediaIds.copyWith(proofOfAddress: mediaId),
@@ -390,6 +470,27 @@ class KYCNotifier extends _$KYCNotifier {
       );
     }
 
+    // Application extras ride the business block ONLY when the workflow
+    // configures them — the server ignores unconfigured fields anyway, but
+    // sending them would misrepresent what the applicant was actually asked.
+    final biz2 = biz;
+    final documents = hasBusinessDocumentsStep(biz2)
+        ? state.businessDocuments.map((d) => d.toJson()).toList(growable: false)
+        : null;
+    final keyPeople =
+        hasKeyPeopleCollection(biz2)
+            ? keyPeoplePayload(state.keyPeople,
+                applicantIndex: state.applicantKeyPersonIndex)
+            : null;
+    final applicant =
+        hasApplicantVerification(biz2) && state.applicantRole != null
+            ? {
+                'role': state.applicantRole!.key,
+                if ((state.applicantName ?? '').trim().isNotEmpty)
+                  'name': state.applicantName!.trim(),
+              }
+            : null;
+
     state = state.copyWith(isLoading: true);
     final requestId = _uuid.v4();
     final request = VerifyRequest(
@@ -402,11 +503,25 @@ class KYCNotifier extends _$KYCNotifier {
         registrationNumber: regNumber,
         registrationName: state.registrationName,
         product: product,
+        contactEmail: state.businessContactEmail,
+        address: state.businessAddress,
+        email: state.businessEmail,
+        phone: state.businessPhone,
+        website: state.businessWebsite,
+        documents: documents,
+        keyPeople: keyPeople,
+        applicant: applicant,
       ),
       questionnaire: state.questionnaireAnswers.isNotEmpty
           ? state.questionnaireAnswers
           : null,
       deviceIntelligence: _config.deviceIntelligence,
+      contact: (state.emailToken != null || state.phoneToken != null)
+          ? VerifyContact(
+              emailToken: state.emailToken,
+              phoneToken: state.phoneToken,
+            )
+          : null,
       metadata: VerifyMetadata(
         requestId: requestId,
         extra: _extraMetadata(),
@@ -420,12 +535,124 @@ class KYCNotifier extends _$KYCNotifier {
         verificationId: response.verificationId,
         status: response.status,
       );
-      state = state.copyWith(isLoading: false, submissionResult: result);
+      state = state.copyWith(
+        isLoading: false,
+        submissionResult: result,
+        // The success screen hands these out — per-person verification links
+        // for full-KYC key people (a retried requestId returns them again).
+        keyPeopleInvites: response.keyPeopleInvites,
+      );
+
+      // The applicant's own KYC is FIRE-AND-FORGET: the submitted screen shows
+      // after the BUSINESS submit, and a failure here only warns — the org can
+      // re-invite the applicant from the dashboard. Awaiting it would make a
+      // flaky second request fail an already-accepted business submission.
+      final applicantKeyPersonId = response.applicantKeyPersonId;
+      if (applicantKeyPersonId != null && _applicantMediaCaptured) {
+        unawaited(
+          // The LEG's effective country (their country-select choice, or the
+          // overlaid applicant workflow's default) — never forced to the
+          // business registry country. A GH-passport applicant on an
+          // NG-registered business must submit country=GH.
+          _submitApplicantVerification(
+                  effectiveCountry(_config, state), applicantKeyPersonId)
+              .catchError((Object err) {
+            if (kDebugMode) {
+              debugPrint(
+                '[MyazaKYC] Applicant identity submission failed — the '
+                'organization can re-invite the applicant from the dashboard: $err',
+              );
+            }
+          }),
+        );
+      }
+
       return result;
     } on KYCApiException {
       state = state.copyWith(isLoading: false);
       rethrow;
     }
+  }
+
+  /// Whether the applicant capture leg actually produced something to submit.
+  bool get _applicantMediaCaptured =>
+      state.selectedIdType != null &&
+      (state.mediaIds.selfie != null ||
+          state.mediaIds.documentFront != null ||
+          (state.idNumber ?? '').trim().isNotEmpty);
+
+  /// The applicant's OWN verification — an ordinary INDIVIDUAL submission: the
+  /// leg's effective country, the ID they picked, their captured media, and
+  /// `metadata.userId = applicantKeyPersonId` (the server-side link back to the
+  /// application). The KYB workflow itself is never stamped on it (it is not an
+  /// individual flow) — but when the org mapped an applicant workflow
+  /// (business.applicant.workflowId), THAT id rides along so the server applies
+  /// the mapped workflow's gates, pricing and decision graph.
+  Future<void> _submitApplicantVerification(
+    String country,
+    String applicantKeyPersonId,
+  ) async {
+    final idTypeConfig = state.selectedIdType;
+    if (idTypeConfig == null) return;
+    final idNumber = idTypeConfig.requiresDocumentCapture
+        ? null
+        : (state.idNumber?.trim().isEmpty ?? true)
+            ? null
+            : state.idNumber!.trim();
+
+    // Name: values typed on the id-input step (or the consumer's prop) win; the
+    // applicant-role step's optional full name fills the gaps.
+    final split = splitFullName(state.applicantName ?? '');
+    final resolved = resolveVerifyUserData(_config.userData, state.userData);
+    final firstName = resolved?.firstName ?? split?.firstName;
+    final lastName = resolved?.lastName ?? split?.lastName;
+
+    final mediaIds = state.mediaIds;
+    final request = VerifyRequest(
+      country: country,
+      idType: idTypeConfig.key,
+      workflowId: _config.applicantWorkflowId,
+      idNumber: idNumber,
+      userData: (firstName != null || lastName != null)
+          ? VerifyUserData(
+              firstName: firstName,
+              lastName: lastName,
+              dateOfBirth: resolved?.dateOfBirth,
+            )
+          : null,
+      mediaIds: mediaIds.hasAny
+          ? VerifyMediaIds(
+              documentFront: mediaIds.documentFront,
+              documentBack: mediaIds.documentBack,
+              selfie: mediaIds.selfie,
+              documentFrontVideo: mediaIds.documentFrontVideo,
+              documentBackVideo: mediaIds.documentBackVideo,
+              livenessVideo: mediaIds.livenessVideo,
+            )
+          : null,
+      deviceIntelligence: _config.deviceIntelligence,
+      // The chip read, when the leg ran the NFC step (an overlaid applicant
+      // workflow can enable it). Same validate-and-drop as the main submit.
+      nfc: (state.nfcChipData != null && idTypeConfig.supportsNfc)
+          ? VerifyNfc(
+              dg1: state.nfcChipData!.dg1Base64,
+              sod: state.nfcChipData!.sodBase64,
+              dg2: state.nfcChipData!.dg2Base64,
+              chipAuth: state.nfcChipData!.chipAuth,
+              paceOutcome: state.nfcChipData!.paceOutcome,
+              paceDetail: state.nfcChipData!.paceDetail,
+            )
+          : null,
+      metadata: VerifyMetadata(
+        requestId: _uuid.v4(),
+        // The link back to the application. Written AFTER the consumer's
+        // metadata so nothing they passed can clobber it.
+        extra: {...?_extraMetadata(), 'userId': applicantKeyPersonId},
+        device: await _collectDeviceMetadata(),
+      ),
+    );
+
+    await withRetry(() => api.verify(request));
   }
 
   Future<KYCSubmissionResult> submitAsync({

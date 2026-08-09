@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/theme.dart';
+import 'powered_by.dart';
 import 'step_header.dart';
 
 // ─── Bottom sheet container ───────────────────────────────────────────────────
@@ -93,7 +95,7 @@ class KycBottomSheet extends StatelessWidget {
 
     final borderRadius = isFullScreen
         ? BorderRadius.zero
-        : const BorderRadius.vertical(
+        : BorderRadius.vertical(
             top: Radius.circular(MyazaRadius.xl),
           );
 
@@ -116,181 +118,200 @@ class KycBottomSheet extends StatelessWidget {
         }
         onBack?.call();
       },
-      child: Container(
-        clipBehavior: Clip.hardEdge,
-        decoration: BoxDecoration(
-          color: colors.background,
-          borderRadius: borderRadius,
-        ),
-        child: Column(
-          // max on full-screen so the column fills the Scaffold body;
-          // min on sheet so it respects the outer SizedBox constraint.
-          mainAxisSize:
-              isFullScreen ? MainAxisSize.max : MainAxisSize.min,
-          children: [
-            // ── Tinted header block ────────────────────────────────────────
-            // Drag handle (bottom sheet) + brand + close (top line), title +
-            // back arrow, then the step indicator. A subtle surface tint + a
-            // full-width bottom border set the header apart from the body. The
-            // drag handle lives inside the tint so the whole top of the sheet
-            // is one colour.
-            Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                color: kycHeaderSurface(colors, isDark: isDark),
-                border: Border(
-                  bottom: BorderSide(color: colors.border, width: 1),
+      // iOS's numeric keypad has NO done/return key, so a money or number
+      // field could summon a keyboard the user had no way to put away again.
+      // A tap on any non-interactive part of the sheet unfocuses; translucent,
+      // so buttons and fields still claim their own taps first.
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: Container(
+          clipBehavior: Clip.hardEdge,
+          decoration: BoxDecoration(
+            color: colors.background,
+            borderRadius: borderRadius,
+          ),
+          child: Column(
+            // max on full-screen so the column fills the Scaffold body;
+            // min on sheet so it respects the outer SizedBox constraint.
+            mainAxisSize: isFullScreen ? MainAxisSize.max : MainAxisSize.min,
+            children: [
+              // ── Tinted header block ────────────────────────────────────────
+              // Drag handle (bottom sheet) + brand + close (top line), title +
+              // back arrow, then the step indicator. A subtle surface tint + a
+              // full-width bottom border set the header apart from the body. The
+              // drag handle lives inside the tint so the whole top of the sheet
+              // is one colour.
+              Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: kycHeaderSurface(colors, isDark: isDark),
+                  border: Border(
+                    bottom: BorderSide(color: colors.border, width: 1),
+                  ),
                 ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // Drag handle — only on bottom sheet
-                  if (!isFullScreen) _DragHandle(color: colors.gray300),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Drag handle — only on bottom sheet
+                    if (!isFullScreen) _DragHandle(color: colors.gray300),
 
-                  // Top bar: org brand (left) + close (right), same line
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      MyazaSpacing.md,
-                      MyazaSpacing.sm,
-                      MyazaSpacing.md,
-                      0,
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: (logoUrl != null || logoAsset != null)
-                              ? _BrandBar(
-                                  logoUrl: logoUrl,
-                                  logoAsset: logoAsset,
-                                  companyName: companyName,
-                                )
-                              : const SizedBox.shrink(),
-                        ),
-                        if (onToggleTheme != null) ...[
-                          _ThemeToggleButton(
-                            isDark: isDark,
-                            onToggle: onToggleTheme!,
+                    // Top bar: org brand (left) + close (right), same line
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        MyazaSpacing.md,
+                        MyazaSpacing.sm,
+                        MyazaSpacing.md,
+                        0,
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: (logoUrl != null || logoAsset != null)
+                                ? _BrandBar(
+                                    logoUrl: logoUrl,
+                                    logoAsset: logoAsset,
+                                    companyName: companyName,
+                                  )
+                                : const SizedBox.shrink(),
                           ),
+                          if (onToggleTheme != null) ...[
+                            _ThemeToggleButton(
+                              isDark: isDark,
+                              onToggle: onToggleTheme!,
+                            ),
+                            if (canDismiss)
+                              const SizedBox(width: MyazaSpacing.xs),
+                          ],
+                          // Hide the close button entirely when the sheet can't be
+                          // dismissed (terminal step or disableClose) — rather than
+                          // showing a greyed, dead button.
                           if (canDismiss)
-                            const SizedBox(width: MyazaSpacing.xs),
+                            _CloseButton(
+                              isDark: isDark,
+                              // Explicit close: force-pop past the step-back
+                              // PopScope (canPop is false on mid-flow steps, so
+                              // maybePop would be swallowed there).
+                              onTap: () {
+                                onClose?.call();
+                                final nav = Navigator.of(context);
+                                if (nav.canPop()) nav.pop();
+                              },
+                            ),
                         ],
-                        // Hide the close button entirely when the sheet can't be
-                        // dismissed (terminal step or disableClose) — rather than
-                        // showing a greyed, dead button.
-                        if (canDismiss)
-                          _CloseButton(
-                            isDark: isDark,
-                            // Explicit close: force-pop past the step-back
-                            // PopScope (canPop is false on mid-flow steps, so
-                            // maybePop would be swallowed there).
-                            onTap: () {
-                              onClose?.call();
-                              final nav = Navigator.of(context);
-                              if (nav.canPop()) nav.pop();
-                            },
-                          ),
-                      ],
+                      ),
                     ),
-                  ),
 
-                  // Title + back arrow (close lives in the top bar)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(
-                      MyazaSpacing.md,
-                      MyazaSpacing.sm,
-                      MyazaSpacing.md,
-                      MyazaSpacing.sm,
+                    // Title + back arrow (close lives in the top bar)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                        MyazaSpacing.md,
+                        MyazaSpacing.sm,
+                        MyazaSpacing.md,
+                        MyazaSpacing.sm,
+                      ),
+                      child: StepHeader(
+                        title: title,
+                        description: description,
+                        onBack: onBack,
+                        country: country,
+                      ),
                     ),
-                    child: StepHeader(
-                      title: title,
-                      description: description,
-                      onBack: onBack,
-                      country: country,
-                    ),
-                  ),
 
-                  // Step indicator
-                  if (progress != null && stepCount != null)
-                    _StepIndicator(
-                      progress: progress!,
-                      stepCount: stepCount!,
-                    ),
-                  if (progress != null && stepCount != null)
-                    const SizedBox(height: MyazaSpacing.md),
-                ],
-              ),
-            ),
-
-            // Scrollable screen content. The child is constrained to at least
-            // the visible viewport height so screens that bottom-align their
-            // actions (e.g. a Column with MainAxisAlignment.spaceBetween, or a
-            // button pinned under an Expanded) push those actions to the real
-            // bottom of the sheet — while still scrolling when content overflows.
-            // The keyboard inset is applied OUTSIDE the scroll view on purpose:
-            // it shortens the VIEWPORT so its bottom edge sits at the top of
-            // the keyboard. Flutter's focus auto-scroll targets the viewport,
-            // so when the inset was inner content padding the viewport still
-            // ran under the keyboard — a covered field counted as "already
-            // visible" and never scrolled, leaving it (and the step's action
-            // button) behind the keys.
-            Expanded(
-              child: Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
+                    // Step indicator
+                    if (progress != null && stepCount != null)
+                      _StepIndicator(
+                        progress: progress!,
+                        stepCount: stepCount!,
+                      ),
+                    if (progress != null && stepCount != null)
+                      const SizedBox(height: MyazaSpacing.md),
+                  ],
                 ),
-                child: LayoutBuilder(
-                  builder: (context, constraints) {
-                  const topPad = MyazaSpacing.md;
-                  // viewInsets is handled above; padding.bottom is already 0
-                  // while the keyboard covers the home indicator.
-                  final bottomPad = MediaQuery.of(context).padding.bottom +
-                      MyazaSpacing.xl;
-                  final contentMinHeight =
-                      (constraints.maxHeight - topPad - bottomPad)
-                          .clamp(0.0, double.infinity);
-                  final padding = EdgeInsets.only(
-                    left: MyazaSpacing.md,
-                    right: MyazaSpacing.md,
-                    top: topPad,
-                    bottom: bottomPad,
-                  );
+              ),
 
-                  // Fill mode: give the screen the remaining height directly so
-                  // it can flex/scroll internally. No outer scroll view, since
-                  // that would hand the child an unbounded height and make
-                  // Expanded impossible.
-                  //
-                  // The bottom inset is deliberately NOT applied here: a list
-                  // that stops short of the screen edge looks clipped on iOS.
-                  // The viewport runs to the bottom and the screen's own list
-                  // carries the home-indicator inset as CONTENT padding, so
-                  // rows scroll fully clear of it. (The keyboard inset is
-                  // already handled by the Padding above.)
-                  if (fillsViewport) {
-                    return Padding(
-                      padding: const EdgeInsets.only(
+              // Scrollable screen content. The child is constrained to at least
+              // the visible viewport height so screens that bottom-align their
+              // actions (e.g. a Column with MainAxisAlignment.spaceBetween, or a
+              // button pinned under an Expanded) push those actions to the real
+              // bottom of the sheet — while still scrolling when content overflows.
+              // The keyboard inset is applied OUTSIDE the scroll view on purpose:
+              // it shortens the VIEWPORT so its bottom edge sits at the top of
+              // the keyboard. Flutter's focus auto-scroll targets the viewport,
+              // so when the inset was inner content padding the viewport still
+              // ran under the keyboard — a covered field counted as "already
+              // visible" and never scrolled, leaving it (and the step's action
+              // button) behind the keys.
+              Expanded(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    bottom: MediaQuery.of(context).viewInsets.bottom,
+                  ),
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      const topPad = MyazaSpacing.md;
+                      // viewInsets is handled above; padding.bottom is already 0
+                      // while the keyboard covers the home indicator.
+                      // The bottom safe-area inset is NOT added here: PoweredBy
+                      // sits below this viewport and owns the home-indicator
+                      // clearance for the whole sheet. Adding it here too would
+                      // double the gap.
+                      const bottomPad = MyazaSpacing.xl;
+                      final contentMinHeight =
+                          (constraints.maxHeight - topPad - bottomPad)
+                              .clamp(0.0, double.infinity);
+                      const padding = EdgeInsets.only(
                         left: MyazaSpacing.md,
                         right: MyazaSpacing.md,
                         top: topPad,
-                      ),
-                      child: child,
-                    );
-                  }
+                        bottom: bottomPad,
+                      );
 
-                  return SingleChildScrollView(
-                    physics: const ClampingScrollPhysics(),
-                    padding: padding,
-                    child: ConstrainedBox(
-                      constraints: BoxConstraints(minHeight: contentMinHeight),
-                      child: child,
-                    ),
-                  );
-                  },
+                      // Fill mode: give the screen the remaining height directly so
+                      // it can flex/scroll internally. No outer scroll view, since
+                      // that would hand the child an unbounded height and make
+                      // Expanded impossible.
+                      //
+                      // The bottom inset is deliberately NOT applied here: a list
+                      // that stops short of the screen edge looks clipped on iOS.
+                      // The viewport runs to the bottom and the screen's own list
+                      // carries the home-indicator inset as CONTENT padding, so
+                      // rows scroll fully clear of it. (The keyboard inset is
+                      // already handled by the Padding above.)
+                      if (fillsViewport) {
+                        return Padding(
+                          padding: const EdgeInsets.only(
+                            left: MyazaSpacing.md,
+                            right: MyazaSpacing.md,
+                            top: topPad,
+                          ),
+                          child: child,
+                        );
+                      }
+
+                      return SingleChildScrollView(
+                        physics: const ClampingScrollPhysics(),
+                        // Pulling the list down collapses the keyboard — the one
+                        // gesture every user already tries.
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        padding: padding,
+                        child: ConstrainedBox(
+                          constraints:
+                              BoxConstraints(minHeight: contentMinHeight),
+                          child: child,
+                        ),
+                      );
+                    },
+                  ),
                 ),
               ),
-            ),
-          ],
+
+              // Vendor attribution — a sibling of the Expanded body, so it stays
+              // pinned while a long step scrolls under it.
+              const PoweredBy(),
+            ],
+          ),
         ),
       ),
     );
@@ -364,7 +385,7 @@ class _StepDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isCompleted = dotState == _StepDotState.completed;
-    final isActive    = dotState == _StepDotState.active;
+    final isActive = dotState == _StepDotState.active;
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
@@ -467,48 +488,64 @@ class _BrandBar extends StatelessWidget {
         Container(
           width: 28,
           height: 28,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.06),
-                  blurRadius: 4,
-                  offset: const Offset(0, 1),
-                ),
-              ],
-            ),
-            // Explicit ClipOval — a Container's decoration clip doesn't reliably
-            // crop a cover-fit child to a circle, so a square logo would show as
-            // a squircle. SizedBox.expand gives the image tight bounds to cover.
-            child: ClipOval(
-              child: SizedBox.expand(child: _logo()),
-            ),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white,
+            border: Border.all(color: Colors.black.withValues(alpha: 0.05)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
           ),
-          if (companyName != null && companyName!.isNotEmpty) ...[
-            const SizedBox(width: MyazaSpacing.sm),
-            Flexible(
-              child: Text(
-                companyName!,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.spaceGrotesk(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: colors.textDark,
-                ),
+          // Explicit ClipOval — a Container's decoration clip doesn't reliably
+          // crop a cover-fit child to a circle, so a square logo would show as
+          // a squircle. SizedBox.expand gives the image tight bounds to cover.
+          child: ClipOval(
+            child: SizedBox.expand(child: _logo()),
+          ),
+        ),
+        if (companyName != null && companyName!.isNotEmpty) ...[
+          const SizedBox(width: MyazaSpacing.sm),
+          Flexible(
+            child: Text(
+              companyName!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.spaceGrotesk(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: colors.textDark,
               ),
             ),
-          ],
+          ),
         ],
-      );
+      ],
+    );
   }
 
+  /// Whether a logo URL points at an SVG (extension check, query-safe).
+  static bool _isSvgUrl(String url) =>
+      (Uri.tryParse(url)?.path ?? url).toLowerCase().endsWith('.svg');
+
   Widget _logo() {
-    if (logoUrl != null) {
+    final url = logoUrl;
+    if (url != null) {
+      // Browsers render SVG logos in <img>, but Image.network cannot decode
+      // SVG at all — an org whose logo is an .svg (common: the brand import
+      // picks up site favicons) silently lost its logo here while the web SDK
+      // showed it. Route SVG URLs through flutter_svg instead.
+      if (_isSvgUrl(url)) {
+        return SvgPicture.network(
+          url,
+          fit: BoxFit.cover,
+          placeholderBuilder: (_) => const SizedBox.shrink(),
+        );
+      }
       return Image.network(
-        logoUrl!,
+        url,
         fit: BoxFit.cover,
         errorBuilder: (_, __, ___) => const SizedBox.shrink(),
       );
@@ -653,9 +690,12 @@ class _PressScaleState extends State<_PressScale>
       return widget.child;
     }
     return GestureDetector(
-      onTapDown:   (_) => _ctrl.forward(),
-      onTapUp:     (_) { _ctrl.reverse(); widget.onTap!(); },
-      onTapCancel: ()  => _ctrl.reverse(),
+      onTapDown: (_) => _ctrl.forward(),
+      onTapUp: (_) {
+        _ctrl.reverse();
+        widget.onTap!();
+      },
+      onTapCancel: () => _ctrl.reverse(),
       child: ScaleTransition(scale: _scale, child: widget.child),
     );
   }

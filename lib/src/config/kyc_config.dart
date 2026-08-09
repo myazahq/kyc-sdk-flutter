@@ -12,7 +12,8 @@ enum KYCEnvironment { development, sandbox, production }
 
 // ─── Theme mode ─────────────────────────────────────────────────────────────
 
-enum MyazaThemeMode { light, dark }
+/// `system` follows the device's platform brightness (live).
+enum MyazaThemeMode { light, dark, system }
 
 // ─── Appearance ─────────────────────────────────────────────────────────────
 
@@ -49,6 +50,28 @@ class MyazaKYCAppearance {
   /// over [logoAsset].
   final String? logo;
 
+  /// Corner radius in px for buttons, inputs and cards. The whole radius scale
+  /// derives from it, so 0 squares the flow off and 20 softens it. Circular
+  /// elements (avatars, the camera oval) are never affected. Null = the SDK
+  /// default (12).
+  final double? borderRadius;
+
+  /// Body font family. Resolved through `google_fonts` by name, so any Google
+  /// font works; an unknown name falls back to a family bundled by the host app,
+  /// then to the SDK default. Null = Karla.
+  final String? fontFamily;
+
+  /// Heading font family. Falls back to [fontFamily], then to Space Grotesk.
+  final String? headingFontFamily;
+
+  /// Colour overrides applied only in DARK mode.
+  ///
+  /// The colours above are the LIGHT palette. Without this the appearance is
+  /// applied on top of whichever base scheme is active, so an org's light
+  /// background simply overwrote the dark one and the theme toggle stopped
+  /// working for any branded flow.
+  final MyazaKYCAppearance? dark;
+
   final MyazaThemeMode theme;
 
   const MyazaKYCAppearance({
@@ -62,12 +85,41 @@ class MyazaKYCAppearance {
     this.companyName = 'Myaza',
     this.logoAsset,
     this.logo,
+    this.borderRadius,
+    this.fontFamily,
+    this.headingFontFamily,
+    this.dark,
     this.theme = MyazaThemeMode.light,
   });
 
+  /// The palette for [isDark], with the dark overrides folded in when present.
+  /// Returns `this` unchanged in light mode, or when no dark block was given.
+  MyazaKYCAppearance forBrightness(bool isDark) {
+    final d = dark;
+    if (!isDark || d == null) return this;
+    return MyazaKYCAppearance(
+      primaryColor: d.primaryColor ?? primaryColor,
+      primaryTextColor: d.primaryTextColor ?? primaryTextColor,
+      accentColor: d.accentColor ?? accentColor,
+      backgroundColor: d.backgroundColor ?? backgroundColor,
+      surfaceColor: d.surfaceColor ?? surfaceColor,
+      borderColor: d.borderColor ?? borderColor,
+      textColor: d.textColor ?? textColor,
+      // Non-colour settings never differ by mode.
+      companyName: companyName,
+      logoAsset: logoAsset,
+      logo: logo,
+      borderRadius: borderRadius,
+      fontFamily: fontFamily,
+      headingFontFamily: headingFontFamily,
+      theme: theme,
+    );
+  }
+
   /// Shallow-merges a resolved workflow's `appearance` map over [base]
   /// (flow keys win per-field, matching the web SDK's shallow appearance
-  /// merge). Colors are hex strings (`#5645F5`); `theme` is `'light'`/`'dark'`.
+  /// merge). Colors are hex strings (`#5645F5`); `theme` is
+  /// `'light'`/`'dark'`/`'system'`.
   /// Returns [base] unchanged when [flow] is null/empty.
   static MyazaKYCAppearance? mergeFromJson(
     MyazaKYCAppearance? base,
@@ -89,11 +141,23 @@ class MyazaKYCAppearance {
       companyName: (flow['companyName'] as String?) ?? b.companyName,
       logoAsset: b.logoAsset,
       logo: (flow['logo'] as String?) ?? b.logo,
-      theme: themeStr == 'dark'
-          ? MyazaThemeMode.dark
-          : themeStr == 'light'
-              ? MyazaThemeMode.light
-              : b.theme,
+      // num, not double: JSON decodes 12 as int and 12.0 as double.
+      borderRadius: (flow['borderRadius'] as num?)?.toDouble() ?? b.borderRadius,
+      fontFamily: (flow['fontFamily'] as String?) ?? b.fontFamily,
+      headingFontFamily:
+          (flow['headingFontFamily'] as String?) ?? b.headingFontFamily,
+      dark: flow['dark'] is Map<String, dynamic>
+          ? MyazaKYCAppearance.mergeFromJson(
+              b.dark ?? const MyazaKYCAppearance(),
+              flow['dark'] as Map<String, dynamic>,
+            )
+          : b.dark,
+      theme: switch (themeStr) {
+        'dark' => MyazaThemeMode.dark,
+        'light' => MyazaThemeMode.light,
+        'system' => MyazaThemeMode.system,
+        _ => b.theme,
+      },
     );
   }
 }
@@ -225,6 +289,12 @@ class UserData {
   final String? address;
   final String? phoneNumber;
 
+  /// The business's display name, for `{businessName}` tokens in consent copy
+  /// on KYB flows. Registration details aren't collected until after consent,
+  /// so this resolves only when the integrator passes it in — mirrors the web
+  /// SDK. Display-only: never submitted.
+  final String? businessName;
+
   const UserData({
     this.firstName,
     this.lastName,
@@ -232,6 +302,7 @@ class UserData {
     this.gender,
     this.address,
     this.phoneNumber,
+    this.businessName,
   });
 
   factory UserData.fromJson(Map<String, dynamic> json) => UserData(
@@ -241,6 +312,7 @@ class UserData {
         gender: json['gender'] as String?,
         address: json['address'] as String?,
         phoneNumber: json['phoneNumber'] as String?,
+        businessName: json['businessName'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -250,6 +322,8 @@ class UserData {
         if (gender != null) 'gender': gender,
         if (address != null) 'address': address,
         if (phoneNumber != null) 'phoneNumber': phoneNumber,
+        // businessName is deliberately NOT serialized — it is consent-copy
+        // display data, not verification input.
       };
 }
 
@@ -307,6 +381,13 @@ class MyazaKYCConfig {
   /// success copy, …). Runtime data (userId, userData, metadata, callbacks)
   /// always stays code-side. Null = configure the flow from props directly.
   final String? workflowId;
+
+  /// KYB only: the mapped applicant workflow's id
+  /// (`business.applicant.workflowId`, resolved server-side). Set by the
+  /// workflow gate after overlaying its capture template; stamped on the
+  /// applicant's own submission so the server applies that workflow's gates,
+  /// pricing and decision graph. Internal — never set this yourself.
+  final String? applicantWorkflowId;
 
   /// Dev-only base-URL override. Only applied for **development** keys
   /// (`pk_dev_…`); ignored for sandbox/production. Defaults to a platform-aware
@@ -431,6 +512,7 @@ class MyazaKYCConfig {
     required this.apiKey,
     this.country,
     this.workflowId,
+    this.applicantWorkflowId,
     this.devUrl,
     this.countries,
     this.idTypes,
@@ -488,11 +570,13 @@ class MyazaKYCConfig {
     NfcConfig? nfc,
     String? subjectType,
     WorkflowBusinessConfig? business,
+    String? applicantWorkflowId,
   }) =>
       MyazaKYCConfig(
         apiKey: apiKey,
         country: country ?? this.country,
         workflowId: workflowId,
+        applicantWorkflowId: applicantWorkflowId ?? this.applicantWorkflowId,
         devUrl: devUrl,
         countries: countries ?? this.countries,
         idTypes: idTypes ?? this.idTypes,
@@ -561,6 +645,9 @@ class KYCError {
   ///   • 'upload_failed'            — /api/kyc/upload failed (after retries)
   ///   • 'camera_permission_denied' — the user denied / the OS blocks camera access
   ///   • 'feature_disabled'         — server returned 403 (ID type / feature not enabled)
+  ///   • 'invalid_workflow'         — the workflow is unknown, unpublished, or
+  ///                                  can't be run by this SDK (KYB subject /
+  ///                                  country / product mismatch)
   ///   • 'unknown'                  — anything else
   ///
   /// Voice guidance is text-to-speech *output* — it never records audio, so

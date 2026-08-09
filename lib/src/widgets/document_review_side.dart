@@ -71,19 +71,23 @@ class DocumentReviewThumb extends StatelessWidget {
                   ),
                 ),
               ),
+              // Inset past the corner CURVE, not just past the edge: at this
+              // radius a 6px offset puts the chip on the round, where it reads
+              // as clipped.
               Positioned(
-                left: 6,
-                top: 6,
+                left: MyazaSpacing.md,
+                top: MyazaSpacing.md,
                 child: _Chip(child: Text(side.label, style: _chipTextStyle)),
               ),
               // Enlarging is a tap on the image, which nothing announces — so
               // the image says so itself.
               const Positioned(
-                right: 6,
-                bottom: 6,
+                right: MyazaSpacing.md,
+                bottom: MyazaSpacing.md,
                 child: _Chip(
+                  icon: true,
                   child: Icon(LucideIcons.maximize2,
-                      size: 12, color: Colors.white),
+                      size: 18, color: Colors.white),
                 ),
               ),
               if (busyOverlay != null) Positioned.fill(child: busyOverlay!),
@@ -219,11 +223,17 @@ const _chipTextStyle = TextStyle(
 class _Chip extends StatelessWidget {
   final Widget child;
 
-  const _Chip({required this.child});
+  /// Icon chips are square and need room AROUND the glyph, not the tighter
+  /// padding that suits a line of text.
+  final bool icon;
+
+  const _Chip({required this.child, this.icon = false});
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        padding: icon
+            ? const EdgeInsets.all(8)
+            : const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: Colors.black.withValues(alpha: 0.55),
           borderRadius: BorderRadius.circular(999),

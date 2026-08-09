@@ -25,7 +25,7 @@ Future<T?> showMyazaSheet<T>(
     context: context,
     backgroundColor: colors.background,
     isScrollControlled: isScrollControlled,
-    shape: const RoundedRectangleBorder(
+    shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(MyazaRadius.xl)),
     ),
     builder: (sheetContext) => Theme(

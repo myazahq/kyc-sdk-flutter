@@ -1,8 +1,12 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import '../config/brand.dart';
+import '../config/business_application.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 
@@ -25,15 +29,56 @@ const String _kDefaultConsentDescription =
     'We need to verify your identity to comply with regulatory '
     'requirements. This process is quick and secure.';
 
-/// Replaces `{firstName}` / `{lastName}` tokens with the user's data (or '').
-String _fillTokens(String template, String firstName, String lastName) =>
+const String _kDefaultBusinessConsentDescription =
+    'We need to verify your business to comply with regulatory '
+    'requirements. This process is quick and secure.';
+
+/// Replaces `{firstName}` / `{lastName}` / `{businessName}` tokens with the
+/// user's data (or ''). `{businessName}` is the KYB consent-copy token —
+/// registration details aren't collected until after consent, so it resolves
+/// only when the integrator passes it in via userData.
+String _fillTokens(
+  String template,
+  String firstName,
+  String lastName,
+  String businessName,
+) =>
     template
         .replaceAll('{firstName}', firstName)
         .replaceAll('{lastName}', lastName)
+        .replaceAll('{businessName}', businessName)
         .trim();
 
 class _ConsentScreenState extends ConsumerState<ConsentScreen> {
-  bool _agreed = false;
+  // One recognizer per link, owned by the State so they can be disposed.
+  // Building them inline in `build` leaks a recognizer on every rebuild.
+  late final TapGestureRecognizer _termsTap;
+  late final TapGestureRecognizer _privacyTap;
+
+  @override
+  void initState() {
+    super.initState();
+    _termsTap = TapGestureRecognizer()..onTap = () => _open(kTermsUrl);
+    _privacyTap = TapGestureRecognizer()..onTap = () => _open(kPrivacyUrl);
+  }
+
+  @override
+  void dispose() {
+    _termsTap.dispose();
+    _privacyTap.dispose();
+    super.dispose();
+  }
+
+  /// Opens in the platform browser. A failure is swallowed: not being able to
+  /// show the terms must never block someone from verifying, and there is no
+  /// useful recovery to offer them mid-flow.
+  Future<void> _open(String url) async {
+    try {
+      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // no-op
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -43,28 +88,68 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     final notifier = ref.read(kYCNotifierProvider.notifier);
     final firstName = config.userData?.firstName ?? '';
     final lastName = config.userData?.lastName ?? '';
+    final businessName = config.userData?.businessName ?? '';
+    final isBusiness = config.subjectType == 'business';
+    final business = config.business;
 
-    final defaultTitle =
-        firstName.isNotEmpty ? 'Welcome, $firstName' : 'Identity Verification';
+    final defaultTitle = firstName.isNotEmpty
+        ? 'Welcome, $firstName'
+        : isBusiness
+            ? 'Business Verification'
+            : 'Identity Verification';
     final title = config.consent?.title != null
-        ? _fillTokens(config.consent!.title!, firstName, lastName)
+        ? _fillTokens(config.consent!.title!, firstName, lastName, businessName)
         : defaultTitle;
     final description = config.consent?.description != null
-        ? _fillTokens(config.consent!.description!, firstName, lastName)
-        : _kDefaultConsentDescription;
+        ? _fillTokens(
+            config.consent!.description!, firstName, lastName, businessName)
+        : isBusiness
+            ? _kDefaultBusinessConsentDescription
+            : _kDefaultConsentDescription;
 
     // Reflect the actually-enabled features so the list matches the real flow.
     // Same lucide icons as the web SDK's ConsentStep.
+    // What this flow ACTUALLY does — the notice must not overclaim
+    // (facial recognition with no selfie step) or underclaim (recording
+    // video without saying so, which is the one that carries risk). A business
+    // flow captures a face only when the applicant verifies their own identity
+    // in-flow; a pure registry lookup captures nothing.
+    final capturesFace =
+        isBusiness ? hasApplicantVerification(business) : config.enableSelfie;
+    final recordsVideo =
+        capturesFace || (!isBusiness && config.enableDocumentCapture);
+
+    final hasContactStep = (config.emailVerification?.enabled ?? false) ||
+        (config.phoneVerification?.enabled ?? false);
+
+    // A KYB flow lists its application steps — never the identity rows, which
+    // would claim steps a registry-lookup flow does not run.
     final steps = <_ProcessStep>[
-      const _ProcessStep(
-        LucideIcons.badgeCheck,
-        'Verify your government-issued ID',
-      ),
-      const _ProcessStep(
-        LucideIcons.userRound,
-        'Collect basic personal information',
-      ),
-      if (config.enableDocumentCapture)
+      if (isBusiness) ...[
+        const _ProcessStep(
+          LucideIcons.building2,
+          'Collect your business registration details',
+        ),
+        const _ProcessStep(
+          LucideIcons.badgeCheck,
+          'Verify your business against the official registry',
+        ),
+      ] else ...[
+        const _ProcessStep(
+          LucideIcons.badgeCheck,
+          'Verify your government-issued ID',
+        ),
+        const _ProcessStep(
+          LucideIcons.userRound,
+          'Collect basic personal information',
+        ),
+      ],
+      if (hasContactStep)
+        const _ProcessStep(
+          LucideIcons.lock,
+          'Confirm your contact details with a one-time code',
+        ),
+      if (!isBusiness && config.enableDocumentCapture)
         const _ProcessStep(
           LucideIcons.scanLine,
           'Capture a photo of your ID document',
@@ -73,15 +158,30 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
       // document's NFC chip. Shown when the flow enables NFC so the user knows
       // to have the physical document to hand — same "what may happen" spirit as
       // the document/selfie rows (a non-chip ID simply skips it).
-      if (config.nfc?.enabled ?? false)
+      if (!isBusiness && (config.nfc?.enabled ?? false))
         const _ProcessStep(
           LucideIcons.nfc,
           'Scan your document’s security chip (NFC)',
         ),
-      if (config.enableSelfie)
+      if (!isBusiness && config.enableSelfie)
         const _ProcessStep(
           LucideIcons.scanFace,
           'Take a selfie for facial verification',
+        ),
+      if (isBusiness && hasKeyPeopleCollection(business))
+        const _ProcessStep(
+          LucideIcons.usersRound,
+          "List the company's directors and owners",
+        ),
+      if (isBusiness && hasBusinessDocumentsStep(business))
+        const _ProcessStep(
+          LucideIcons.fileText,
+          'Upload supporting business documents',
+        ),
+      if (isBusiness && hasApplicantVerification(business))
+        const _ProcessStep(
+          LucideIcons.scanFace,
+          'Verify your own identity',
         ),
     ];
 
@@ -112,19 +212,60 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         _ProcessStepsCard(colors: colors, text: text, steps: steps),
         const SizedBox(height: MyazaSpacing.lg),
 
-        // ── Consent checkbox ─────────────────────────────────────────────────
-        _ConsentCheckbox(
-          value: _agreed,
-          colors: colors,
-          text: text,
-          onChanged: (v) => setState(() => _agreed = v),
+        // ── Consent notice ───────────────────────────────────────────────────
+        // Consent is given by ACTING now, so the notice sits immediately above
+        // the button it describes — adjacency is what makes it informed. The
+        // biometric sentence is DERIVED: claiming facial recognition on a flow
+        // with no selfie step would be false, and recording video without
+        // saying so is the failure that actually matters.
+        Text.rich(
+          TextSpan(
+            style: text.bodySmall,
+            children: [
+              const TextSpan(text: 'By tapping Continue, you agree to the '),
+              TextSpan(
+                text: 'End User Terms',
+                style: TextStyle(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: colors.primary,
+                ),
+                recognizer: _termsTap,
+              ),
+              const TextSpan(text: ' and '),
+              TextSpan(
+                text: 'Privacy Policy',
+                style: TextStyle(
+                  color: colors.primary,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.underline,
+                  decorationColor: colors.primary,
+                ),
+                recognizer: _privacyTap,
+              ),
+              TextSpan(
+                text: isBusiness
+                    ? ', and consent to your business and personal data being '
+                        'processed to verify your identity.'
+                    : ', and consent to your personal data being processed to '
+                        'verify your identity.',
+              ),
+              if (capturesFace)
+                const TextSpan(
+                  text: ' This includes facial recognition and recording this session.',
+                )
+              else if (recordsVideo)
+                const TextSpan(text: ' This includes recording this session.'),
+            ],
+          ),
         ),
         const SizedBox(height: MyazaSpacing.lg),
 
         // ── Continue ─────────────────────────────────────────────────────────
         MyazaButton(
           label: 'Continue',
-          onPressed: _agreed ? notifier.nextStep : null,
+          onPressed: notifier.nextStep,
         ),
         const SizedBox(height: MyazaSpacing.sm),
 
@@ -290,74 +431,6 @@ class _StepRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-// ─── Consent checkbox ─────────────────────────────────────────────────────────
-
-class _ConsentCheckbox extends StatelessWidget {
-  final bool value;
-  final MyazaColorScheme colors;
-  final MyazaThemeText text;
-  final ValueChanged<bool> onChanged;
-
-  const _ConsentCheckbox({
-    required this.value,
-    required this.colors,
-    required this.text,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.all(MyazaSpacing.md),
-        decoration: BoxDecoration(
-          color: value
-              ? colors.primary.withValues(alpha: 0.06)
-              : colors.backgroundSecondary,
-          borderRadius: BorderRadius.circular(MyazaRadius.sm),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 1),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 150),
-                width: 22,
-                height: 22,
-                decoration: BoxDecoration(
-                  color: value ? colors.primary : Colors.transparent,
-                  borderRadius: BorderRadius.circular(MyazaRadius.xs - 2),
-                  border: Border.all(
-                    color: value ? colors.primary : colors.gray400,
-                    width: 1.5,
-                  ),
-                ),
-                child: value
-                    ? Icon(Icons.check_rounded, size: 14, color: colors.onPrimary)
-                    : null,
-              ),
-            ),
-            const SizedBox(width: MyazaSpacing.sm + 2),
-            Expanded(
-              child: Text(
-                'I consent to the collection and processing of my personal data '
-                'for identity verification purposes.',
-                style: text.bodyMedium.copyWith(
-                  fontWeight: FontWeight.w600,
-                  color: colors.textDark,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

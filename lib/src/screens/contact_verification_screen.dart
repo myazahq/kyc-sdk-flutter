@@ -1,27 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/contact_errors.dart';
-import '../widgets/myaza_button.dart';
+import 'contact_header_sync.dart';
+import 'contact_verification_actions.dart';
+import 'contact_verification_entry.dart';
 import 'contact_verification_parts.dart';
+import 'contact_verification_verified.dart';
 import 'contact_verification_settings.dart';
 
 // ─── Contact verification screen (email / phone OTP) ──────────────────────────
 //
 // One component, two mounts (channel: 'email' | 'phone'): enter a destination →
-// send a code → enter the OTP → verify → advance. A single primary button
-// carries the flow (as in the web SDK): "Send code", then "Verify code" once a
-// challenge exists. The last digit also auto-submits; the button covers the
-// cases where that doesn't fire. Both show the button's loader while in flight.
+// send a code → enter the OTP → verify → advance.
 // NOTE: each mount needs a distinct key — see _screenForStep.
-
-final _emailRe = RegExp(r'.+@.+\..+');
-
-/// Server-side minimum code length (the server clamps codeLength to 4–8).
-const int _kMinCodeLength = 4;
 
 class ContactVerificationScreen extends ConsumerStatefulWidget {
   final String channel; // 'email' | 'phone'
@@ -44,15 +38,25 @@ class _ContactVerificationScreenState
   bool _checking = false;
   String? _error;
 
+  /// User-picked delivery channel; null leaves the workflow's first offered
+  /// channel as the default.
+  String? _via;
+
+  /// Resend, optionally switching channel first.
+  void _resend(String? switchTo) {
+    if (switchTo != null) setState(() => _via = switchTo);
+    _send();
+  }
+
   bool get _isPhone => widget.channel == 'phone';
   ContactChannelSettings get _settings => ContactChannelSettings.resolve(
       ref.read(kycConfigProvider), widget.channel);
 
   /// Any request in flight — drives the button loader and input disabling.
   bool get _busy => _sending || _checking;
-  bool get _canSend => _isPhone ? _phoneValid : _emailRe.hasMatch(_destination);
-  bool get _canVerify => _code.trim().length >= _kMinCodeLength;
-
+  bool get _canSend =>
+      _isPhone ? _phoneValid : isPlausibleContactEmail(_destination);
+  bool get _canVerify => _code.trim().length >= kMinCodeLength;
   KYCApiService get _api => ref.read(kYCNotifierProvider.notifier).api;
   void _advance() => ref.read(kYCNotifierProvider.notifier).nextStep();
 
@@ -73,7 +77,7 @@ class _ContactVerificationScreenState
       final res = await _api.contactSend(
         channel: widget.channel,
         destination: _destination,
-        via: settings.via,
+        via: _via ?? settings.defaultChannel,
         codeLength: settings.codeLength,
         maxAttempts: settings.maxAttempts,
       );
@@ -97,7 +101,7 @@ class _ContactVerificationScreenState
 
   Future<void> _check(String code) async {
     final value = code.trim();
-    if (_challengeId == null || _busy || value.length < _kMinCodeLength) return;
+    if (_challengeId == null || _busy || value.length < kMinCodeLength) return;
     setState(() {
       _checking = true;
       _error = null;
@@ -130,8 +134,6 @@ class _ContactVerificationScreenState
 
   @override
   Widget build(BuildContext context) {
-    final text = context.myazaText;
-    final colors = context.myazaColors;
     final settings = _settings;
     final state = ref.watch(kYCNotifierProvider);
     final verifiedToken = _isPhone ? state.phoneToken : state.emailToken;
@@ -144,15 +146,18 @@ class _ContactVerificationScreenState
       );
     }
 
-    final challengeId = _challengeId;
-    final hasChallenge = challengeId != null;
-    final canSubmit = hasChallenge ? _canVerify : _canSend;
+    final hasChallenge = _challengeId != null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        ContactHeaderSync(
+          channel: widget.channel,
+          via: _isPhone ? (_via ?? settings.defaultChannel ?? '') : '',
+          destination: hasChallenge ? _destination : '',
+        ),
         if (!hasChallenge)
-          ContactDestinationField(
+          ContactEntryPanel(
             isPhone: _isPhone,
             emailController: _emailCtrl,
             defaultCountry: settings.defaultCountry,
@@ -162,42 +167,32 @@ class _ContactVerificationScreenState
               _destination = e164;
               _phoneValid = valid;
             }),
+            offeredChannels: settings.offeredChannels,
+            pickedChannel: _via ?? settings.defaultChannel ?? 'sms',
+            onPickChannel: (c) => setState(() => _via = c),
           )
         else
           ContactCodePanel(
-            destination: _destination,
             codeLength: settings.codeLength,
             style: settings.inputStyle,
             enabled: !_busy,
-            challengeId: challengeId,
+            challengeId: _challengeId!,
             expiresAt: _expiresAt,
             onChanged: (c) => setState(() => _code = c),
             onCompleted: _check,
-            onResend: _busy ? null : _send,
+            onResend: _busy ? null : _resend,
+            otherChannel: settings.otherThan(_via),
           ),
-        if (_error != null) ...[
-          const SizedBox(height: MyazaSpacing.sm),
-          Text(_error!,
-              style: text.bodySmall.copyWith(color: MyazaColors.error)),
-        ],
-        const SizedBox(height: MyazaSpacing.xl),
-        MyazaButton(
-          label: hasChallenge ? 'Verify code' : 'Send code',
-          isLoading: _busy,
-          onPressed: canSubmit && !_busy
+        ContactActions(
+          error: _error,
+          hasChallenge: hasChallenge,
+          isBusy: _busy,
+          isPhone: _isPhone,
+          onSubmit: (hasChallenge ? _canVerify : _canSend) && !_busy
               ? (hasChallenge ? () => _check(_code) : _send)
               : null,
+          onSkip: settings.required ? null : _advance,
         ),
-        if (!settings.required) ...[
-          const SizedBox(height: MyazaSpacing.sm),
-          Center(
-            child: TextButton(
-              onPressed: _busy ? null : _advance,
-              child: Text('Skip for now',
-                  style: text.bodyMedium.copyWith(color: colors.textSecondary)),
-            ),
-          ),
-        ],
       ],
     );
   }

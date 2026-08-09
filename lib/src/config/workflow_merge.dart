@@ -1,4 +1,4 @@
-import '../services/api_service.dart' show WorkflowFlowConfig;
+import '../services/api_service.dart' show ApplicantWorkflow, WorkflowFlowConfig;
 import 'business.dart';
 import 'contact_verification.dart';
 import 'kyc_config.dart';
@@ -102,5 +102,49 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
         ? KYCSuccessContent.fromJson(flow.success!)
         : null,
     voiceGuidance: VoiceGuidanceConfig.fromDynamic(flow.voiceGuidance),
+  );
+}
+
+/// Overlays a mapped APPLICANT workflow's capture template over an (already
+/// workflow-merged) KYB config — the individual leg surface only (country,
+/// countries, idTypes, capture/liveness toggles, NFC) — and records its id so
+/// the applicant's own submission is stamped with it (server-side gates,
+/// pricing and decisioning then run the mapped workflow). KYB publish REJECTS
+/// these keys on the business config itself, so the overlay is collision-free
+/// by construction. Contact OTPs, the questionnaire, branding and device
+/// policy stay the KYB workflow's own. Mirrors the web SDK's
+/// `overlayApplicantWorkflow`.
+MyazaKYCConfig overlayApplicantWorkflow(
+  MyazaKYCConfig merged,
+  ApplicantWorkflow? applicant,
+) {
+  if (applicant == null) return merged;
+  final flow = WorkflowFlowConfig.fromJson(applicant.config);
+
+  List<WorkflowCountryOption>? countries;
+  final rawCountries = flow.raw['countries'];
+  if (rawCountries is List) {
+    countries = rawCountries
+        .whereType<Map>()
+        .map((e) => WorkflowCountryOption.fromJson(e.cast<String, dynamic>()))
+        .toList(growable: false);
+  }
+
+  final rawNfc = flow.raw['nfc'];
+  final nfc =
+      rawNfc is Map ? NfcConfig.fromJson(rawNfc.cast<String, dynamic>()) : null;
+
+  return merged.copyWith(
+    applicantWorkflowId: applicant.id,
+    country: flow.country,
+    countries: countries,
+    idTypes: flow.idTypes,
+    enableSelfie: flow.enableSelfie,
+    enableDocumentCapture: flow.enableDocumentCapture,
+    allowDocumentUpload: flow.allowDocumentUpload,
+    enableLiveness: flow.enableLiveness,
+    livenessMode: flow.raw['livenessMode'] as String?,
+    flashSequenceLength: (flow.raw['flashSequenceLength'] as num?)?.toInt(),
+    nfc: nfc,
   );
 }

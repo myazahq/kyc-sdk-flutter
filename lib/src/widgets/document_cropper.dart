@@ -448,6 +448,6 @@ class _CropOverlayPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_CropOverlayPainter old) =>
-      old.cropRect != cropRect || old.imgRect != imgRect;
+  bool shouldRepaint(_CropOverlayPainter oldDelegate) =>
+      oldDelegate.cropRect != cropRect || oldDelegate.imgRect != imgRect;
 }

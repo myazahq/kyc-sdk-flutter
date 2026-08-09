@@ -52,7 +52,7 @@ class _NfcReadSheet extends StatelessWidget {
         return Container(
           decoration: BoxDecoration(
             color: colors.background,
-            borderRadius: const BorderRadius.vertical(
+            borderRadius: BorderRadius.vertical(
               top: Radius.circular(MyazaRadius.lg),
             ),
           ),

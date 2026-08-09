@@ -51,8 +51,37 @@ export 'src/config/business.dart'
         BusinessProductInput,
         BusinessProduct,
         kBusinessProducts,
+        kDefaultBusinessProduct,
         businessProduct,
+        isValidContactEmail,
+        CompanyInfoField,
+        CompanyInfoMode,
+        KeyPersonRole,
+        ApplicantRole,
+        KeyPeopleLevel,
+        keyPersonRoleFromKey,
+        kBusinessDocumentLabels,
+        businessDocumentLabel,
+        WorkflowKeyPeopleConfig,
+        WorkflowBusinessDocumentType,
+        WorkflowBusinessDocumentsConfig,
+        WorkflowBusinessApplicantConfig,
         WorkflowBusinessConfig;
+
+// The KYB application section — which steps a business workflow adds beyond the
+// registration details, and the row/payload models those steps collect.
+export 'src/config/business_application.dart'
+    show
+        kMaxKeyPeopleRows,
+        hasKeyPeopleCollection,
+        hasBusinessDocumentsStep,
+        hasApplicantVerification,
+        keyPeopleMinEntries,
+        resolveBusinessDocumentTypes,
+        ResolvedBusinessDocumentType,
+        KeyPersonEntry,
+        BusinessDocumentUpload,
+        keyPeoplePayload;
 
 // NFC chip reader — the interface + types are public so hosts can inject a
 // custom/stub reader via `nfcChipReaderOverride` (tests, or a different eMRTD lib).

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/questionnaire.dart';
 import '../config/currency_flags.dart';
@@ -228,22 +229,12 @@ class _MoneyField extends StatelessWidget {
     // lines up with the amount field instead of sitting short.
     const controlHeight = 48.0;
 
+    // Currency FIRST, then the amount — it reads as a unit prefix ("NGN 250,000"),
+    // the way a currency is actually written, and it stops the amount field's
+    // caret from being pushed around by a control appearing beside it.
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: MyazaInput(
-            controller: controller,
-            hint: field.placeholder ?? '0.00',
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            inputFormatters: const [AmountInputFormatter()],
-            onChanged: (v) {
-              final n = parseGroupedAmount(v);
-              onAmount(n == null ? null : double.parse(n.toStringAsFixed(2)));
-            },
-          ),
-        ),
-        const SizedBox(width: MyazaSpacing.sm),
         if (field.currencies.length > 1)
           SizedBox(
             height: controlHeight,
@@ -256,6 +247,7 @@ class _MoneyField extends StatelessWidget {
                   MyazaSelectOption(
                     value: c,
                     label: c,
+                    description: currencyName(c),
                     leading: _CurrencyFlag(currency: c),
                   ),
               ],
@@ -281,6 +273,20 @@ class _MoneyField extends StatelessWidget {
               ],
             ),
           ),
+        if (field.currencies.isNotEmpty)
+          const SizedBox(width: MyazaSpacing.sm),
+        Expanded(
+          child: MyazaInput(
+            controller: controller,
+            hint: field.placeholder ?? '0.00',
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: const [AmountInputFormatter()],
+            onChanged: (v) {
+              final n = parseGroupedAmount(v);
+              onAmount(n == null ? null : double.parse(n.toStringAsFixed(2)));
+            },
+          ),
+        ),
       ],
     );
   }
@@ -343,28 +349,99 @@ class _MultiSelectField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.myazaColors;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        for (final o in field.options)
-          CheckboxListTile(
-            contentPadding: EdgeInsets.zero,
-            dense: true,
-            controlAffinity: ListTileControlAffinity.leading,
-            activeColor: colors.primary,
-            value: values.contains(o.value),
-            title: Text(o.label, style: context.myazaText.bodyMedium),
-            onChanged: (checked) {
+        for (final o in field.options) ...[
+          _CheckCard(
+            label: o.label,
+            checked: values.contains(o.value),
+            onTap: () {
               final next = List<String>.from(values);
-              if (checked == true) {
-                next.add(o.value);
-              } else {
+              if (next.contains(o.value)) {
                 next.remove(o.value);
+              } else {
+                next.add(o.value);
               }
               onChanged(next);
             },
           ),
+          if (o != field.options.last) const SizedBox(height: MyazaSpacing.sm),
+        ],
       ],
+    );
+  }
+}
+
+/// One multi-select choice — a bordered card with a square check, mirroring the
+/// web SDK's `rounded-xl border p-3` label + shadcn Checkbox.
+///
+/// A bare Material CheckboxListTile was borderless and full-bleed, so the
+/// options read as a dense list rather than the tappable cards every other
+/// choice in the flow uses.
+class _CheckCard extends StatelessWidget {
+  final String label;
+  final bool checked;
+  final VoidCallback onTap;
+
+  const _CheckCard({
+    required this.label,
+    required this.checked,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.myazaColors;
+    final text = context.myazaText;
+
+    return Semantics(
+      checked: checked,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(MyazaRadius.sm),
+        child: Container(
+          padding: const EdgeInsets.all(MyazaSpacing.md - 4),
+          decoration: BoxDecoration(
+            color: checked ? colors.primary50 : null,
+            border: Border.all(
+              color: checked ? colors.primary : colors.border,
+            ),
+            borderRadius: BorderRadius.circular(MyazaRadius.sm),
+          ),
+          child: Row(
+            children: [
+              _CheckBox(checked: checked),
+              const SizedBox(width: 10),
+              Expanded(child: Text(label, style: text.bodyMedium)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 20×20 square check — the web SDK's `h-5 w-5 rounded-md` checkbox.
+class _CheckBox extends StatelessWidget {
+  final bool checked;
+  const _CheckBox({required this.checked});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.myazaColors;
+    return Container(
+      width: 20,
+      height: 20,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: checked ? colors.primary : Colors.transparent,
+        border: Border.all(color: checked ? colors.primary : colors.border),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: checked
+          ? Icon(LucideIcons.check, size: 14, color: colors.onPrimary)
+          : null,
     );
   }
 }

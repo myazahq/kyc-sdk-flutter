@@ -74,6 +74,10 @@ class DocumentTextGate {
     List<String> lines, {
     required String country,
     required String idType,
+    // The reverse face of a two-sided card: skips keyword identity (the back
+    // carries no branding — see verifyDocumentIdentity) and relaxes the text
+    // density thresholds (a PVC back is mostly barcode with a few print lines).
+    bool isBack = false,
     Rect? textBounds,
     bool requireMrz = false,
     bool hasValidMrz = false,
@@ -91,7 +95,9 @@ class DocumentTextGate {
       lines,
       country: country,
       idType: idType,
-      requireValidMrz: requireMrz,
+      isBack: isBack,
+      // The MRZ is a FRONT-side key; the back has no strip to wait for.
+      requireValidMrz: !isBack && requireMrz,
       hasValidMrz: hasValidMrz,
       mrzAlreadyCaptured: mrzAlreadyCaptured,
     );
@@ -117,7 +123,7 @@ class DocumentTextGate {
     }
 
     // ── Framing ─────────────────────────────────────────────────────────────
-    final framingHint = _framingProblem(textBounds, lines.length);
+    final framingHint = _framingProblem(textBounds, lines.length, isBack);
     if (framingHint != null) {
       _heldSince = null;
       return DocumentGuidance(DocumentFraming.adjust, framingHint);
@@ -135,13 +141,18 @@ class DocumentTextGate {
   }
 
   /// Why the text region isn't acceptably framed, or null when it is.
-  DocumentHint? _framingProblem(Rect? bounds, int lineCount) {
+  DocumentHint? _framingProblem(Rect? bounds, int lineCount, bool isBack) {
+    // Card backs are text-SPARSE by design — a PVC's is mostly barcode with a
+    // few small print lines — so the front's density thresholds would hold the
+    // gate at "move closer" forever on a perfectly framed back.
+    final effMinLines = isBack ? (minLines < 3 ? minLines : 3) : minLines;
+    final effMinTextArea = isBack ? (minTextArea < 0.03 ? minTextArea : 0.03) : minTextArea;
     if (bounds == null) {
       // No geometry from this platform — fall back to text density alone.
-      return lineCount < minLines ? DocumentHint.moveCloser : null;
+      return lineCount < effMinLines ? DocumentHint.moveCloser : null;
     }
     final area = (bounds.width * bounds.height).clamp(0.0, 1.0);
-    if (area < minTextArea) return DocumentHint.moveCloser;
+    if (area < effMinTextArea) return DocumentHint.moveCloser;
     if (area > maxTextArea) return DocumentHint.moveBack;
 
     final offCentreX = (bounds.center.dx - 0.5).abs();

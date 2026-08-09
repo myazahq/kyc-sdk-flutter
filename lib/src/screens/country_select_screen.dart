@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
+import '../providers/step_order.dart' show countrySelectOptions;
 import '../widgets/country_option_tile.dart';
 import '../widgets/country_region_picker.dart';
 
@@ -24,7 +25,9 @@ class CountrySelectScreen extends ConsumerWidget {
     final config = ref.watch(kycConfigProvider);
     final state = ref.watch(kYCNotifierProvider);
     final notifier = ref.read(kYCNotifierProvider.notifier);
-    final options = config.countries ?? const [];
+    // Multi-region flows carry `countries`; the KYB applicant leg does not,
+    // so it offers the org's GRANTED countries — see countrySelectOptions.
+    final codes = countrySelectOptions(config, state);
     final selected = state.selectedCountry;
 
     void pick(String code) {
@@ -32,9 +35,9 @@ class CountrySelectScreen extends ConsumerWidget {
       notifier.nextStep();
     }
 
-    if (options.length > _kSearchThreshold) {
+    if (codes.length > _kSearchThreshold) {
       return CountryRegionPicker(
-        codes: [for (final o in options) o.country],
+        codes: codes,
         selected: selected,
         onSelect: pick,
       );
@@ -43,20 +46,18 @@ class CountrySelectScreen extends ConsumerWidget {
     // The step body is in fill mode (see KycBottomSheet.fillsViewport), so this
     // short list owns its scroll too — keeps it safe on small screens.
     return ListView(
-      // Same content-padding rule as the searchable picker: the list reaches
-      // the sheet's bottom edge, the inset rides with the content.
-      padding: EdgeInsets.only(
-        bottom: MediaQuery.paddingOf(context).bottom + MyazaSpacing.md,
-      ),
+      // The list runs to the PoweredBy footer, which owns the home-indicator
+      // clearance for the whole sheet — so only the visual gap is needed here.
+      padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
       children: [
-        for (final o in options)
+        for (final code in codes)
           Padding(
             padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
             child: CountryOptionTile(
-              code: o.country,
-              label: countryLabel(o.country),
-              isSelected: selected?.toUpperCase() == o.country.toUpperCase(),
-              onTap: () => pick(o.country),
+              code: code,
+              label: countryLabel(code),
+              isSelected: selected?.toUpperCase() == code.toUpperCase(),
+              onTap: () => pick(code),
             ),
           ),
       ],

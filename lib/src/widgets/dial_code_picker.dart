@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../config/country_names.g.dart';
 import '../config/dial_codes.g.dart';
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
@@ -8,16 +9,19 @@ import 'country_flag.dart';
 import 'myaza_input.dart';
 import 'themed_sheet.dart';
 
-// ─── Dial-code picker ─────────────────────────────────────────────────────────
+// ─── Country / dial-code picker ───────────────────────────────────────────────
 //
-// Country + international dialling code chooser for the phone field. Presented
-// through [showMyazaSheet] so it carries the SDK palette — a plain
+// Country + international dialling code chooser for the phone field — and,
+// with the dial column off, THE country picker (the key-people "where their
+// ID was issued" field). One sheet for both, so the two feel identical.
+// Presented through [showMyazaSheet] so it carries the SDK palette — a plain
 // showModalBottomSheet lands on a sibling route where the theme extension isn't
 // found, and renders light over a dark flow.
 //
 // Height is bounded against the space left ABOVE the keyboard. The search field
 // autofocuses, so sizing against the full screen (as this used to) made the
-// sheet effectively full-screen the moment the keys appeared.
+// sheet effectively full-screen the moment the keys appeared — with the
+// filtered results hidden underneath them.
 
 /// Opens the picker; resolves to the chosen ISO-2 code, or null if dismissed.
 Future<String?> showDialCodePicker(BuildContext context, String selected) =>
@@ -27,9 +31,38 @@ Future<String?> showDialCodePicker(BuildContext context, String selected) =>
       builder: (_) => _DialCodeSheet(selected: selected),
     );
 
+/// Opens a plain country picker (no dial codes) — the SAME sheet as the phone
+/// field's. Over every ISO country we can name, or a restricted [codes] subset
+/// (a workflow's registry countries).
+Future<String?> showCountryPicker(
+  BuildContext context,
+  String? selected, {
+  Iterable<String>? codes,
+}) =>
+    showMyazaSheet<String>(
+      context,
+      isScrollControlled: true,
+      builder: (_) => _DialCodeSheet(
+        selected: selected ?? '',
+        showDial: false,
+        codes: codes,
+      ),
+    );
+
 class _DialCodeSheet extends StatefulWidget {
   final String selected;
-  const _DialCodeSheet({required this.selected});
+
+  /// False ⇒ plain country picker: every named country, no dial column.
+  final bool showDial;
+
+  /// Restricts the country list (plain picker only). Null ⇒ all named ISO.
+  final Iterable<String>? codes;
+
+  const _DialCodeSheet({
+    required this.selected,
+    this.showDial = true,
+    this.codes,
+  });
 
   @override
   State<_DialCodeSheet> createState() => _DialCodeSheetState();
@@ -45,13 +78,19 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
     final media = MediaQuery.of(context);
     final q = _query.trim().toLowerCase();
 
-    final entries = kDialCodes.keys
-        .map((iso) =>
-            (iso: iso, name: countryLabel(iso), dial: kDialCodes[iso]!))
+    final codes = widget.showDial
+        ? kDialCodes.keys
+        : (widget.codes ?? kCountryNames.keys);
+    final entries = codes
+        .map((iso) => (
+              iso: iso,
+              name: countryLabel(iso),
+              dial: widget.showDial ? kDialCodes[iso]! : '',
+            ))
         .where((e) =>
             q.isEmpty ||
             e.name.toLowerCase().contains(q) ||
-            e.dial.contains(q) ||
+            (widget.showDial && e.dial.contains(q)) ||
             e.iso.toLowerCase().contains(q))
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
@@ -78,7 +117,7 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                   MyazaSpacing.sm,
                 ),
                 child: MyazaInput(
-                  hint: 'Search country or code',
+                  hint: widget.showDial ? 'Search country or code' : 'Search country',
                   autofocus: true,
                   prefix: Icon(LucideIcons.search,
                       size: 18, color: colors.textSecondary),
@@ -117,9 +156,10 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                                       child: Text(e.name,
                                           style: text.bodyMedium),
                                     ),
-                                    Text('+${e.dial}',
-                                        style: text.label.copyWith(
-                                            color: colors.textSecondary)),
+                                    if (widget.showDial)
+                                      Text('+${e.dial}',
+                                          style: text.label.copyWith(
+                                              color: colors.textSecondary)),
                                   ],
                                 ),
                               ),

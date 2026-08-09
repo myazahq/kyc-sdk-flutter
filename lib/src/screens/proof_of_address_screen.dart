@@ -20,8 +20,16 @@ import 'proof_of_address_parts.dart';
 // server-side check — it never changes the verification's own status. The user
 // picks from the photo library, the camera, or Files (jpg/png/webp/pdf): the
 // native equivalent of the web SDK's `<input type=file accept=image/*,pdf>`.
+//
+// The UI mirrors the web SDK: a DASHED drop zone that names the document being
+// asked for ("Upload your utility bill") and what's accepted, replaced after
+// upload by a row showing the file, its kind, and an X to remove it.
 
 const _kAllowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
+
+/// Matches the web SDK's cap. The server allows more, but rejecting locally
+/// gives an immediate, specific message instead of a slow 413.
+const int kPoaMaxBytes = 20 * 1024 * 1024;
 
 class ProofOfAddressScreen extends ConsumerStatefulWidget {
   final void Function(Object error)? onError;
@@ -53,6 +61,8 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
     final offered = _cfg.offeredTypes;
     _type = offered.isNotEmpty ? offered.first : PoaDocumentType.other;
   }
+
+  String get _typeLabel => _cfg.labelFor(_type ?? PoaDocumentType.other);
 
   String _mimeFor(String? ext) => switch (ext?.toLowerCase()) {
         'png' => 'image/png',
@@ -108,6 +118,10 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
   }
 
   Future<void> _upload(Uint8List bytes, String mime, String name) async {
+    if (bytes.length > kPoaMaxBytes) {
+      _failUpload('File is too large (max 20MB).');
+      return;
+    }
     final isPdf = mime == 'application/pdf';
     setState(() {
       _uploading = true;
@@ -144,6 +158,16 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
     });
   }
 
+  void _remove() {
+    ref.read(kYCNotifierProvider.notifier).clearProofOfAddress();
+    setState(() {
+      _fileName = null;
+      _previewBytes = null;
+      _previewIsPdf = false;
+      _error = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final text = context.myazaText;
@@ -154,38 +178,42 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Upload a document issued in the last ${_cfg.maxAgeDays} days that '
-          'shows your name and address.',
-          style: text.bodyMedium,
-        ),
-        const SizedBox(height: MyazaSpacing.lg),
-
         // ── Document type picker (only when >1 offered) ──────────────────────
+        //
+        // Locked once a file is attached: switching the kind afterwards would
+        // mislabel the document already uploaded.
         if (offered.length > 1) ...[
           Text('Document type', style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           MyazaSelect<PoaDocumentType>(
             value: _type,
             sheetTitle: 'Document type',
+            enabled: !uploaded && !_uploading,
             options: [
               for (final t in offered)
-                MyazaSelectOption(value: t, label: t.label),
+                MyazaSelectOption(value: t, label: _cfg.labelFor(t)),
             ],
             onChanged: (v) => setState(() => _type = v),
           ),
           const SizedBox(height: MyazaSpacing.lg),
         ],
 
-        // ── Picker / uploaded state ──────────────────────────────────────────
-        PoaUploadCard(
-          uploading: _uploading,
-          fileName: uploaded ? _fileName : null,
-          previewBytes: _previewBytes,
-          isPdf: _previewIsPdf,
-          typeLabel: (_type ?? PoaDocumentType.other).label,
-          onTap: _uploading ? null : _pick,
-        ),
+        // ── Drop zone / uploaded row ─────────────────────────────────────────
+        if (uploaded && !_uploading)
+          PoaUploadedRow(
+            fileName: _fileName ?? 'Document uploaded',
+            typeLabel: _typeLabel,
+            previewBytes: _previewBytes,
+            isPdf: _previewIsPdf,
+            onRemove: _remove,
+          )
+        else
+          PoaDropzone(
+            uploading: _uploading,
+            typeLabel: _typeLabel,
+            onTap: _pick,
+          ),
+
         if (_error != null) ...[
           const SizedBox(height: MyazaSpacing.sm),
           Text(_error!,

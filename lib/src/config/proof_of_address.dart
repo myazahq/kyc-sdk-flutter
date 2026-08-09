@@ -43,16 +43,30 @@ class ProofOfAddressConfig {
   /// Max document age the server enforces (soft). Shown to the user.
   final int maxAgeDays;
 
+  /// Org-supplied name for the `other` kind (e.g. "Council tax letter"), set in
+  /// the workflow builder. Null/blank keeps the generic label.
+  final String? otherLabel;
+
   const ProofOfAddressConfig({
     this.enabled = false,
     this.documentTypes = const [],
     this.maxAgeDays = 90,
+    this.otherLabel,
   });
 
   /// The document types to offer, resolved to the enum (all four when unset).
   List<PoaDocumentType> get offeredTypes {
     if (documentTypes.isEmpty) return PoaDocumentType.values;
     return documentTypes.map(PoaDocumentType.fromKey).toList(growable: false);
+  }
+
+  /// Display label for [type], honouring the org's rename of `other`.
+  String labelFor(PoaDocumentType type) {
+    final custom = otherLabel?.trim();
+    if (type == PoaDocumentType.other && custom != null && custom.isNotEmpty) {
+      return custom;
+    }
+    return type.label;
   }
 
   factory ProofOfAddressConfig.fromJson(Map<String, dynamic> json) =>
@@ -62,5 +76,6 @@ class ProofOfAddressConfig {
             .map((e) => e.toString())
             .toList(growable: false),
         maxAgeDays: (json['maxAgeDays'] as num?)?.toInt() ?? 90,
+        otherLabel: json['otherLabel']?.toString(),
       );
 }

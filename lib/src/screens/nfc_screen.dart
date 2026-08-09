@@ -1,3 +1,4 @@
+import 'dart:async' show Timer;
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -6,7 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/theme.dart';
 import '../widgets/nfc_read_progress.dart';
 import '../widgets/nfc_read_sheet.dart';
-import '../widgets/passport_illustration.dart';
+import '../widgets/nfc_scan_illustration.dart';
 import '../providers/kyc_provider.dart';
 import '../services/mrz_parser.dart';
 import '../services/nfc_reader.dart';
@@ -35,8 +36,12 @@ import 'nfc_screen_parts.dart';
 // capture). Scanning the same document twice is a step users shouldn't take.
 //
 // On a device with no NFC radio the step auto-skips. `allowSkip` adds a manual
-// skip affordance. The chip read is a SOFT sub-result — skipping never fails
-// the verification.
+// skip affordance — ATTEMPT-FIRST: it is revealed by the first failed read or
+// by time on the step, never shown on arrival. An ambient skip invites
+// "don't feel like it" exits from users whose chip would have read fine, while
+// no skip at all traps the ones whose chip never will; earning it keeps chip
+// coverage high without dead ends. The chip read is a SOFT sub-result —
+// skipping never fails the verification.
 
 class NfcScreen extends ConsumerStatefulWidget {
   const NfcScreen({super.key});
@@ -66,8 +71,17 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
   /// True while our sheet is on screen, so it is closed exactly once.
   bool _sheetOpen = false;
 
+  /// Attempt-first skip: false until the user has earned the escape hatch — a
+  /// failed read reveals it immediately, and the timer covers everyone else
+  /// (an MRZ hunt that never locks on, a chip that is never detected). Once
+  /// revealed it stays.
+  bool _skipRevealed = false;
+  Timer? _skipRevealTimer;
+  static const _skipRevealDelay = Duration(seconds: 15);
+
   @override
   void dispose() {
+    _skipRevealTimer?.cancel();
     _stageNotifier.dispose();
     super.dispose();
   }
@@ -98,6 +112,9 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
   @override
   void initState() {
     super.initState();
+    _skipRevealTimer = Timer(_skipRevealDelay, () {
+      if (mounted) setState(() => _skipRevealed = true);
+    });
     _checkAvailability();
   }
 
@@ -152,6 +169,9 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
       setState(() {
         _phase = _Phase.failed;
         _error = _messageFor(e);
+        // A real attempt just failed — the skip is earned now, no need to
+        // make the user wait out the timer on top of a failure.
+        _skipRevealed = true;
       });
     }
   }
@@ -222,7 +242,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           const SizedBox(height: MyazaSpacing.md),
           MrzScanView(onScanned: _onScanned),
         ] else ...[
-          const PassportIllustration(),
+          const NfcScanIllustration(),
           const SizedBox(height: MyazaSpacing.lg),
           Text(
             _phase == _Phase.reading
@@ -254,19 +274,21 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
         ],
         if (_phase == _Phase.failed) ...[
           const SizedBox(height: MyazaSpacing.lg),
+          // One recovery action only. "Scan the document again" (a fresh MRZ
+          // scan via _rescan) earned its keep never: the MRZ that unlocked
+          // nothing is check-digit valid — rescanning the same page yields the
+          // same key — and two escape routes on a failure screen just split
+          // the user's attention. The success panel keeps its rescan for the
+          // "wrong document" case.
           MyazaButton(
             label: 'Try the chip again',
             onPressed: scan == null ? null : () => _onScanned(scan),
           ),
-          const SizedBox(height: MyazaSpacing.sm),
-          Center(
-            child: TextButton(
-              onPressed: _rescan,
-              child: const Text('Scan the document again'),
-            ),
-          ),
         ],
-        if (_allowSkip && _phase != _Phase.reading) ...[
+        // Attempt-first: hidden until a failed read (or the reveal timer) earns
+        // it — see the header comment. Still hidden mid-read: the reader has no
+        // cancel API, so leaving then would strand the session.
+        if (_allowSkip && _skipRevealed && _phase != _Phase.reading) ...[
           const SizedBox(height: MyazaSpacing.sm),
           Center(
             child: TextButton(

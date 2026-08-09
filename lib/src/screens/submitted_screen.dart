@@ -8,6 +8,7 @@ import '../widgets/check_badge.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/kyc_error_mapper.dart';
+import '../widgets/key_people_invite_links.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/myaza_pulse_loader.dart';
@@ -169,6 +170,9 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
                 submission: _submission!,
                 title: successTitle,
                 description: successDescription,
+                // KYB: per-person verification links for full-KYC key people
+                // — rendered so the applicant can send each one immediately.
+                invites: ref.watch(kYCNotifierProvider).keyPeopleInvites,
                 onDone: _close,
               ),
             _SubmitStatus.error => _ErrorView(
@@ -228,12 +232,14 @@ class _SuccessView extends StatelessWidget {
   final KYCSubmission submission;
   final String title;
   final String description;
+  final List<KeyPersonInvite> invites;
   final VoidCallback onDone;
 
   const _SuccessView({
     required this.submission,
     required this.title,
     required this.description,
+    this.invites = const [],
     required this.onDone,
   });
 
@@ -265,6 +271,12 @@ class _SuccessView extends StatelessWidget {
               style: text.bodyMedium,
               textAlign: TextAlign.center,
             ).animate(delay: 320.ms).fadeIn(duration: 350.ms),
+            if (invites.isNotEmpty) ...[
+              const SizedBox(height: MyazaSpacing.lg),
+              KeyPeopleInviteLinks(invites: invites)
+                  .animate(delay: 450.ms)
+                  .fadeIn(duration: 350.ms),
+            ],
             const SizedBox(height: MyazaSpacing.xl),
           ],
         ),
@@ -299,6 +311,7 @@ class _ErrorView extends StatelessWidget {
       'insufficient_credits' => 'Credits Exhausted',
       'invalid_api_key' => 'Authentication Failed',
       'feature_disabled' => 'Verification Unavailable',
+      'invalid_workflow' => 'Verification Unavailable',
       'upload_failed' => 'Upload Failed',
       'network_error' => 'Connection Failed',
       _ => 'Submission Failed',

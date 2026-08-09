@@ -6,6 +6,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../liveness/challenge_manager.dart';
 import '../liveness/face_detection.dart';
+import '../liveness/flash_challenge.dart';
 import '../liveness/flash_ready_gate.dart';
 import '../liveness/face_continuity.dart';
 import '../liveness/liveness_types.dart';
@@ -177,6 +178,12 @@ class LivenessNotifier extends _$LivenessNotifier {
   // framing feedback loop. See FlashReadyGate.
   FlashReadyGate? _flashGate;
 
+  /// Whether the flash occupies a slot in the progress indicator.
+  bool _flashIsStep = false;
+
+  /// Total steps shown to the user: the gestures, plus the flash when it runs.
+  int get _displayTotal => _manager.totalCount + (_flashIsStep ? 1 : 0);
+
   // Whether the brightness sampler has produced at least one real reading.
   // Until it has, "no lighting warning" means UNKNOWN, not confirmed-good — so
   // the flash gate must not treat an unmeasured dim room as acceptable.
@@ -191,6 +198,11 @@ class LivenessNotifier extends _$LivenessNotifier {
     // color sequence, so the state machine runs positioning → capturing and the
     // flash is performed at the capture seam (see LivenessScreen).
     final flashOnly = config.livenessMode == 'flash';
+    // The flash is a step the user performs, so it occupies a slot in the
+    // progress indicator. Without this the indicator claimed the check was
+    // finished while its longest, most visible part was still to come — and in
+    // flash-only mode it showed no steps at all, since there are no gestures.
+    _flashIsStep = config.livenessMode.runsFlash;
     _flashGate = flashOnly ? FlashReadyGate() : null;
     _manager = flashOnly
         ? ChallengeManager.none()
@@ -215,8 +227,19 @@ class LivenessNotifier extends _$LivenessNotifier {
     state = LivenessState(
       phase: LivenessPhase.positioning,
       instruction: 'Position your face in the circle',
-      totalCount: _manager.totalCount,
+      totalCount: _displayTotal,
     );
+  }
+
+  /// The flash sequence finished, so its step in the progress indicator is done.
+  ///
+  /// The provider cannot observe this itself — the sequence is driven by the
+  /// screen, which owns the painting and the sampling — so the screen reports
+  /// it. Without it the last dot would stay unfilled through a completed check.
+  void markFlashStepComplete() {
+    if (!_flashIsStep) return;
+    if (state.completedCount >= _displayTotal) return;
+    state = state.copyWith(completedCount: _displayTotal);
   }
 
   /// Called for every camera frame that contains a detected face.
@@ -497,7 +520,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     state = LivenessState(
       phase: LivenessPhase.positioning,
       instruction: 'Position your face in the circle',
-      totalCount: _manager.totalCount,
+      totalCount: _displayTotal,
     );
   }
 

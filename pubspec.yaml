@@ -1,6 +1,6 @@
 name: myaza_kyc_sdk_flutter
 description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
-version: 2.2.0
+version: 2.3.0
 
 homepage: https://github.com/myazahq/kyc-sdk-flutter
 repository: https://github.com/myazahq/kyc-sdk-flutter
@@ -32,6 +32,10 @@ dependencies:
   flutter_animate: ^4.5.0
   flutter_tts: ^4.0.2
   image_picker: ^1.1.0
+  # Opens the End User Terms / Privacy Policy from the consent screen. Consent
+  # given by tapping Continue is only INFORMED if the documents it references
+  # can actually be read, which is what justifies a native plugin here.
+  url_launcher: ^6.3.0
   file_picker: ^8.1.0  # Proof-of-Address step: pick an image OR a PDF document
   flutter_nfc_kit: ^3.6.0  # ISO-DEP transport for the eMRTD chip read
   # eMRTD chip crypto (BAC): 3DES + SHA-1 for key derivation and secure
@@ -46,6 +50,8 @@ dependencies:
   lucide_icons_flutter: ^3.1.14+2
   country_flags: ^3.2.0  # 3.x: MyazaCountryFlag uses fromCountryCode(height/width/shape); 4.x replaced these with a FlagTheme API (would need a widget rewrite)
   phone_numbers_parser: ^9.0.24
+  flutter_svg: ^2.0.10  # brand marks Lucide does not carry (the WhatsApp glyph)
+  share_plus: ^10.0.0  # native share sheet for key-people invite links
 
 dev_dependencies:
   flutter_test:
@@ -57,6 +63,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/liveness/
+    - assets/brand/
   # Native on-device face detection ships in-package: iOS = Apple Vision (Swift),
   # Android = Google ML Kit via native Gradle. No cross-platform GoogleMLKit pod,
   # so the SDK still builds & runs on Apple-Silicon iOS simulators.

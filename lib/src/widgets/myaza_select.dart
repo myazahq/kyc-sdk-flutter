@@ -21,10 +21,16 @@ class MyazaSelectOption<T> {
   /// Optional icon/flag shown before the label (field and sheet row alike).
   final Widget? leading;
 
+  /// Secondary line under the label, shown in the SHEET only — the collapsed
+  /// field stays as short as its label. Currency codes need it: "GHS" and
+  /// "GMD" are one letter apart and mean different money.
+  final String? description;
+
   const MyazaSelectOption({
     required this.value,
     required this.label,
     this.leading,
+    this.description,
   });
 }
 
@@ -45,6 +51,11 @@ class MyazaSelect<T> extends StatelessWidget {
   /// — shrinks to its content instead of filling the row.
   final bool compact;
 
+  /// Pin a search field to the top of the sheet, filtering options by label —
+  /// for lists too long to scroll (the every-ISO-country selects). Mirrors the
+  /// RN SDK's `searchable`.
+  final bool searchable;
+
   const MyazaSelect({
     super.key,
     required this.value,
@@ -54,6 +65,7 @@ class MyazaSelect<T> extends StatelessWidget {
     this.sheetTitle,
     this.enabled = true,
     this.compact = false,
+    this.searchable = false,
   });
 
   MyazaSelectOption<T>? get _selected {
@@ -72,6 +84,7 @@ class MyazaSelect<T> extends StatelessWidget {
         title: sheetTitle ?? hint,
         options: options,
         selected: value,
+        searchable: searchable,
       ),
     );
     if (picked != null) onChanged(picked);
@@ -129,21 +142,38 @@ class MyazaSelect<T> extends StatelessWidget {
   }
 }
 
-class _OptionsSheet<T> extends StatelessWidget {
+class _OptionsSheet<T> extends StatefulWidget {
   final String title;
   final List<MyazaSelectOption<T>> options;
   final T? selected;
+  final bool searchable;
 
   const _OptionsSheet({
     required this.title,
     required this.options,
     required this.selected,
+    this.searchable = false,
   });
+
+  @override
+  State<_OptionsSheet<T>> createState() => _OptionsSheetState<T>();
+}
+
+class _OptionsSheetState<T> extends State<_OptionsSheet<T>> {
+  String _query = '';
 
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final text = context.myazaText;
+    final selected = widget.selected;
+
+    final normalized = _query.trim().toLowerCase();
+    final visible = widget.searchable && normalized.isNotEmpty
+        ? widget.options
+            .where((o) => o.label.toLowerCase().contains(normalized))
+            .toList(growable: false)
+        : widget.options;
 
     return SafeArea(
       top: false,
@@ -164,17 +194,63 @@ class _OptionsSheet<T> extends StatelessWidget {
                 MyazaSpacing.sm,
               ),
               child: Text(
-                title,
+                widget.title,
                 style: text.label.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
+            if (widget.searchable)
+              // Pinned above the list, so it stays put while results scroll.
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  MyazaSpacing.md,
+                  0,
+                  MyazaSpacing.md,
+                  MyazaSpacing.sm,
+                ),
+                child: TextField(
+                  autofocus: false,
+                  autocorrect: false,
+                  onChanged: (value) => setState(() => _query = value),
+                  style: text.label,
+                  decoration: InputDecoration(
+                    hintText: 'Search',
+                    hintStyle: text.label.copyWith(color: colors.textMuted),
+                    prefixIcon: Icon(LucideIcons.search,
+                        size: 16, color: colors.textMuted),
+                    isDense: true,
+                    filled: true,
+                    fillColor: colors.backgroundSecondary,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: MyazaSpacing.sm,
+                      vertical: 10,
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MyazaRadius.sm),
+                      borderSide: BorderSide(color: colors.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(MyazaRadius.sm),
+                      borderSide: BorderSide(color: colors.primary),
+                    ),
+                  ),
+                ),
+              ),
+            if (visible.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(MyazaSpacing.md),
+                child: Text(
+                  'No matches',
+                  textAlign: TextAlign.center,
+                  style: text.bodySmall.copyWith(color: colors.textMuted),
+                ),
+              ),
             Flexible(
               child: ListView.builder(
                 shrinkWrap: true,
                 padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
-                itemCount: options.length,
+                itemCount: visible.length,
                 itemBuilder: (context, i) {
-                  final option = options[i];
+                  final option = visible[i];
                   final isSelected = option.value == selected;
                   return InkWell(
                     onTap: () => Navigator.of(context).pop(option.value),
@@ -190,14 +266,29 @@ class _OptionsSheet<T> extends StatelessWidget {
                             const SizedBox(width: MyazaSpacing.sm),
                           ],
                           Expanded(
-                            child: Text(
-                              option.label,
-                              style: text.label.copyWith(
-                                fontWeight: isSelected
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: isSelected ? colors.primary : null,
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  option.label,
+                                  style: text.label.copyWith(
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w400,
+                                    color: isSelected ? colors.primary : null,
+                                  ),
+                                ),
+                                if (option.description != null)
+                                  Text(
+                                    option.description!,
+                                    style: text.bodySmall.copyWith(
+                                      color: colors.textSecondary,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
                             ),
                           ),
                           if (isSelected)

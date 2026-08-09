@@ -1,75 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/contact_verification.dart';
 import '../config/theme.dart';
 import '../widgets/expiry_countdown.dart';
-import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/otp_input.dart';
 import '../widgets/phone_number_input.dart';
+import 'contact_verification_channel.dart';
 
 // ─── Contact verification — presentational parts ──────────────────────────────
 //
-// The panels the contact step swaps between (destination entry → code entry →
-// verified). Split out of contact_verification_screen.dart to keep both files
-// inside the 200-line limit; the screen owns all state and API calls.
-
-/// Shown once the channel already holds a proof token — the confirmation panel
-/// plus the Continue action.
-class ContactVerifiedView extends StatelessWidget {
-  final bool isPhone;
-
-  /// The verified address/number, when known — shown verbatim like the web SDK.
-  final String? destination;
-
-  final VoidCallback onContinue;
-
-  const ContactVerifiedView({
-    super.key,
-    required this.isPhone,
-    required this.onContinue,
-    this.destination,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text = context.myazaText;
-    final what = isPhone ? 'phone number' : 'email';
-    final label = (destination != null && destination!.isNotEmpty)
-        ? '$destination is verified.'
-        : 'Your $what is verified.';
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Container(
-          padding: const EdgeInsets.all(MyazaSpacing.md),
-          decoration: BoxDecoration(
-            color: colors.primary50,
-            borderRadius: BorderRadius.circular(MyazaRadius.md),
-            border: Border.all(color: colors.primary.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Icon(LucideIcons.circleCheck, color: colors.primary),
-              const SizedBox(width: MyazaSpacing.md),
-              Expanded(
-                child: Text(
-                  label,
-                  style: text.bodyMedium.copyWith(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: MyazaSpacing.xl),
-        MyazaButton(label: 'Continue', onPressed: onContinue),
-      ],
-    );
-  }
-}
+// The two panels the contact step swaps between: destination entry and code
+// entry. Split out of contact_verification_screen.dart to keep both files
+// inside the 200-line limit; the screen owns all state and API calls. The
+// already-verified panel lives in contact_verification_verified.dart.
 
 /// Destination entry — an email field or the E.164 phone input.
 class ContactDestinationField extends StatelessWidget {
@@ -120,7 +64,6 @@ class ContactDestinationField extends StatelessWidget {
 
 /// Code entry — the OTP field plus the expiry hint and resend action.
 class ContactCodePanel extends StatelessWidget {
-  final String destination;
   final int codeLength;
   final OtpInputStyle style;
   final bool enabled;
@@ -135,11 +78,18 @@ class ContactCodePanel extends StatelessWidget {
 
   final ValueChanged<String> onChanged;
   final ValueChanged<String> onCompleted;
-  final VoidCallback? onResend;
+
+  /// Resend the code. Called with null to reuse the current channel, or with a
+  /// channel to switch first — a code that never arrives is usually a channel
+  /// problem rather than a typo.
+  final void Function(String? switchTo)? onResend;
+
+  /// The channel NOT in use, when the workflow offers a second one. Null hides
+  /// the switch-channel action.
+  final String? otherChannel;
 
   const ContactCodePanel({
     super.key,
-    required this.destination,
     required this.codeLength,
     required this.style,
     required this.enabled,
@@ -148,6 +98,7 @@ class ContactCodePanel extends StatelessWidget {
     this.expiresAt,
     required this.onCompleted,
     this.onResend,
+    this.otherChannel,
   });
 
   @override
@@ -156,14 +107,11 @@ class ContactCodePanel extends StatelessWidget {
     final colors = context.myazaColors;
     final hint = text.bodySmall.copyWith(color: colors.textSecondary);
 
+    // No "enter the code we sent to …" line here: the sheet header carries it
+    // (see myaza_kyc_widget), matching the web SDK. Two copies drifted apart.
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          'Enter the $codeLength-digit code we sent to $destination.',
-          style: text.bodyMedium,
-        ),
-        const SizedBox(height: MyazaSpacing.lg),
         OtpInput(
           key: ValueKey(challengeId),
           length: codeLength,
@@ -182,7 +130,7 @@ class ContactCodePanel extends StatelessWidget {
                   : ExpiryCountdown(expiresAt: expiresAt!, style: hint),
             ),
             TextButton(
-              onPressed: onResend,
+              onPressed: onResend == null ? null : () => onResend!(null),
               child: Text(
                 'Resend code',
                 style: hint.copyWith(
@@ -194,6 +142,19 @@ class ContactCodePanel extends StatelessWidget {
             ),
           ],
         ),
+        if (otherChannel != null)
+          Center(
+            child: TextButton(
+              onPressed:
+                  onResend == null ? null : () => onResend!(otherChannel),
+              child: Text(
+                "Didn't get it? Send by "
+                '${kChannelLabels[otherChannel] ?? otherChannel} instead',
+                textAlign: TextAlign.center,
+                style: hint,
+              ),
+            ),
+          ),
       ],
     );
   }

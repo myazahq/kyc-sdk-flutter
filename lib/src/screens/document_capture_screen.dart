@@ -443,6 +443,9 @@ class _DocumentCaptureScreenState
       lines,
       country: effectiveCountry(ref.read(kycConfigProvider), state),
       idType: idType.key,
+      // The back carries no branding to identify itself by — demanding the
+      // front's keywords there meant a PVC back could never auto-capture.
+      isBack: _phase == _ScanPhase.cameraBack,
       requireValidMrz: wantsMrz,
       hasValidMrz: mrz != null,
       mrzAlreadyCaptured: state.mrzScan != null,
@@ -490,6 +493,9 @@ class _DocumentCaptureScreenState
       lines,
       country: effectiveCountry(ref.read(kycConfigProvider), state),
       idType: idType.key,
+      // The back carries no branding to identify itself by — demanding the
+      // front's keywords there meant a PVC back could never auto-capture.
+      isBack: _phase == _ScanPhase.cameraBack,
       textBounds: bounds,
       // The chip step reads the MRZ off this capture, so don't shoot a frame
       // whose MRZ we couldn't read — that is what forced a second scan.

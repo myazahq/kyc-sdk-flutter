@@ -56,7 +56,9 @@ class PhoneVerificationConfig {
   final int maxAttempts;
   final OtpInputStyle inputStyle;
 
-  /// Offered delivery channels (`sms` / `whatsapp`); the send uses the first.
+  /// Delivery channels on offer (`sms` / `whatsapp`). The org chooses what is
+  /// offered; when there is more than one, the USER picks between them on the
+  /// step — only they know whether they have WhatsApp installed.
   final List<String> channels;
 
   /// Default dial-code country (ISO-2); falls back to the flow's country.
@@ -72,8 +74,15 @@ class PhoneVerificationConfig {
     this.defaultCountry,
   });
 
-  /// The delivery channel to request (first offered, default `sms`).
-  String get via => channels.isNotEmpty ? channels.first : 'sms';
+  /// Offered channels, normalised — never empty, unknown values dropped.
+  List<String> get offeredChannels {
+    final known =
+        channels.where((c) => c == 'sms' || c == 'whatsapp').toSet().toList();
+    return known.isEmpty ? const ['sms'] : known;
+  }
+
+  /// The channel used until the user picks otherwise (first offered).
+  String get via => offeredChannels.first;
 
   factory PhoneVerificationConfig.fromJson(Map<String, dynamic> json) =>
       PhoneVerificationConfig(

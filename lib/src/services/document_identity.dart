@@ -43,10 +43,20 @@ bool documentCarriesMrz(String idType) => idType == 'passport';
 /// merely MRZ-shaped text — that is what makes one scan enough for NFC.
 /// [mrzAlreadyCaptured] means the key is already stored from an earlier frame,
 /// which satisfies that requirement without re-reading it.
+///
+/// [isBack] marks the reverse face of a two-sided card. Identity KEYWORDS live
+/// on the FRONT — the branding, the document name, the issuer. The back (a
+/// PVC's barcode-and-address side) carries none of them, so demanding them
+/// there meant the back could never auto-capture. By the time the back is up,
+/// the user captured and confirmed the front of the right document seconds ago
+/// — identity is established; the back only has to be framed and still. The
+/// wrong-document rejection still runs: another document's FRONT swapped into
+/// the frame identifies itself and is refused.
 DocumentIdentity verifyDocumentIdentity(
   List<String> lines, {
   required String country,
   required String idType,
+  bool isBack = false,
   bool requireValidMrz = false,
   bool hasValidMrz = false,
   bool mrzAlreadyCaptured = false,
@@ -59,7 +69,8 @@ DocumentIdentity verifyDocumentIdentity(
   // For an MRZ-bearing document the zone must actually be in frame. This is the
   // check that rejects a screen, a printout or a page that merely mentions the
   // word, and it is why the passport path cannot be fooled by prose.
-  if (documentCarriesMrz(idType) && !hasValidMrz && !hasMrzLines(lines)) {
+  // Front only: the strip lives on the photo page.
+  if (!isBack && documentCarriesMrz(idType) && !hasValidMrz && !hasMrzLines(lines)) {
     // Say WHICH problem it is. Text that already reads as the expected document
     // is most likely the real thing with the strip cropped off the bottom edge
     // — the commonest framing mistake on a passport — and telling that user
@@ -99,7 +110,8 @@ DocumentIdentity verifyDocumentIdentity(
     // wrong-type check above still uses the ratio, where comparing two types
     // on one scale is exactly what it is for.
     final identifiedByCount = match.type == idType && match.matched >= 2;
-    if (!identifiedByCount && expected < minConfidence) {
+    // REQUIRED on the front only — the back carries no branding to match.
+    if (!isBack && !identifiedByCount && expected < minConfidence) {
       return DocumentIdentity(
         false,
         lines.length < 5 ? DocumentHint.searching : DocumentHint.moveCloser,
@@ -110,7 +122,8 @@ DocumentIdentity verifyDocumentIdentity(
   // ── Chip key ──────────────────────────────────────────────────────────────
   // Firing before the MRZ validates means the chip step has to scan the same
   // document a second time, which is the whole reason this gate exists.
-  if (requireValidMrz && !hasValidMrz && !mrzAlreadyCaptured) {
+  // Front only: the strip cannot appear on the back.
+  if (!isBack && requireValidMrz && !hasValidMrz && !mrzAlreadyCaptured) {
     // The document is identified; only the strip is missing. "Move closer"
     // would push the user to crop it off entirely.
     return const DocumentIdentity(false, DocumentHint.showMrz);

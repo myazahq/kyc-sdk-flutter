@@ -36,7 +36,13 @@ Future<WorkflowGateResult> resolveWorkflowResult(MyazaKYCConfig config) async {
   try {
     final res = await api.workflow(config.workflowId!);
     return WorkflowGateResult(
-      config: mergeWorkflowIntoConfig(config, res.config),
+      // KYB: the mapped applicant workflow's capture template overlays the
+      // merged config (and its id is recorded for stamping) — see
+      // overlayApplicantWorkflow.
+      config: overlayApplicantWorkflow(
+        mergeWorkflowIntoConfig(config, res.config),
+        res.applicantWorkflow,
+      ),
       serverConfig: ServerSdkConfig(
         status: ServerConfigStatus.ready,
         idTypes: res.idTypes,

@@ -8,7 +8,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.2.0';
+const String kSdkVersion = '2.3.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -42,6 +42,7 @@ class MediaType {
   static const documentBackVideo = 'document_back_video';
   static const livenessVideo = 'liveness_video';
   static const proofOfAddress = 'proof_of_address';
+  static const businessDocument = 'business_document';
 }
 
 /// Response from `POST /api/kyc/upload` — the stored mediaId referenced later
@@ -118,17 +119,58 @@ class VerifyBusiness {
   final String? registrationName;
   final String? product;
 
+  /// Contact email for key-people verification — the server emails this address
+  /// the invite links when the workflow's `keyPeople.invite.channel` is 'email'
+  /// and a role needs full KYC.
+  final String? contactEmail;
+
+  /// Company profile (collectCompanyInfo fields) — echoed on the org's webhook
+  /// and address-matched against the registry record.
+  final String? address;
+  final String? email;
+  final String? phone;
+  final String? website;
+
+  /// Uploaded supporting documents (`[{ type, mediaId }]`) — only honored when
+  /// the workflow's `business.documents` block configures them.
+  final List<Map<String, dynamic>>? documents;
+
+  /// Applicant-declared directors & owners (≤20; `email` drives auto-sent
+  /// invites). Only honored when the workflow sets `keyPeople.collect`.
+  final List<Map<String, dynamic>>? keyPeople;
+
+  /// The applicant's declared role (+ optional name — the server backfills it
+  /// from their verified KYC when absent).
+  final Map<String, dynamic>? applicant;
+
   const VerifyBusiness({
     required this.registrationNumber,
     this.registrationName,
     this.product,
+    this.contactEmail,
+    this.address,
+    this.email,
+    this.phone,
+    this.website,
+    this.documents,
+    this.keyPeople,
+    this.applicant,
   });
+
+  static bool _has(String? v) => v != null && v.isNotEmpty;
 
   Map<String, dynamic> toJson() => {
         'registrationNumber': registrationNumber,
-        if (registrationName != null && registrationName!.isNotEmpty)
-          'registrationName': registrationName,
+        if (_has(registrationName)) 'registrationName': registrationName,
         if (product != null) 'product': product,
+        if (_has(contactEmail)) 'contactEmail': contactEmail,
+        if (_has(address)) 'address': address,
+        if (_has(email)) 'email': email,
+        if (_has(phone)) 'phone': phone,
+        if (_has(website)) 'website': website,
+        if (documents != null && documents!.isNotEmpty) 'documents': documents,
+        if (keyPeople != null && keyPeople!.isNotEmpty) 'keyPeople': keyPeople,
+        if (applicant != null) 'applicant': applicant,
       };
 }
 
@@ -276,16 +318,60 @@ class VerifyRequest {
       };
 }
 
+/// One key person the server minted an invite link for (KYB submissions where
+/// a role resolves to full KYC).
+class KeyPersonInvite {
+  final String keyPersonId;
+  final String name;
+  final String inviteUrl;
+
+  const KeyPersonInvite({
+    required this.keyPersonId,
+    required this.name,
+    required this.inviteUrl,
+  });
+
+  factory KeyPersonInvite.fromJson(Map<String, dynamic> json) =>
+      KeyPersonInvite(
+        keyPersonId: (json['keyPersonId'] ?? '').toString(),
+        name: (json['name'] ?? '').toString(),
+        inviteUrl: (json['inviteUrl'] ?? '').toString(),
+      );
+}
+
 class VerifyResponse {
   final String verificationId;
   final String status; // Always 'pending' immediately after submission
 
-  const VerifyResponse({required this.verificationId, required this.status});
+  /// KYB with applicant verification: the KeyPerson row the server created for
+  /// the applicant. The applicant's OWN individual submission carries this as
+  /// `metadata.userId` — the link back to the application.
+  final String? applicantKeyPersonId;
 
-  factory VerifyResponse.fromJson(Map<String, dynamic> json) => VerifyResponse(
-        verificationId: json['verificationId'] as String,
-        status: json['status'] as String,
-      );
+  /// Invite links minted for full-KYC key people (empty when none).
+  final List<KeyPersonInvite> keyPeopleInvites;
+
+  const VerifyResponse({
+    required this.verificationId,
+    required this.status,
+    this.applicantKeyPersonId,
+    this.keyPeopleInvites = const [],
+  });
+
+  factory VerifyResponse.fromJson(Map<String, dynamic> json) {
+    final invites = json['keyPeopleInvites'];
+    return VerifyResponse(
+      verificationId: json['verificationId'] as String,
+      status: json['status'] as String,
+      applicantKeyPersonId: json['applicantKeyPersonId'] as String?,
+      keyPeopleInvites: invites is List
+          ? invites
+              .whereType<Map>()
+              .map((e) => KeyPersonInvite.fromJson(e.cast<String, dynamic>()))
+              .toList(growable: false)
+          : const [],
+    );
+  }
 }
 
 // ─── Contact verification (email / phone OTP) ────────────────────────────────
@@ -622,6 +708,10 @@ class WorkflowResolution {
   final List<SdkConfigIdType> idTypes;
   final SdkConfigBranding? branding;
 
+  /// KYB only: the mapped applicant workflow (business.applicant.workflowId),
+  /// resolved server-side. Null when absent or dangling.
+  final ApplicantWorkflow? applicantWorkflow;
+
   const WorkflowResolution({
     required this.flowId,
     required this.flowName,
@@ -630,6 +720,7 @@ class WorkflowResolution {
     required this.environment,
     required this.idTypes,
     this.branding,
+    this.applicantWorkflow,
   });
 
   factory WorkflowResolution.fromJson(Map<String, dynamic> json) {
@@ -650,8 +741,39 @@ class WorkflowResolution {
           ? SdkConfigBranding.fromJson(
               (json['branding'] as Map).cast<String, dynamic>())
           : null,
+      applicantWorkflow: json['applicantWorkflow'] is Map
+          ? ApplicantWorkflow.fromJson(
+              (json['applicantWorkflow'] as Map).cast<String, dynamic>())
+          : null,
     );
   }
+}
+
+/// A KYB workflow's mapped APPLICANT workflow (business.applicant.workflowId):
+/// the individual workflow whose capture template overlays the applicant's own
+/// KYC leg, and whose id is stamped on that submission.
+class ApplicantWorkflow {
+  final String id;
+  final String name;
+  final int version;
+  /// The mapped workflow's published config, untouched — the overlay reads
+  /// only the capture-leg keys it knows.
+  final Map<String, dynamic> config;
+
+  const ApplicantWorkflow({
+    required this.id,
+    required this.name,
+    required this.version,
+    required this.config,
+  });
+
+  factory ApplicantWorkflow.fromJson(Map<String, dynamic> json) =>
+      ApplicantWorkflow(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        version: (json['version'] as num?)?.toInt() ?? 0,
+        config: (json['config'] as Map?)?.cast<String, dynamic>() ?? const {},
+      );
 }
 
 // ─── Health ───────────────────────────────────────────────────────────────────

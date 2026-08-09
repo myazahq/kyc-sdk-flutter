@@ -1,3 +1,37 @@
+## 2.3.0
+
+### The full business (KYB) application
+
+The business flow previously stopped at the registry lookup. It now runs the
+whole application section, each part appearing only when the resolved workflow
+configures it:
+
+* **Directors & owners** — name, role, ownership percentage, country and email
+  per person, with `minEntries` gating Continue.
+* **Supporting documents** — one upload slot per configured document type; every
+  required slot must be filled before the step will pass.
+* **Applicant verification** — the submitter declares their role, and can
+  identify themselves as one of the people they just listed. Picking themselves
+  links the two records, so one person is verified once rather than being both a
+  key person and a separate applicant. Their own capture leg then runs as an
+  ordinary individual verification.
+* **Invite links** — where a director or owner needs their own check, the
+  success screen hands back their invite links, shareable through the native
+  share sheet.
+
+### Contact verification and proof of address, rebuilt
+
+The email/phone OTP steps were split into composable parts (channel picker,
+entry, verified state) and gained a WhatsApp delivery channel alongside SMS.
+Proof of address accepts a wider range of documents and states its own recency
+window.
+
+### Also
+
+* An NFC scan illustration that animates the document against the phone, so the
+  chip step stops looking like a hang.
+* `PoweredBy` and brand-mark widgets, and a shared dashed-border painter.
+
 ## 2.2.0
 
 ### `country` is optional when you launch from a workflow

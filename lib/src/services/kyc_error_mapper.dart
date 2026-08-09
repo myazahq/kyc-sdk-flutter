@@ -11,10 +11,81 @@ import 'api_service.dart';
 /// Which operation failed — picks the fallback code for non-HTTP failures.
 enum ErrorContext { upload, verify }
 
+/// Server error tokens with a dedicated user-facing message, keyed by the
+/// response body's `error`. Mostly the business (KYB) submission path. Checked
+/// **before** the generic status branches so e.g. a 500 `pricing_not_configured`
+/// doesn't read as a transient server blip, and a 422 doesn't fall through to a
+/// bare `unknown`. Mirrors the web SDK's `CODED_ERRORS` (lib/errors.ts).
+const Map<String, ({String code, String message})> _codedErrors = {
+  'workflow_not_found': (
+    code: 'invalid_workflow',
+    message:
+        'This verification workflow is unavailable. It may have been unpublished — please try again later.',
+  ),
+  'workflow_subject_mismatch': (
+    code: 'invalid_workflow',
+    message:
+        'This workflow cannot accept a business submission. Contact the organization that sent you here.',
+  ),
+  'business_verifications_disabled': (
+    code: 'feature_disabled',
+    message:
+        'Business verification is not enabled for this organization. Contact your administrator to request access.',
+  ),
+  'country_mismatch': (
+    code: 'invalid_workflow',
+    message:
+        "The submitted country doesn't match this workflow's configuration. Please try again.",
+  ),
+  'product_unsupported': (
+    code: 'invalid_workflow',
+    message:
+        'The selected verification product is not offered by this workflow. Please try again.',
+  ),
+  'registration_name_required': (
+    code: 'unknown',
+    message: 'Please enter the registered business name to continue.',
+  ),
+  'only_test_ids_allowed': (
+    code: 'unknown',
+    message:
+        'Sandbox mode accepts only published test registration numbers (e.g. RC0000001 or RC0000002).',
+  ),
+  'pricing_not_configured': (
+    code: 'unknown',
+    message:
+        'Verification pricing has not been configured for this organization. Please contact support.',
+  ),
+  // The business-application sections DO have screens now, so these are
+  // recoverable: the applicant goes back and fills in what's missing. Reaching
+  // them means the client-side gate let something through (e.g. the workflow
+  // was republished mid-flow with a newly required slot).
+  'missing_documents': (
+    code: 'unknown',
+    message:
+        'Some required business documents are missing. Please go back and upload them.',
+  ),
+  'missing_company_info': (
+    code: 'unknown',
+    message:
+        'Some required company details are missing. Please go back and complete them.',
+  ),
+  'key_people_required': (
+    code: 'unknown',
+    message:
+        'Please go back and list the required directors/owners to continue.',
+  ),
+};
+
 KYCError mapToKycError(Object error, {required ErrorContext context}) {
   final uploadCtx = context == ErrorContext.upload;
 
   if (error is KYCApiException) {
+    final coded = _codedErrors[error.error];
+    if (coded != null) {
+      return KYCError(code: coded.code, message: coded.message);
+    }
+
     switch (error.error) {
       case 'insufficient_credits':
         return KYCError(

@@ -57,7 +57,10 @@ class MyazaButton extends StatelessWidget {
 
   // ── Style helpers (context-aware) ──────────────────────────────────────────
 
-  static const _radius = BorderRadius.all(Radius.circular(MyazaRadius.sm));
+  // Not `const`: MyazaRadius scales with appearance.borderRadius, so this is
+  // resolved per build rather than frozen at compile time.
+  static BorderRadius get _radius =>
+      BorderRadius.all(Radius.circular(MyazaRadius.sm));
 
   Color _bg(MyazaColorScheme colors) => switch (variant) {
         MyazaButtonVariant.primary     => colors.primary,

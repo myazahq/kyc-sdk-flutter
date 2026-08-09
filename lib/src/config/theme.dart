@@ -182,6 +182,42 @@ extension MyazaBuildContextTheme on BuildContext {
   MyazaThemeText get myazaText => MyazaThemeText(myazaColors);
 }
 
+
+// ─── Brand fonts ──────────────────────────────────────────────────────────────
+
+/// Body / heading families from `appearance`. Mutable globals for the same
+/// reason MyazaRadius is: one flow on screen at a time, set once from the
+/// resolved config before the flow builds, and the alternative is threading a
+/// second ThemeExtension through every text style.
+String? _bodyFontFamily;
+String? _headingFontFamily;
+
+void applyBrandFonts({String? body, String? heading}) {
+  _bodyFontFamily = (body ?? '').trim().isEmpty ? null : body!.trim();
+  final h = (heading ?? '').trim();
+  _headingFontFamily = h.isEmpty ? _bodyFontFamily : h;
+}
+
+/// Resolve one text style, honouring an org font when set.
+///
+/// `GoogleFonts.getFont` THROWS for a family it doesn't know, so it is guarded:
+/// an unrecognised name falls back to a plain `TextStyle(fontFamily:)`, which
+/// resolves against fonts the HOST APP has bundled. So a Google font works by
+/// name, a self-hosted brand font works if the app registered it, and anything
+/// else lands on the SDK default instead of crashing a verification flow.
+TextStyle _brandFont(
+  String? family,
+  TextStyle Function(TextStyle) fallback,
+  TextStyle base,
+) {
+  if (family == null) return fallback(base);
+  try {
+    return GoogleFonts.getFont(family, textStyle: base);
+  } catch (_) {
+    return base.copyWith(fontFamily: family);
+  }
+}
+
 // ─── Theme-aware text styles ──────────────────────────────────────────────────
 
 class MyazaThemeText {
@@ -189,36 +225,52 @@ class MyazaThemeText {
 
   const MyazaThemeText(this._colors);
 
-  TextStyle get heading1 => GoogleFonts.spaceGrotesk(
-    fontSize: 24, fontWeight: FontWeight.w700, color: _colors.textDark,
+  TextStyle get heading1 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: _colors.textDark),
   );
 
-  TextStyle get heading2 => GoogleFonts.spaceGrotesk(
-    fontSize: 20, fontWeight: FontWeight.w600, color: _colors.textDark,
+  TextStyle get heading2 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: _colors.textDark),
   );
 
-  TextStyle get heading3 => GoogleFonts.spaceGrotesk(
-    fontSize: 16, fontWeight: FontWeight.w600, color: _colors.textDark,
+  TextStyle get heading3 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _colors.textDark),
   );
 
-  TextStyle get body => GoogleFonts.karla(
-    fontSize: 16, fontWeight: FontWeight.w400, color: _colors.textDark,
+  TextStyle get body => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    TextStyle(fontSize: 16, fontWeight: FontWeight.w400, color: _colors.textDark),
   );
 
-  TextStyle get bodyMedium => GoogleFonts.karla(
-    fontSize: 14, fontWeight: FontWeight.w400, color: _colors.textSecondary,
+  TextStyle get bodyMedium => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    TextStyle(fontSize: 14, fontWeight: FontWeight.w400, color: _colors.textSecondary),
   );
 
-  TextStyle get bodySmall => GoogleFonts.karla(
-    fontSize: 12, fontWeight: FontWeight.w400, color: _colors.textMuted,
+  TextStyle get bodySmall => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    TextStyle(fontSize: 12, fontWeight: FontWeight.w400, color: _colors.textMuted),
   );
 
-  TextStyle get button => GoogleFonts.karla(
-    fontSize: 16, fontWeight: FontWeight.w600, color: _colors.onPrimary,
+  TextStyle get button => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: _colors.onPrimary),
   );
 
-  TextStyle get label => GoogleFonts.karla(
-    fontSize: 14, fontWeight: FontWeight.w500, color: _colors.textDark,
+  TextStyle get label => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: _colors.textDark),
   );
 }
 
@@ -290,52 +342,74 @@ class MyazaColors {
 class MyazaTypography {
   MyazaTypography._();
 
-  static TextStyle heading1 = GoogleFonts.spaceGrotesk(
-    fontSize: 24,
+  // GETTERS, not fields. A `static TextStyle x = …` initializer runs once on
+  // first access and caches — which would freeze whatever font was configured
+  // at that instant, and `applyBrandFonts` runs when a flow launches. Getters
+  // re-resolve every read, so a brand font applies even to a screen that was
+  // already touched.
+
+  static TextStyle get heading1 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    const TextStyle(fontSize: 24,
     fontWeight: FontWeight.w700,
-    color: MyazaColors.textDark,
+    color: MyazaColors.textDark),
   );
 
-  static TextStyle heading2 = GoogleFonts.spaceGrotesk(
-    fontSize: 20,
+  static TextStyle get heading2 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    const TextStyle(fontSize: 20,
     fontWeight: FontWeight.w600,
-    color: MyazaColors.textDark,
+    color: MyazaColors.textDark),
   );
 
-  static TextStyle heading3 = GoogleFonts.spaceGrotesk(
-    fontSize: 16,
+  static TextStyle get heading3 => _brandFont(
+    _headingFontFamily,
+    (b) => GoogleFonts.spaceGrotesk(textStyle: b),
+    const TextStyle(fontSize: 16,
     fontWeight: FontWeight.w600,
-    color: MyazaColors.textDark,
+    color: MyazaColors.textDark),
   );
 
-  static TextStyle body = GoogleFonts.karla(
-    fontSize: 16,
+  static TextStyle get body => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    const TextStyle(fontSize: 16,
     fontWeight: FontWeight.w400,
-    color: MyazaColors.textDark,
+    color: MyazaColors.textDark),
   );
 
-  static TextStyle bodyMedium = GoogleFonts.karla(
-    fontSize: 14,
+  static TextStyle get bodyMedium => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    const TextStyle(fontSize: 14,
     fontWeight: FontWeight.w400,
-    color: MyazaColors.textSecondary,
+    color: MyazaColors.textSecondary),
   );
 
-  static TextStyle bodySmall = GoogleFonts.karla(
-    fontSize: 12,
+  static TextStyle get bodySmall => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    const TextStyle(fontSize: 12,
     fontWeight: FontWeight.w400,
-    color: MyazaColors.textMuted,
+    color: MyazaColors.textMuted),
   );
 
-  static TextStyle button = GoogleFonts.karla(
-    fontSize: 16,
+  static TextStyle get button => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    const TextStyle(fontSize: 16,
     fontWeight: FontWeight.w600,
-    color: Colors.white,
+    color: Colors.white),
   );
 
-  static TextStyle label = GoogleFonts.karla(
-    fontSize: 14,
+  static TextStyle get label => _brandFont(
+    _bodyFontFamily,
+    (b) => GoogleFonts.karla(textStyle: b),
+    const TextStyle(fontSize: 14,
     fontWeight: FontWeight.w500,
-    color: MyazaColors.textDark,
+    color: MyazaColors.textDark),
   );
 }
 
@@ -344,11 +418,41 @@ class MyazaTypography {
 class MyazaRadius {
   MyazaRadius._();
 
-  static const double xs = 8.0;
-  static const double sm = 12.0;
-  static const double md = 16.0;
-  static const double lg = 20.0;
-  static const double xl = 24.0;
+  /// The shipped scale, and the basis every override is derived from.
+  static const double _dxs = 8.0;
+  static const double _dsm = 12.0;
+  static const double _dmd = 16.0;
+  static const double _dlg = 20.0;
+  static const double _dxl = 24.0;
+
+  /// NON-const so `appearance.borderRadius` can scale them.
+  ///
+  /// A mutable global is a real trade-off, taken deliberately: 58 call sites
+  /// read `MyazaRadius.md` directly, and threading a ThemeExtension through all
+  /// of them buys nothing here — exactly one KYC flow is on screen at a time, and
+  /// the scale is set once from the resolved config before that flow builds. The
+  /// alternative (a 58-site refactor) carries far more risk than this does.
+  static double xs = _dxs;
+  static double sm = _dsm;
+  static double md = _dmd;
+  static double lg = _dlg;
+  static double xl = _dxl;
+
+  /// `sm` (12) is the base — what buttons, inputs and cards use — so it is the
+  /// rung a consumer is choosing when they say "our corners are 4px". The scale
+  /// moves proportionally, keeping a card rounder than an input at every setting.
+  ///
+  /// [full] is deliberately untouched: it renders avatars and the camera oval,
+  /// and scaling it turns circles into squircles.
+  static void applyScale(double? base) {
+    final b = base == null ? _dsm : base.clamp(0.0, 32.0);
+    final ratio = b / _dsm;
+    xs = _dxs * ratio;
+    sm = _dsm * ratio;
+    md = _dmd * ratio;
+    lg = _dlg * ratio;
+    xl = _dxl * ratio;
+  }
   static const double full = 999.0;
 }
 

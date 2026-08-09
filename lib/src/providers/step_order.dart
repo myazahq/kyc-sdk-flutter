@@ -1,3 +1,4 @@
+import '../config/business_application.dart';
 import '../config/kyc_config.dart';
 import 'kyc_state.dart';
 
@@ -12,11 +13,47 @@ import 'kyc_state.dart';
 /// flow — it exists so this stays total rather than forcing a bang operator into
 /// every caller.
 String effectiveCountry(MyazaKYCConfig config, KYCState state) =>
-    state.selectedCountry ?? config.country ?? '';
+    state.selectedCountry ??
+    config.country ??
+    // KYB configs carry no individual `country` — the applicant's capture leg
+    // falls back to the registry country until (or unless) one is picked.
+    state.businessCountry ??
+    config.business?.country ??
+    '';
 
 /// Whether the flow offers more than one country (→ a country-select step).
 bool hasCountrySelectStep(MyazaKYCConfig config) =>
     (config.countries?.length ?? 0) > 1;
+
+/// The self-selected key person's ID-issuing country (uppercase ISO-2), when
+/// the applicant picked themselves AND that entry carries one. The applicant
+/// leg then SKIPS the country-select step — they already answered "where was
+/// your ID issued?" on the key-people step.
+String? applicantSelfCountry(KYCState state) {
+  final index = state.applicantKeyPersonIndex;
+  if (index == null || index < 0 || index >= state.keyPeople.length) return null;
+  final country = state.keyPeople[index].country.trim();
+  return country.isEmpty ? null : country.toUpperCase();
+}
+
+/// Countries the country-select step offers: the workflow's `countries` when
+/// configured, else the org's GRANTED countries from the server config — the
+/// KYB applicant leg's case (business configs carry no individual country
+/// list, and the applicant may hold an ID issued anywhere the org can
+/// verify). Empty while the server config is still loading.
+List<String> countrySelectOptions(MyazaKYCConfig config, KYCState state) {
+  final configured = [
+    for (final entry in config.countries ?? const <WorkflowCountryOption>[])
+      entry.country.toUpperCase(),
+  ];
+  if (configured.isNotEmpty) return configured;
+  if (state.serverConfig.status != ServerConfigStatus.ready) return const [];
+  final seen = <String>{};
+  for (final row in state.serverConfig.idTypes) {
+    seen.add(row.country.toUpperCase());
+  }
+  return seen.toList();
+}
 
 /// Whether the NFC chip step applies to the selected ID: the config enables it,
 /// the ID is chip-capable (`supportsNfc`), and the workflow's composite-key
@@ -62,25 +99,47 @@ bool livenessEnabledFor(MyazaKYCConfig config, KYCState state) {
 /// navigation, so a step that depends on later state (document-capture vs
 /// id-input, per-ID liveness) resolves correctly once that state is known.
 List<KYCStep> buildStepOrder(MyazaKYCConfig config, KYCState state) {
-  // Business (KYB) flow: no capture/liveness — just the registry details, plus
-  // an optional questionnaire.
+  final requiresCapture = requiresCaptureFor(config, state);
+  final hasLiveness = livenessEnabledFor(config, state);
+  final hasQuestionnaire = config.questionnaire?.isActive ?? false;
+  final hasEmailVerify = config.emailVerification?.enabled ?? false;
+  final hasPhoneVerify = config.phoneVerification?.enabled ?? false;
+
+  // Business (KYB) flow: the registry details plus whatever application
+  // sections the workflow configures — no capture/liveness of its own. When the
+  // workflow requires applicant verification, the ordinary individual capture
+  // leg runs afterwards for the SUBMITTER's identity.
   if (config.subjectType == 'business') {
+    final business = config.business;
     return [
       KYCStep.consent,
+      if (hasEmailVerify) KYCStep.contactEmail,
+      if (hasPhoneVerify) KYCStep.contactPhone,
       KYCStep.businessDetails,
-      if (config.questionnaire?.isActive ?? false) KYCStep.questionnaire,
+      if (hasKeyPeopleCollection(business)) KYCStep.businessKeyPeople,
+      if (hasBusinessDocumentsStep(business)) KYCStep.businessDocuments,
+      if (hasApplicantVerification(business)) ...[
+        KYCStep.applicantRole,
+        // The applicant may hold an ID issued anywhere the org can verify —
+        // more than one granted country means they pick theirs first, exactly
+        // like a multi-region individual flow. Mirrors the web SDK. EXCEPT
+        // when they picked themselves from the key people and that entry
+        // carries a country — already answered, so the step is skipped.
+        if (countrySelectOptions(config, state).length > 1 &&
+            applicantSelfCountry(state) == null)
+          KYCStep.countrySelect,
+        KYCStep.idType,
+        if (requiresCapture) KYCStep.documentCapture else KYCStep.idInput,
+        if (hasNfcStep(config, state)) KYCStep.nfc,
+        if (hasLiveness) KYCStep.liveness,
+      ],
+      if (hasQuestionnaire) KYCStep.questionnaire,
       KYCStep.submitted,
     ];
   }
 
-  final requiresCapture = requiresCaptureFor(config, state);
-  final hasLiveness = livenessEnabledFor(config, state);
-
   final hasCountrySelect = hasCountrySelectStep(config);
-  final hasQuestionnaire = config.questionnaire?.isActive ?? false;
   final hasProofOfAddress = config.proofOfAddress?.enabled ?? false;
-  final hasEmailVerify = config.emailVerification?.enabled ?? false;
-  final hasPhoneVerify = config.phoneVerification?.enabled ?? false;
   final hasNfc = hasNfcStep(config, state);
 
   return [
