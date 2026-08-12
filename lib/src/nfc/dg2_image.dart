@@ -9,12 +9,19 @@ import 'package:flutter/services.dart';
 // from there — the same approach the server takes, and it degrades safely: no
 // marker means no preview, never an error.
 //
-// Most passports use JPEG 2000, which Flutter cannot render. iOS can: its
-// ImageIO registers `public.jpeg-2000`, so a small native call decodes it to
-// something displayable. Android's BitmapFactory has no JPEG 2000 decoder at
-// all, so there the preview appears only for the minority of documents whose
-// DG2 is baseline JPEG. A missing preview is never an error — the chip read
-// itself is unaffected either way.
+// Most passports use JPEG 2000, which Flutter cannot render, so both platforms
+// decode it natively through `kyc_sdk_flutter/image_decode`:
+//
+//   • iOS — ImageIO registers `public.jpeg-2000` (ImageDecoder.swift).
+//   • Android — BitmapFactory has NO JPEG 2000 decoder and no platform API ever
+//     will, so JJ2000 is bundled and driven directly (ImageDecoderHandler.kt +
+//     Jp2Decoder.kt), the same way the React Native SDK does it.
+//
+// Until the Android handler existed, the channel was registered on iOS alone,
+// every Android call hit MissingPluginException, and the success screen fell
+// back to the generic tick with the photo already in hand.
+//
+// A missing preview is still never an error — the chip read is unaffected.
 
 enum Dg2Format { jp2, j2k, jpeg }
 

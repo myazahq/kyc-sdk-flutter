@@ -16,20 +16,36 @@ import 'emrtd_session.dart';
 // ever ADD documents we can read — chips that have retired BAC — and can never
 // take away one that already worked.
 //
-// Flip [preferPaceAccess] once PACE has been confirmed against real documents;
-// the ordering is the only thing that changes.
+// PACE has since been confirmed against a real document — a Nigerian e-passport
+// on 2026-08-11, over PACE-ECDH-GM with AES-256 on brainpoolP256r1, on both an
+// iPhone 16 Pro Max and a Galaxy S24, with passive authentication passing and
+// the DG2 portrait read. So the code is no longer unproven.
+//
+// The ordering STAYS BAC-first anyway, which is the part worth explaining:
+// "confirmed on one document" is not "confirmed on the population". BAC has
+// read every passport this SDK has ever seen; PACE has read one model of one
+// issuer's. Going PACE-first would put the less-travelled path in front of
+// every document in the world to buy a property (forward secrecy against a
+// recorded session) that matters far less than reading the passport at all.
+//
+// PACE still runs — as the fallback, where it can only ever ADD documents we
+// can read, namely chips that have retired BAC. Revisit when PACE has spanned
+// several issuers, not before.
+//
+// Mirrors the React Native SDK's open.ts, including this reasoning.
 
 /// Which access protocol is tried first.
 ///
 /// `false` (the shipping default) means BAC first, PACE only if BAC is refused
 /// — the conservative order described above. `true` reverses it, which is how
 /// PACE gets exercised against a real chip: a passport that accepts BAC would
-/// otherwise never reach the PACE code at all.
+/// otherwise never reach the PACE code at all. Set it to `true` temporarily to
+/// test PACE against a document; do not ship it.
 ///
 /// Safe to flip either way — whichever protocol goes first, the other still
 /// runs as the fallback, so this cannot turn a readable document into an
 /// unreadable one.
-bool preferPaceAccess = true; // TEST BUILD: exercise PACE first
+bool preferPaceAccess = false;
 
 /// Opens a session on [session], trying both access protocols as needed.
 ///

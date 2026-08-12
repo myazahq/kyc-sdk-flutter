@@ -17,11 +17,11 @@ class IdTypeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config   = ref.watch(kycConfigProvider);
-    final state    = ref.watch(kYCNotifierProvider);
+    final config = ref.watch(kycConfigProvider);
+    final state = ref.watch(kYCNotifierProvider);
     final notifier = ref.read(kYCNotifierProvider.notifier);
-    final colors   = context.myazaColors;
-    final text     = context.myazaText;
+    final colors = context.myazaColors;
+    final text = context.myazaText;
 
     // The server's granted list is authoritative — every offered ID is resolved
     // through [resolveIdTypeDefinition] so Global-Document IDs (no curated
@@ -50,11 +50,19 @@ class IdTypeScreen extends ConsumerWidget {
                 supportsNfc: row.supportsNfc,
               ),
         ],
-      ServerConfigStatus.error => curatedIdTypesForCountry(country)
-          .where((c) => allowed(c.key))
-          .toList(),
+      ServerConfigStatus.error =>
+        curatedIdTypesForCountry(country).where((c) => allowed(c.key)).toList(),
       ServerConfigStatus.loading => const <IdTypeConfig>[],
     };
+
+    // Document Intelligence off ⇒ number-only IDs only, so drop every
+    // document-scanned ID from the picker rather than offering one and then
+    // skipping its capture step: that produced a submission with no document
+    // for an ID that needs one. "This ID cannot be verified in this flow" is a
+    // fact about availability, not a step to skip. Mirrors the web SDK.
+    final visible = config.enableDocumentCapture
+        ? available
+        : available.where((t) => !t.requiresDocumentCapture).toList();
 
     if (serverConfig.status == ServerConfigStatus.loading) {
       return const Padding(
@@ -63,7 +71,7 @@ class IdTypeScreen extends ConsumerWidget {
       );
     }
 
-    if (serverConfig.status == ServerConfigStatus.ready && available.isEmpty) {
+    if (serverConfig.status == ServerConfigStatus.ready && visible.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(MyazaSpacing.md),
         child: Container(
@@ -85,7 +93,7 @@ class IdTypeScreen extends ConsumerWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── ID type cards ────────────────────────────────────────────────────
-        ...available.map((idTypeConfig) {
+        ...visible.map((idTypeConfig) {
           final isSelected = state.selectedIdType?.key == idTypeConfig.key;
           return Padding(
             padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
@@ -139,18 +147,18 @@ class _IdTypeCard extends StatelessWidget {
   // server ID key so Global-Document IDs get a sensible default icon.
   static IconData _iconFor(String key) => switch (key) {
         'bvn' || 'bvn-premium' => LucideIcons.landmark, // Bank Verification
-        'tax-id'               => LucideIcons.receiptText, // Tax ID (NIN-keyed)
-        'nin' || 'vnin'        => LucideIcons.fingerprint,
-        'passport'             => LucideIcons.bookUser,
-        'drivers-license'      => LucideIcons.idCard,
-        'pvc' || 'voters'      => LucideIcons.contact, // Voter's Card
-        _                      => LucideIcons.idCard,
+        'tax-id' => LucideIcons.receiptText, // Tax ID (NIN-keyed)
+        'nin' || 'vnin' => LucideIcons.fingerprint,
+        'passport' => LucideIcons.bookUser,
+        'drivers-license' => LucideIcons.idCard,
+        'pvc' || 'voters' => LucideIcons.contact, // Voter's Card
+        _ => LucideIcons.idCard,
       };
 
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
-    final text   = context.myazaText;
+    final text = context.myazaText;
 
     final borderColor = isSelected ? colors.primary : colors.border;
 

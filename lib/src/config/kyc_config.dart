@@ -15,6 +15,21 @@ enum KYCEnvironment { development, sandbox, production }
 /// `system` follows the device's platform brightness (live).
 enum MyazaThemeMode { light, dark, system }
 
+/// How flow progress is drawn — see [MyazaKYCConfig.progressStyle].
+enum MyazaProgressStyle {
+  /// Numbered circles, one per step.
+  steps,
+
+  /// A thin bar on the header's bottom edge.
+  bar;
+
+  /// Parse the wire value a published workflow carries. Anything unrecognised
+  /// falls back to [steps] rather than throwing: a newer server adding a third
+  /// style must not break an older SDK.
+  static MyazaProgressStyle fromJson(String? value) =>
+      value == 'bar' ? MyazaProgressStyle.bar : MyazaProgressStyle.steps;
+}
+
 // ─── Appearance ─────────────────────────────────────────────────────────────
 
 class MyazaKYCAppearance {
@@ -435,6 +450,19 @@ class MyazaKYCConfig {
   /// `showThemeToggle`.
   final bool showThemeToggle;
 
+  /// How progress through the flow is drawn in the header.
+  ///
+  ///   • [MyazaProgressStyle.steps] (default) — numbered circles, one per step,
+  ///     connected. Shows WHICH step you are on and how many there are, and
+  ///     collapses to a window when they no longer fit.
+  ///   • [MyazaProgressStyle.bar] — a single thin bar pinned to the header's
+  ///     bottom edge. Quieter, and unaffected by step count, so it suits long
+  ///     flows and hosts who would rather the chrome said less.
+  ///
+  /// Both convey the same fraction; the choice is how much room it takes.
+  /// Mirrors the RN SDK's `progressStyle`.
+  final MyazaProgressStyle progressStyle;
+
   /// Hide the close (X) button and block all user-initiated dismissal — the X
   /// button, the Android back gesture, and (on iOS) the bottom-sheet swipe-down
   /// drag / barrier tap. When `true`, the flow can only be closed
@@ -523,6 +551,7 @@ class MyazaKYCConfig {
     this.livenessMode = 'gestures',
     this.flashSequenceLength = 4,
     this.showThemeToggle = true,
+    this.progressStyle = MyazaProgressStyle.steps,
     this.disableClose = false,
     this.appearance,
     this.consent,
@@ -557,6 +586,7 @@ class MyazaKYCConfig {
     String? livenessMode,
     int? flashSequenceLength,
     bool? showThemeToggle,
+    MyazaProgressStyle? progressStyle,
     bool? disableClose,
     MyazaKYCAppearance? appearance,
     KYCConsentContent? consent,
@@ -588,6 +618,7 @@ class MyazaKYCConfig {
         livenessMode: livenessMode ?? this.livenessMode,
         flashSequenceLength: flashSequenceLength ?? this.flashSequenceLength,
         showThemeToggle: showThemeToggle ?? this.showThemeToggle,
+        progressStyle: progressStyle ?? this.progressStyle,
         disableClose: disableClose ?? this.disableClose,
         appearance: appearance ?? this.appearance,
         consent: consent ?? this.consent,

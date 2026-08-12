@@ -497,7 +497,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     state = state.copyWith(
       phase: LivenessPhase.complete,
       selfieBase64: base64Encode(jpegBytes),
-      instruction: 'Verification complete',
+      instruction: 'Capture complete',
       clearActiveChallenge: true,
       clearPositionGuidance: true,
     );

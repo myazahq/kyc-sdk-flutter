@@ -17,6 +17,7 @@ import '../services/mrz_parser.dart';
 import '../services/retry.dart';
 import '../services/validators.dart';
 import '../utils/resolve_url.dart';
+import '../utils/step_log.dart';
 import 'kyc_state.dart';
 import 'step_order.dart';
 
@@ -86,6 +87,16 @@ VerifyUserData? resolveVerifyUserData(UserData? fromProp, UserData? fromState) {
 class KYCNotifier extends _$KYCNotifier {
   @override
   KYCState build() {
+    // Step journey log — a fresh provider lifecycle is a fresh session. The
+    // self-listener catches EVERY currentStep write, whatever method made it;
+    // StepLog.record collapses consecutive duplicates. Rides the submission
+    // as metadata.device.stepLog for the dashboard timeline.
+    StepLog.reset();
+    StepLog.record(KYCStep.consent);
+    listenSelf((previous, next) {
+      if (previous?.currentStep != next.currentStep) StepLog.record(next.currentStep);
+    });
+
     // When the launcher resolved a workflow before mount, its idTypes/branding
     // are already known — use them directly and skip the /config fetch.
     final preloaded = ref.read(preloadedServerConfigProvider);
@@ -441,9 +452,13 @@ class KYCNotifier extends _$KYCNotifier {
       // the device, and the server's liveness re-scoring needs the claimed
       // flash sequence to have anything to verify the recording against.
       final integrity = state.integrity;
+      // Step journey recorded during the session — powers the dashboard's
+      // verification timeline. See utils/step_log.
+      final stepLog = StepLog.snapshot();
       return {
         ...collected,
         if (integrity.isNotEmpty) 'integrity': integrity,
+        if (stepLog != null) 'stepLog': stepLog,
         if (_config.deviceIntelligence)
           'fingerprint': await FingerprintService.instance.collect(),
       };
@@ -783,6 +798,9 @@ class KYCNotifier extends _$KYCNotifier {
   // ── Reset ──────────────────────────────────────────────────────────────────
 
   void reset() {
+    // Fresh step journey per session (mirrors the RN store's reset).
+    StepLog.reset();
+    StepLog.record(KYCStep.consent);
     state = const KYCState();
   }
 }

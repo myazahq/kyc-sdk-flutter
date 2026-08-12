@@ -35,8 +35,7 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
   final Map<String, String?> _errors = {};
 
   QuestionnaireConfig get _cfg =>
-      ref.read(kycConfigProvider).questionnaire ??
-      const QuestionnaireConfig();
+      ref.read(kycConfigProvider).questionnaire ?? const QuestionnaireConfig();
 
   @override
   void initState() {
@@ -54,6 +53,11 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
           _answers['${f.key}_currency'] == null &&
           f.currencies.isNotEmpty) {
         _answers['${f.key}_currency'] = f.currencies.first;
+      }
+      if (f.options.any((o) => o.requiresDetail)) {
+        _controllers[otherKeyFor(f)] = TextEditingController(
+          text: _answers[otherKeyFor(f)]?.toString() ?? '',
+        );
       }
     }
   }
@@ -73,6 +77,17 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
         (v is List && v.isEmpty);
     if (f.required && empty) return 'This field is required.';
     if (empty) return null;
+
+    // An "Other" choice obliges a description, whether or not the question
+    // itself is required: an unexplained "Other" is the answer that most needs
+    // explaining. Covers select (a single value) and multiselect (a list).
+    final detailOption = _detailOptionFor(f, v);
+    if (detailOption != null) {
+      final detail = _answers[otherKeyFor(f)];
+      if (detail is! String || detail.trim().isEmpty) {
+        return 'Tell us more about "${detailOption.label}".';
+      }
+    }
     if (f.type == QuestionnaireFieldType.number ||
         f.type == QuestionnaireFieldType.money) {
       final n = v is num ? v : num.tryParse(v.toString());
@@ -82,6 +97,16 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
       }
       if (f.min != null && n < f.min!) return 'Must be at least ${f.min}.';
       if (f.max != null && n > f.max!) return 'Must be at most ${f.max}.';
+    }
+    return null;
+  }
+
+  /// The chosen option that needs a free-text detail, if any.
+  QuestionnaireOption? _detailOptionFor(QuestionnaireField f, Object? value) {
+    for (final o in f.options) {
+      if (!o.requiresDetail) continue;
+      final chosen = value is List ? value.contains(o.value) : value == o.value;
+      if (chosen) return o;
     }
     return null;
   }
@@ -120,6 +145,7 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
           _FieldLabel(field: f),
           const SizedBox(height: MyazaSpacing.xs),
           _buildField(f),
+          ..._detailInput(f),
           if (_errors[f.key] != null) ...[
             const SizedBox(height: MyazaSpacing.xs),
             Text(_errors[f.key]!,
@@ -132,6 +158,28 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
     );
   }
 
+  /// Free text behind an "Other" choice. Always shown once that option is
+  /// picked: an unexplained "Other" is the answer a compliance reviewer most
+  /// needs spelled out.
+  List<Widget> _detailInput(QuestionnaireField f) {
+    final option = _detailOptionFor(f, _answers[f.key]);
+    if (option == null) return const [];
+    return [
+      const SizedBox(height: MyazaSpacing.sm),
+      MyazaInput(
+        label: (option.detailLabel?.isNotEmpty ?? false)
+            ? option.detailLabel!
+            : 'Please specify',
+        controller: _controllers[otherKeyFor(f)],
+        hint: (option.detailPlaceholder?.isNotEmpty ?? false)
+            ? option.detailPlaceholder!
+            : 'Tell us more about "${option.label}"',
+        maxLength: 200,
+        onChanged: (v) => _answers[otherKeyFor(f)] = v,
+      ),
+    ];
+  }
+
   Widget _buildField(QuestionnaireField f) => switch (f.type) {
         QuestionnaireFieldType.text => MyazaInput(
             controller: _controllers[f.key],
@@ -141,8 +189,7 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
         QuestionnaireFieldType.number => MyazaInput(
             controller: _controllers[f.key],
             hint: f.placeholder ?? '0',
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
             ],
@@ -153,7 +200,8 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
             controller: _controllers[f.key]!,
             currency: _answers['${f.key}_currency'] as String?,
             onAmount: (n) => _answers[f.key] = n,
-            onCurrency: (c) => setState(() => _answers['${f.key}_currency'] = c),
+            onCurrency: (c) =>
+                setState(() => _answers['${f.key}_currency'] = c),
           ),
         QuestionnaireFieldType.select => _SelectField(
             field: f,
@@ -193,12 +241,14 @@ class _FieldLabel extends StatelessWidget {
         Text.rich(TextSpan(children: [
           TextSpan(text: field.label, style: text.label),
           if (field.required)
-            TextSpan(text: ' *',
+            TextSpan(
+                text: ' *',
                 style: text.label.copyWith(color: MyazaColors.error)),
         ])),
         if (field.helpText != null)
           Text(field.helpText!,
-              style: text.bodySmall.copyWith(color: context.myazaColors.textSecondary)),
+              style: text.bodySmall
+                  .copyWith(color: context.myazaColors.textSecondary)),
       ],
     );
   }
@@ -273,8 +323,7 @@ class _MoneyField extends StatelessWidget {
               ],
             ),
           ),
-        if (field.currencies.isNotEmpty)
-          const SizedBox(width: MyazaSpacing.sm),
+        if (field.currencies.isNotEmpty) const SizedBox(width: MyazaSpacing.sm),
         Expanded(
           child: MyazaInput(
             controller: controller,

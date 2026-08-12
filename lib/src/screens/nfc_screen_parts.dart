@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../config/theme.dart';
+import '../nfc/emrtd_dg1.dart';
 import '../services/mrz_parser.dart';
 import '../widgets/nfc_scanned_summary.dart';
 import '../widgets/staggered_reveal.dart';
@@ -15,7 +16,13 @@ import '../widgets/check_badge.dart';
 /// invisible — no shutter, no preview — so without an explicit success state
 /// the step simply disappears and the user can't tell it worked.
 class NfcSuccessPanel extends StatefulWidget {
+  /// The CAMERA's read of the MRZ. A fallback for display only — see
+  /// [dg1Base64], which supersedes it whenever the chip supplied one.
   final MrzScan? scan;
+
+  /// Base64 DG1 — the chip's own MRZ, signed by the issuing state. Preferred
+  /// over [scan] for everything shown on this screen.
+  final String? dg1Base64;
 
   /// Base64 DG2 — the chip's own portrait. Shown when this platform can decode
   /// it: the read is otherwise invisible, and the government's photo of the
@@ -31,6 +38,7 @@ class NfcSuccessPanel extends StatefulWidget {
   const NfcSuccessPanel({
     super.key,
     this.scan,
+    this.dg1Base64,
     this.dg2Base64,
     this.missingSod = false,
     this.onRetry,
@@ -73,7 +81,10 @@ class _NfcSuccessPanelState extends State<NfcSuccessPanel> {
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final text = context.myazaText;
-    final scan = widget.scan;
+    // Once the chip has been read, IT is the source — see nfc/emrtd_dg1.dart.
+    // The camera scan stays as the fallback for a chip whose DG1 we could not
+    // parse, so a read that otherwise worked still shows something.
+    final scan = parseDg1(widget.dg1Base64) ?? widget.scan;
     final name = scan?.displayName ?? '';
 
     // Lead-in above the badge, matching the submission screen's `xl`. Padding

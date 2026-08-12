@@ -3,6 +3,9 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/theme.dart';
+import 'step_window.dart';
+import 'kyc_progress_bar.dart';
+import '../config/kyc_config.dart';
 import 'powered_by.dart';
 import 'step_header.dart';
 
@@ -69,6 +72,13 @@ class KycBottomSheet extends StatelessWidget {
   /// whose list must span the full sheet rather than a fixed fraction of it.
   final bool fillsViewport;
 
+  /// Steps (default) or a bar on the header's bottom edge.
+  final MyazaProgressStyle progressStyle;
+
+  bool get _hasProgress => progress != null && stepCount != null;
+  bool get _showBar => _hasProgress && progressStyle == MyazaProgressStyle.bar;
+  bool get _showSteps => _hasProgress && progressStyle == MyazaProgressStyle.steps;
+
   const KycBottomSheet({
     super.key,
     required this.title,
@@ -79,6 +89,7 @@ class KycBottomSheet extends StatelessWidget {
     this.onClose,
     this.canDismiss = true,
     this.isFullScreen = false,
+    this.progressStyle = MyazaProgressStyle.steps,
     this.isDark = false,
     this.onToggleTheme,
     this.logoUrl,
@@ -147,7 +158,13 @@ class KycBottomSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: kycHeaderSurface(colors, isDark: isDark),
                   border: Border(
-                    bottom: BorderSide(color: colors.border, width: 1),
+                    // The bar sits ON this edge and paints its own track, so
+                    // the border would double it.
+                    bottom: BorderSide(
+                      color: colors.border,
+                      width: _showBar ? 0 : 1,
+                      style: _showBar ? BorderStyle.none : BorderStyle.solid,
+                    ),
                   ),
                 ),
                 child: Column(
@@ -219,13 +236,19 @@ class KycBottomSheet extends StatelessWidget {
                     ),
 
                     // Step indicator
-                    if (progress != null && stepCount != null)
+                    if (_showSteps)
                       _StepIndicator(
                         progress: progress!,
                         stepCount: stepCount!,
                       ),
-                    if (progress != null && stepCount != null)
-                      const SizedBox(height: MyazaSpacing.md),
+                    if (_showSteps) const SizedBox(height: MyazaSpacing.md),
+                    // Sits on the header's bottom edge in place of its border,
+                    // so choosing it costs the header no height.
+                    if (_showBar)
+                      KycProgressBar(
+                        progress: progress!,
+                        stepCount: stepCount!,
+                      ),
                   ],
                 ),
               ),
@@ -338,34 +361,91 @@ class _StepIndicator extends StatelessWidget {
 
   int get _activeIndex => (progress * stepCount).round() - 1;
 
+  /// Base circle size, before text scaling.
+  static const double _circle = 26;
+
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final active = _activeIndex;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: MyazaSpacing.md),
-      child: Row(
-        children: [
-          for (int i = 0; i < stepCount; i++) ...[
-            _StepDot(
-              index: i,
-              dotState: i < active
-                  ? _StepDotState.completed
-                  : i == active
-                      ? _StepDotState.active
-                      : _StepDotState.upcoming,
-              colors: colors,
-            ),
-            if (i < stepCount - 1)
-              Expanded(
-                child: _StepConnector(
-                  completed: i < active,
-                  colors: colors,
-                ),
-              ),
-          ],
-        ],
+    // Grow the circle with the system text size, or the number inside it clips
+    // the moment a user turns the OS font scale up. Capped at 1.4: past that
+    // the row matters less than the step content below it.
+    final scale = MediaQuery.textScalerOf(context).scale(1.0).clamp(1.0, 1.4);
+    final size = (_circle * scale).roundToDouble();
+    final badge = (13 * scale).roundToDouble();
+    final step = (active + 1).clamp(1, stepCount);
+
+    // ONE label for the whole row: a screen reader walking ten unlabelled
+    // circles and announcing a bare "6" says nothing about how far through the
+    // flow that is.
+    return Semantics(
+      container: true,
+      label: 'Step $step of $stepCount',
+      value: '$step of $stepCount',
+      child: ExcludeSemantics(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: MyazaSpacing.md),
+          // Measured rather than assumed, so a flow collapses on a narrow phone
+          // and stays whole on a wide one instead of both obeying one cap.
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final slots = windowedSteps(
+                stepCount,
+                active,
+                maxCircles: fitStepCircles(constraints.maxWidth, size),
+              );
+              return Row(
+                children: [
+                  for (int position = 0; position < slots.length; position++) ...[
+                    if (slots[position] == kStepEllipsis)
+                      // Collapsed run, sized to the circle's height so the
+                      // connectors either side stay on one centre line and the
+                      // chain reads as continuous rather than broken in two.
+                      SizedBox(
+                        height: size,
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            child: Text(
+                              '···',
+                              textScaler: TextScaler.noScaling,
+                              style: GoogleFonts.karla(
+                                fontSize: 13,
+                                letterSpacing: 1,
+                                color: colors.textMuted,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      _StepDot(
+                        index: slots[position],
+                        size: size,
+                        badgeSize: badge,
+                        dotState: slots[position] < active
+                            ? _StepDotState.completed
+                            : slots[position] == active
+                                ? _StepDotState.active
+                                : _StepDotState.upcoming,
+                        colors: colors,
+                      ),
+                    if (position < slots.length - 1)
+                      Expanded(
+                        child: _StepConnector(
+                          completed:
+                              slots[position] != kStepEllipsis && slots[position] < active,
+                          colors: colors,
+                        ),
+                      ),
+                  ],
+                ],
+              );
+            },
+          ),
+        ),
       ),
     );
   }
@@ -375,64 +455,84 @@ class _StepDot extends StatelessWidget {
   final int index;
   final _StepDotState dotState;
   final MyazaColorScheme colors;
+  final double size;
+  final double badgeSize;
 
   const _StepDot({
     required this.index,
     required this.dotState,
     required this.colors,
+    required this.size,
+    required this.badgeSize,
   });
 
   @override
   Widget build(BuildContext context) {
     final isCompleted = dotState == _StepDotState.completed;
     final isActive = dotState == _StepDotState.active;
+    final filled = isCompleted || isActive;
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-      width: 26,
-      height: 26,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: (isCompleted || isActive) ? colors.primary : Colors.transparent,
-        border: Border.all(
-          color: (isCompleted || isActive) ? colors.primary : colors.primary200,
-          width: 1.5,
-        ),
-      ),
-      child: Center(
-        child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 300),
-          transitionBuilder: (child, animation) => FadeTransition(
-            opacity: animation,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.45, end: 1.0).animate(
-                CurvedAnimation(
-                  parent: animation,
-                  curve: Curves.easeOutBack,
-                  reverseCurve: Curves.easeIn,
+    return SizedBox(
+      width: size,
+      height: size,
+      // Clip.none so the badge may straddle the circle's edge.
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: filled ? colors.primary : Colors.transparent,
+              border: Border.all(
+                color: filled ? colors.primary : colors.primary200,
+                width: 1.5,
+              ),
+            ),
+            child: Center(
+              // The NUMBER stays, completed or not. A check alone says a step is
+              // done but not WHICH step — and once the row is windowed
+              // ("1 ··· 5 6 7 ··· 10") that is precisely what the numbers answer.
+              child: Text(
+                '${index + 1}',
+                textScaler: TextScaler.noScaling,
+                style: GoogleFonts.karla(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: filled ? Colors.white : colors.textMuted,
                 ),
               ),
-              child: child,
             ),
           ),
-          child: isCompleted
-              ? const Icon(
-                  Icons.check_rounded,
-                  key: ValueKey('check'),
-                  size: 14,
-                  color: Colors.white,
-                )
-              : Text(
-                  '${index + 1}',
-                  key: const ValueKey('num'),
-                  style: GoogleFonts.karla(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: isActive ? Colors.white : colors.textMuted,
-                  ),
+          // Completion rides as a badge tucked onto the circle's corner. The
+          // ring is WHITE — the same colour as the number inside the circle —
+          // because the badge sits on the circle, not on the page.
+          if (isCompleted)
+            Positioned(
+              top: -3,
+              right: -2,
+              child: Container(
+                width: badgeSize,
+                height: badgeSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  // Static, not a scheme field: MyazaColorScheme carries
+                  // successBg but the solid success colour lives on MyazaColors
+                  // and is the same in both themes.
+                  color: MyazaColors.success,
+                  border: Border.all(color: Colors.white, width: 1),
                 ),
-        ),
+                child: Icon(
+                  Icons.check_rounded,
+                  size: (badgeSize * 0.6).roundToDouble(),
+                  color: Colors.white,
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -452,6 +552,7 @@ class _StepConnector extends StatelessWidget {
         duration: const Duration(milliseconds: 350),
         curve: Curves.easeInOut,
         height: 2,
+        constraints: const BoxConstraints(minWidth: 6),
         decoration: BoxDecoration(
           color: completed ? colors.primary : colors.primary200,
           borderRadius: BorderRadius.circular(1),

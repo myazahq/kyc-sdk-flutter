@@ -1,3 +1,46 @@
+## 2.4.0
+
+### PACE chip access
+
+The eMRTD reader spoke Basic Access Control only, so passports issued with PACE
+as their sole access protocol — standard across the EU since roughly 2014, and
+spreading — could not be read at all. PACE is now implemented alongside BAC, and
+the session negotiates: PACE where the chip offers it, BAC where it does not.
+
+Which protocol a read used is reported back rather than inferred. A chip that
+falls back to BAC because it offers nothing else is healthy; one that falls back
+because our PACE attempt broke is a bug, and the protocol alone cannot tell the
+two apart — so the outcome travels with the submission as a diagnostic.
+
+### The chip's printed details are parsed, and its photo renders on Android
+
+DG1 — the data page as the chip stores it — is now parsed and shown on the
+success screen, so the read confirms what it actually recovered instead of
+asserting that something was read.
+
+DG2 portraits encoded as JPEG 2000 now decode on Android, which has no
+JPEG 2000 support of its own. Previously those chips produced a portrait the
+platform could not render.
+
+### `progressStyle`
+
+The header's progress indicator is now configurable:
+
+* `MyazaProgressStyle.steps` (default) — numbered circles, one per step. When a
+  flow has more steps than fit, they collapse to a moving window rather than
+  shrinking past legibility.
+* `MyazaProgressStyle.bar` — a single thin bar on the header's bottom edge.
+  Quieter, and unaffected by step count, so it suits long flows.
+
+Both convey the same fraction; the choice is how much room it takes. A published
+workflow can carry the setting, and an unrecognised value falls back to `steps`
+rather than throwing — a newer server adding a third style must not break an
+older SDK. Mirrors the React Native SDK's `progressStyle`.
+
+### Also
+
+Document capture handling and the dropdown anchoring were reworked.
+
 ## 2.3.0
 
 ### The full business (KYB) application

@@ -7,6 +7,7 @@ library kyc_sdk_flutter;
 // Config
 export 'src/config/kyc_config.dart'
     show
+        MyazaProgressStyle,
         MyazaThemeMode,
         MyazaKYCAppearance,
         KYCConsentContent,

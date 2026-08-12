@@ -90,6 +90,16 @@ enum NfcReadStage {
   /// Android this is where a read sits until the document touches the phone.
   waiting,
 
+  /// The document is almost certainly already against the phone, but Android
+  /// never handed the tag to our reader: its own dispatch consumed it first,
+  /// and it does not re-deliver a tag that has stayed in the field.
+  ///
+  /// Only a physical lift-and-replace recovers, so this exists to SAY that.
+  /// Before it, the read sat on the "hold still" instruction for the full poll
+  /// timeout and then failed with `408 Polling tag timeout`, having asked the
+  /// user to keep doing the one thing that could not work.
+  repositionNeeded,
+
   /// Chip detected; opening the BAC session with the MRZ key.
   authenticating,
 
@@ -112,6 +122,7 @@ extension NfcReadStageLabel on NfcReadStage {
   /// uses, so the two platforms narrate the read identically.
   String get label => switch (this) {
         NfcReadStage.waiting => 'Waiting for the chip',
+        NfcReadStage.repositionNeeded => 'Place the document again',
         NfcReadStage.authenticating => 'Unlocking the chip',
         NfcReadStage.readingData => 'Reading document details',
         NfcReadStage.readingSecurity => 'Reading security data',
@@ -126,21 +137,29 @@ extension NfcReadStageLabel on NfcReadStage {
         NfcReadStage.waiting =>
           'Hold the top edge of your document flat against the back of your '
               'phone.',
+        // The one instruction that recovers a tag Android has already taken.
+        // Says WHAT to do, not what went wrong: nothing has failed from the
+        // user's point of view, and "error" here would be both alarming and
+        // untrue.
+        NfcReadStage.repositionNeeded =>
+          'Lift your document away from the phone, then place it back against '
+              'the top edge.',
         NfcReadStage.authenticating =>
           'Opening a secure session using the code printed on your photo page.',
-        NfcReadStage.readingData =>
-          'Copying the details stored on the chip.',
+        NfcReadStage.readingData => 'Copying the details stored on the chip.',
         NfcReadStage.readingSecurity =>
           'Downloading the chip’s digital signature. This is the largest part '
               'and takes the longest — keep holding.',
-        NfcReadStage.readingPhoto =>
-          'Copying the photo stored on the chip.',
+        NfcReadStage.readingPhoto => 'Copying the photo stored on the chip.',
         NfcReadStage.done => 'Everything was read successfully.',
       };
 
   /// Position in the read, 0..1 — drives the sheet's progress bar.
   double get progress => switch (this) {
         NfcReadStage.waiting => 0,
+        // Still waiting for the chip, so no progress has been made: moving the
+        // bar here would imply the read had started.
+        NfcReadStage.repositionNeeded => 0,
         NfcReadStage.authenticating => 0.15,
         NfcReadStage.readingData => 0.35,
         NfcReadStage.readingSecurity => 0.6,

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:myaza_kyc_sdk_flutter/src/nfc/emrtd_cipher.dart';
 import 'package:myaza_kyc_sdk_flutter/src/nfc/emrtd_crypto.dart';
 
 // ─── ICAO 9303 Part 11, Appendix D — the official BAC worked example ──────────
@@ -25,6 +26,50 @@ void main() {
   const docNumber = 'L898902C';
   const dob = '690806';
   const doe = '940623';
+
+  // REGRESSION. PACE originally reused BAC's Kseed and every real passport
+  // refused the handshake at its last step with 0x6300 — indistinguishable from
+  // a mistyped MRZ, while the same document opened over BAC seconds later.
+  group('the PACE password seed', () {
+    test('is the FULL SHA-1 digest, where BAC truncates to 16 bytes', () {
+      expect(
+        paceKeySeed(
+                documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe)
+            .length,
+        20,
+      );
+      expect(
+        keySeed(documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe)
+            .length,
+        16,
+      );
+    });
+
+    test('agrees with BAC on the leading bytes', () {
+      // Same hash of the same MRZ information; BAC just stops at 16.
+      final bac = keySeed(
+          documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe);
+      final pace = paceKeySeed(
+          documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe);
+      expect(pace.sublist(0, 16), bac);
+    });
+
+    test('produces a DIFFERENT password key from the truncated seed', () {
+      // The whole failure mode: both seeds derive a valid-looking key, so
+      // nothing complains until the chip does.
+      const suite = AesSuite(16);
+      final fromPace = suite.deriveKey(
+        paceKeySeed(
+            documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe),
+        3,
+      );
+      final fromBac = suite.deriveKey(
+        keySeed(documentNumber: docNumber, dateOfBirth: dob, dateOfExpiry: doe),
+        3,
+      );
+      expect(hexOf(fromPace), isNot(hexOf(fromBac)));
+    });
+  });
 
   group('BAC key derivation (ICAO 9303 D.2)', () {
     test('MRZ information is assembled with check digits', () {

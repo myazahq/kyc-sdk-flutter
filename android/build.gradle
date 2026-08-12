@@ -42,6 +42,13 @@ android {
 }
 
 dependencies {
+    // JPEG 2000, for the DG2 chip portrait. Android's BitmapFactory cannot
+    // decode it and no platform API ever will, so the decoder is bundled:
+    // JJ2000 is the pure-Java reference implementation. ~500KB. Same dependency
+    // and same version as the React Native SDK, which has rendered the chip
+    // portrait on Android since PACE landed.
+    implementation 'edu.ucar:jj2000:5.2'
+
     // Native ML Kit face detection — NOT the cross-platform Flutter package.
     // Keeping ML Kit Android-only (Gradle) means no GoogleMLKit CocoaPod on iOS,
     // so iOS-simulator builds stay green while Android gets real ML Kit liveness.

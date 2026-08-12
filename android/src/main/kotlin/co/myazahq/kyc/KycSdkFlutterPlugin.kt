@@ -38,10 +38,15 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
   private lateinit var channel: MethodChannel
   private lateinit var recorderChannel: MethodChannel
   private lateinit var textChannel: MethodChannel
+
+  /// JPEG 2000 chip portraits (DG2). Its own channel because the Dart side
+  /// (dg2_image.dart) targets the same channel name iOS already registers.
+  private lateinit var imageChannel: MethodChannel
   private lateinit var faceEventChannel: EventChannel
 
   private val faceDetector = FaceDetectorHandler()
   private val textRecognizer = TextRecognizerHandler()
+  private val imageDecoder = ImageDecoderHandler()
   private var documentCamera: DocumentCameraHandler? = null
 
   private lateinit var appContext: Context
@@ -64,6 +69,9 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     textChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/text_recognition")
     textChannel.setMethodCallHandler(this)
 
+    imageChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/image_decode")
+    imageChannel.setMethodCallHandler(this)
+
     faceEventChannel = EventChannel(binding.binaryMessenger, "kyc_sdk_flutter/liveness_recorder/faces")
     faceEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
       override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -81,6 +89,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     channel.setMethodCallHandler(null)
     recorderChannel.setMethodCallHandler(null)
     textChannel.setMethodCallHandler(null)
+    imageChannel.setMethodCallHandler(null)
+    imageDecoder.dispose()
     textRecognizer.close()
     faceEventChannel.setStreamHandler(null)
     documentCamera?.detach()
@@ -91,6 +101,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
+    // Claims "decode" and nothing else; anything it declines falls through.
+    if (imageDecoder.handle(call, result)) return
     when (call.method) {
       "detect" -> faceDetector.detect(call, result)
       "recognize" -> textRecognizer.recognize(call, result)

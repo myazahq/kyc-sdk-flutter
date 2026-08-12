@@ -92,6 +92,9 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     allowDocumentUpload: flow.allowDocumentUpload,
     enableLiveness: flow.enableLiveness,
     showThemeToggle: flow.showThemeToggle,
+    progressStyle: flow.progressStyle == null
+        ? null
+        : MyazaProgressStyle.fromJson(flow.progressStyle),
     disableClose: flow.disableClose,
     appearance:
         MyazaKYCAppearance.mergeFromJson(base.appearance, flow.appearance),

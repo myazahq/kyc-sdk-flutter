@@ -137,13 +137,15 @@ class EmrtdSession {
     required String dateOfBirth,
     required String dateOfExpiry,
   }) async {
-    final seed = keySeed(
+    // The MRZ unlocks the chip's nonce rather than the session itself: counter
+    // 3 is the password key, where BAC uses 1 and 2 for its session keys. The
+    // seed is the UNTRUNCATED SHA-1 — see paceKeySeed for why that distinction
+    // matters and how it fails when it is wrong.
+    final seed = paceKeySeed(
       documentNumber: documentNumber,
       dateOfBirth: dateOfBirth,
       dateOfExpiry: dateOfExpiry,
     );
-    // The MRZ unlocks the chip's nonce rather than the session itself: counter
-    // 3 is the password key, where BAC uses 1 and 2 for its session keys.
     final passwordKey = offer.protocol.suite.deriveKey(seed, 3);
 
     _sm = await runPaceEcdhGm(

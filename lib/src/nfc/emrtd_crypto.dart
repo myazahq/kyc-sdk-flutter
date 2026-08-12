@@ -145,8 +145,44 @@ String mrzKeySeedInput({
       field(dateOfExpiry);
 }
 
-/// Kseed: the first 16 bytes of SHA-1 over the MRZ information.
+/// Kseed for BAC: the first 16 bytes of SHA-1 over the MRZ information.
 Uint8List keySeed({
+  required String documentNumber,
+  required String dateOfBirth,
+  required String dateOfExpiry,
+}) =>
+    Uint8List.fromList(_mrzDigest(
+      documentNumber: documentNumber,
+      dateOfBirth: dateOfBirth,
+      dateOfExpiry: dateOfExpiry,
+    ).sublist(0, 16));
+
+/// The seed PACE derives its password key from: the FULL SHA-1 digest, NOT
+/// truncated to 16 bytes.
+///
+/// This is the one place the two protocols disagree about the same hash, and it
+/// is silent when wrong: a truncated seed yields a valid-looking K_π, the
+/// handshake runs to its last step, and the chip answers 0x6300 — which reads
+/// exactly like a mistyped MRZ rather than a derivation bug. It cost a real
+/// passport read to find (the same document opened over BAC seconds later,
+/// proving the MRZ was right).
+///
+/// ICAO 9303 Part 11 keeps the two apart: §9.7.3 truncates for BAC's Kseed,
+/// while §9.7.2 feeds the whole digest to KDF_π. JMRTD encodes the same split
+/// as `computeKeySeedForBAC(… truncate: true)` vs `computeKeySeedForPACE(…
+/// truncate: false)`.
+Uint8List paceKeySeed({
+  required String documentNumber,
+  required String dateOfBirth,
+  required String dateOfExpiry,
+}) =>
+    Uint8List.fromList(_mrzDigest(
+      documentNumber: documentNumber,
+      dateOfBirth: dateOfBirth,
+      dateOfExpiry: dateOfExpiry,
+    ));
+
+List<int> _mrzDigest({
   required String documentNumber,
   required String dateOfBirth,
   required String dateOfExpiry,
@@ -156,8 +192,7 @@ Uint8List keySeed({
     dateOfBirth: dateOfBirth,
     dateOfExpiry: dateOfExpiry,
   );
-  final digest = c.sha1.convert(info.codeUnits).bytes;
-  return Uint8List.fromList(digest.sublist(0, 16));
+  return c.sha1.convert(info.codeUnits).bytes;
 }
 
 /// ICAO 7-3-1 weighted check digit over the MRZ alphabet.

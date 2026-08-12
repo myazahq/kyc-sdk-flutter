@@ -8,7 +8,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.3.0';
+const String kSdkVersion = '2.4.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -650,6 +650,8 @@ class WorkflowFlowConfig {
   final bool? allowDocumentUpload;
   final bool? enableLiveness;
   final bool? showThemeToggle;
+  /// Raw wire value; parsed by MyazaProgressStyle.fromJson at merge time.
+  final String? progressStyle;
   final bool? disableClose;
   final Map<String, dynamic>? appearance;
   final Map<String, dynamic>? consent;
@@ -668,6 +670,7 @@ class WorkflowFlowConfig {
     this.allowDocumentUpload,
     this.enableLiveness,
     this.showThemeToggle,
+    this.progressStyle,
     this.disableClose,
     this.appearance,
     this.consent,
@@ -688,6 +691,7 @@ class WorkflowFlowConfig {
         allowDocumentUpload: json['allowDocumentUpload'] as bool?,
         enableLiveness: json['enableLiveness'] as bool?,
         showThemeToggle: json['showThemeToggle'] as bool?,
+        progressStyle: json['progressStyle'] as String?,
         disableClose: json['disableClose'] as bool?,
         appearance: (json['appearance'] as Map?)?.cast<String, dynamic>(),
         consent: (json['consent'] as Map?)?.cast<String, dynamic>(),

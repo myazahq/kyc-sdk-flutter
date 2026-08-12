@@ -176,8 +176,19 @@ void main() {
     await tester.pumpWidget(_host(_review(isBusy: true)));
     await tester.pump();
 
-    final buttons = tester.widgetList<TextButton>(find.byType(TextButton));
-    expect(buttons.isNotEmpty, isTrue);
+    // Matched by PREDICATE, not `find.byType(TextButton)`: that finder compares
+    // the EXACT runtime type, and `TextButton.icon` builds a private
+    // `_TextButtonWithIcon` SUBCLASS on Flutter 3.27 — the declared floor, and
+    // the version CI runs — while newer Flutter returns a plain TextButton. So
+    // the byType form matched the buttons locally and matched NOTHING on 3.27,
+    // which is why this test passed on every dev machine and failed the moment
+    // CI started running the suite. ButtonStyleButton is the shared base class,
+    // so the predicate holds on both.
+    final buttons = tester.widgetList<ButtonStyleButton>(
+      find.byWidgetPredicate((w) => w is ButtonStyleButton),
+    );
+    expect(buttons.isNotEmpty, isTrue,
+        reason: 'the retake controls must be in the tree to be disabled');
     expect(buttons.every((b) => b.onPressed == null), isTrue,
         reason: 'a retake mid-upload would race the upload it is replacing');
   });

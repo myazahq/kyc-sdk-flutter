@@ -215,6 +215,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
         children: [
           NfcSuccessPanel(
             scan: scan,
+            dg1Base64: ref.read(kYCNotifierProvider).nfcChipData?.dg1Base64,
             dg2Base64: ref.read(kYCNotifierProvider).nfcChipData?.dg2Base64,
             missingSod:
                 ref.read(kYCNotifierProvider).nfcChipData?.missingSod ?? false,
@@ -223,8 +224,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           const SizedBox(height: MyazaSpacing.xl),
           MyazaButton(
             label: 'Continue',
-            onPressed: () =>
-                ref.read(kYCNotifierProvider.notifier).nextStep(),
+            onPressed: () => ref.read(kYCNotifierProvider.notifier).nextStep(),
           ),
         ],
       );
@@ -246,14 +246,25 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           const SizedBox(height: MyazaSpacing.lg),
           Text(
             _phase == _Phase.reading
-                ? (_stage == NfcReadStage.waiting
+                ? switch (_stage) {
                     // Nothing has been detected yet — this is an instruction.
-                    ? 'Hold the top edge of your document flat against the '
-                        'back of your phone and keep still…'
+                    NfcReadStage.waiting =>
+                      'Hold the top edge of your document flat against the '
+                          'back of your phone and keep still…',
+                    // Android took the tag before our reader started and will
+                    // not hand it over again, so the ONLY thing that recovers
+                    // is a physical lift and replace. Without this case the
+                    // screen fell through to "Chip detected", which is the
+                    // opposite of the truth and told the user to keep doing
+                    // the one thing that could never work.
+                    NfcReadStage.repositionNeeded =>
+                      'Lift your document away from the phone, then place it '
+                          'back against the top edge.',
                     // The chip IS connected: the risk now is the user lifting
                     // the document mid-read, so say that it is working.
-                    : 'Chip detected — keep the document still until this '
-                        'finishes.')
+                    _ => 'Chip detected — keep the document still until this '
+                        'finishes.',
+                  }
                 : 'We read your document’s details — the chip didn’t open.',
             style: text.bodyMedium,
             textAlign: TextAlign.center,

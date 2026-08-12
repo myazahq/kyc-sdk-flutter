@@ -83,15 +83,11 @@ class PoweredBy extends StatelessWidget {
         opacity: 0.9,
         // A failed launch is swallowed: the provenance mark is the point, and a
         // device with no browser has nothing useful to show instead.
-        child: GestureDetector(
-          onTap: () async {
-            try {
-              await launchUrl(Uri.parse(kProductUrl), mode: LaunchMode.externalApplication);
-            } catch (_) {
-              // no-op
-            }
-          },
-          child: Row(
+        // The ROW is not the link — only the mark is. A Row expands to its
+        // constraints, so wrapping it in the GestureDetector made the entire
+        // footer width open myaza.co. "Powered by" is a label, not a
+        // destination.
+        child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
@@ -108,35 +104,57 @@ class PoweredBy extends StatelessWidget {
             // Wider than the gaps INSIDE the lockup, so the mark reads as one
             // unit rather than three evenly-spaced items.
             const SizedBox(width: 10),
-            Image.asset(
-              isDark ? kWordmarkAssetDark : kWordmarkAssetLight,
-              package: kPackageName,
-              height: _markHeight,
-              // 3× the largest sensible render — keeps the decode small without
-              // visible softening on a 3x screen.
-              cacheHeight: (_markHeight * 3).round(),
-              fit: BoxFit.contain,
-              // A missing asset must never take the sheet down; the rest of the
-              // lockup still reads as attribution on its own.
-              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-            ),
-            const SizedBox(width: 8),
-            Container(width: 1, height: 24, color: markColor.withValues(alpha: 0.35)),
-            const SizedBox(width: 8),
-            Text(
-              'TRUST',
-              // ~half the wordmark's height — the ratio the dashboard's own
-              // lockup uses. Level with the logo, TRUST competes with it.
-              style: TextStyle(
-                fontSize: 14,
-                height: 1.2,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 2,
-                color: markColor,
+            // This is the link: wordmark, rule and TRUST are one brand, so the
+            // whole lockup is the target — but nothing beyond it is.
+            // A failed launch is swallowed: the provenance mark is the point,
+            // and a device with no browser has nothing useful to show instead.
+            GestureDetector(
+              onTap: () async {
+                try {
+                  await launchUrl(Uri.parse(kProductUrl),
+                      mode: LaunchMode.externalApplication);
+                } catch (_) {
+                  // no-op
+                }
+              },
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Image.asset(
+                    isDark ? kWordmarkAssetDark : kWordmarkAssetLight,
+                    package: kPackageName,
+                    height: _markHeight,
+                    // 3× the largest sensible render — keeps the decode small without
+                    // visible softening on a 3x screen.
+                    cacheHeight: (_markHeight * 3).round(),
+                    fit: BoxFit.contain,
+                    // A missing asset must never take the sheet down; the rest of the
+                    // lockup still reads as attribution on its own.
+                    errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                      width: 1,
+                      height: 24,
+                      color: markColor.withValues(alpha: 0.35)),
+                  const SizedBox(width: 8),
+                  Text(
+                    'TRUST',
+                    // ~half the wordmark's height — the ratio the dashboard's own
+                    // lockup uses. Level with the logo, TRUST competes with it.
+                    style: TextStyle(
+                      fontSize: 14,
+                      height: 1.2,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 2,
+                      color: markColor,
+                    ),
+                  ),
+                ],
               ),
             ),
-            ],
-          ),
+          ],
         ),
       ),
     );

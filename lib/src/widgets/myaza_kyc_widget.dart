@@ -684,6 +684,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       // Only wire the toggle when the consumer opted in; a null callback hides
       // the button and keeps the flow on the appearance theme.
       onToggleTheme: config.showThemeToggle ? onToggleTheme : null,
+      progressStyle: config.progressStyle,
       // Hide the brand bar on a fatal config error — show a clean, chrome-free
       // error screen (just the theme/fullscreen controls), like the web SDK.
       logoUrl: configError != null ? null : logoUrl,

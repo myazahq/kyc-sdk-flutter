@@ -123,9 +123,16 @@ PaceChip _paceChip() {
   return PaceChip(
     curve: curve,
     protocol: protocol,
-    // The password key comes from the same MRZ the session derives from.
+    // The password key comes from the same MRZ the session derives from, via
+    // the PACE seed — the UNTRUNCATED SHA-1.
+    //
+    // This used to call keySeed (BAC's truncated seed), which is what let the
+    // bug survive: both halves of the test derived the same wrong key and
+    // agreed happily, while every real chip refused the handshake. A simulated
+    // chip is only worth anything when it follows the STANDARD rather than the
+    // implementation under test.
     passwordKey: protocol.suite.deriveKey(
-      keySeed(
+      paceKeySeed(
         documentNumber: 'L898902C',
         dateOfBirth: '690806',
         dateOfExpiry: '940623',

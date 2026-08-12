@@ -30,16 +30,40 @@ enum QuestionnaireFieldType {
 class QuestionnaireOption {
   final String value;
   final String label;
-  const QuestionnaireOption({required this.value, required this.label});
+
+  /// Marks a choice that is not an answer on its own — an "Other". Selecting it
+  /// reveals a required free-text input, stored as the `<key>_other` companion
+  /// answer (the same shape as a money field's `<key>_currency`).
+  final bool requiresDetail;
+
+  /// Label for the detail input (default "Please specify").
+  final String? detailLabel;
+
+  /// Placeholder for the detail input (default `Tell us more about "<label>"`).
+  final String? detailPlaceholder;
+
+  const QuestionnaireOption({
+    required this.value,
+    required this.label,
+    this.requiresDetail = false,
+    this.detailLabel,
+    this.detailPlaceholder,
+  });
 
   factory QuestionnaireOption.fromJson(Map<String, dynamic> json) {
     final value = (json['value'] ?? '').toString();
     return QuestionnaireOption(
       value: value,
       label: (json['label'] as String?) ?? value,
+      requiresDetail: json['requiresDetail'] == true,
+      detailLabel: json['detailLabel'] as String?,
+      detailPlaceholder: json['detailPlaceholder'] as String?,
     );
   }
 }
+
+/// The companion key holding what an "Other" choice actually was.
+String otherKeyFor(QuestionnaireField field) => '${field.key}_other';
 
 class QuestionnaireField {
   /// Stable snake_case key — the webhook/answers field name. A stable contract.
