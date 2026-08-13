@@ -21,13 +21,20 @@ enum MyazaProgressStyle {
   steps,
 
   /// A thin bar on the header's bottom edge.
-  bar;
+  bar,
+
+  /// No progress element in the header at all. The brand row and controls
+  /// stay; only the step circles / bar are dropped.
+  none;
 
   /// Parse the wire value a published workflow carries. Anything unrecognised
-  /// falls back to [steps] rather than throwing: a newer server adding a third
+  /// falls back to [steps] rather than throwing: a newer server adding a fourth
   /// style must not break an older SDK.
-  static MyazaProgressStyle fromJson(String? value) =>
-      value == 'bar' ? MyazaProgressStyle.bar : MyazaProgressStyle.steps;
+  static MyazaProgressStyle fromJson(String? value) => switch (value) {
+        'bar' => MyazaProgressStyle.bar,
+        'none' => MyazaProgressStyle.none,
+        _ => MyazaProgressStyle.steps,
+      };
 }
 
 // ─── Appearance ─────────────────────────────────────────────────────────────
@@ -458,8 +465,13 @@ class MyazaKYCConfig {
   ///   • [MyazaProgressStyle.bar] — a single thin bar pinned to the header's
   ///     bottom edge. Quieter, and unaffected by step count, so it suits long
   ///     flows and hosts who would rather the chrome said less.
+  ///   • [MyazaProgressStyle.none] — no progress in the header at all. For
+  ///     hosts whose own surface already communicates progress, or short flows
+  ///     where a step count is more noise than reassurance.
   ///
-  /// Both convey the same fraction; the choice is how much room it takes.
+  /// [MyazaProgressStyle.steps] and [MyazaProgressStyle.bar] convey the same
+  /// fraction; the choice is how much room it takes. [MyazaProgressStyle.none]
+  /// opts out of conveying it here.
   /// Mirrors the RN SDK's `progressStyle`.
   final MyazaProgressStyle progressStyle;
 

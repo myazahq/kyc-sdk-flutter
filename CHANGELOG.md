@@ -1,3 +1,32 @@
+## 2.5.0
+
+### Non-production flows say so
+
+A sandbox flow is pixel-identical to a live one. That is the point — you are
+testing the real thing — and also the hazard: screenshots get mistaken for
+production incidents, testers wonder why a real passport was rejected, and a
+`pk_test_` key shipped to production looks like it works right up until nobody
+is actually verified.
+
+A strip above the header now names the environment. It reads from the
+**server's** config rather than sniffing the API key prefix, because a hosted
+handoff session authenticates with an `hs_` token that carries no environment
+slot — key-sniffing would leave exactly the surface an end user sees unlabelled.
+Development is labelled too, and differently: it runs the real pipeline against
+staging provider credentials, so "test data only" would be untrue there.
+
+Production flows are unaffected — nothing is drawn.
+
+### `progressStyle: none`
+
+A third option alongside `steps` and `bar`: no progress element in the header at
+all. For hosts whose own surface already communicates progress, or short flows
+where a step count is more noise than reassurance. The brand row and controls
+stay; only the progress element is dropped.
+
+An unrecognised value still falls back to `steps` rather than throwing, so a
+newer server adding a fourth style will not break this SDK.
+
 ## 2.4.0
 
 ### PACE chip access

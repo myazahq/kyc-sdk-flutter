@@ -35,6 +35,7 @@ import '../screens/liveness_screen.dart';
 import '../screens/submitted_screen.dart';
 import '../utils/resolve_url.dart';
 import 'kyc_bottom_sheet.dart';
+import 'sandbox_banner.dart';
 import 'myaza_button.dart';
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
@@ -201,7 +202,8 @@ class MyazaKYC {
     if ((effectiveConfig.country ?? '').trim().isEmpty) {
       onError?.call(const KYCError(
         code: 'unknown',
-        message: 'No country configured. Pass `country`, or a `workflowId` whose '
+        message:
+            'No country configured. Pass `country`, or a `workflowId` whose '
             'published flow carries one.',
       ));
       return;
@@ -278,8 +280,8 @@ class MyazaKYC {
         kYCNotifierProvider.overrideWith(KYCNotifier.new),
         cameraNotifierProvider.overrideWith(CameraNotifier.new),
         livenessNotifierProvider.overrideWith(LivenessNotifier.new),
-        kycThemeModeProvider
-            .overrideWith((ref) => _initialThemeMode(effectiveConfig.appearance)),
+        kycThemeModeProvider.overrideWith(
+            (ref) => _initialThemeMode(effectiveConfig.appearance)),
       ];
 }
 
@@ -564,8 +566,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     final themeMode = ref.watch(kycThemeModeProvider);
     final systemBrightness = MediaQuery.platformBrightnessOf(context);
     final isDark = themeMode == ThemeMode.dark ||
-        (themeMode == ThemeMode.system &&
-            systemBrightness == Brightness.dark);
+        (themeMode == ThemeMode.system && systemBrightness == Brightness.dark);
     final baseScheme = isDark ? MyazaColorScheme.dark : MyazaColorScheme.light;
     // Fold in the dark overrides FIRST: the appearance is applied on top of the
     // active base scheme, so a light background would otherwise overwrite the
@@ -610,7 +611,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
 
     // ── Back callback (null = hide back button) ────────────────────────────
     final VoidCallback? onBack = switch (step) {
-      KYCStep.consent   => null, // first step
+      KYCStep.consent => null, // first step
       KYCStep.submitted => null, // terminal
       _ => notifier.previousStep,
     };
@@ -672,6 +673,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         : null;
 
     final sheet = KycBottomSheet(
+      environment: state.serverConfig.environment,
       title: configError != null ? '' : meta.title,
       description: configError != null ? null : meta.description,
       progress: configError != null ? null : progress,
@@ -761,10 +763,18 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
           backgroundColor: colorScheme.background,
           body: Column(
             children: [
-              // Tinted strip behind the status bar → matches the header band.
+              // Strip behind the status bar. Normally the header tint so the
+              // top matches the header band — but when the environment banner
+              // is showing, the banner is what sits directly below, so the
+              // strip takes ITS amber instead and the warning reads as one
+              // unbroken band from the top of the screen (matching RN). Both
+              // are translucent over the same Scaffold background, so the
+              // composite is identical to the banner's own.
               Container(
                 height: MediaQuery.of(context).padding.top,
-                color: kycHeaderSurface(colorScheme, isDark: isDark),
+                color: SandboxBanner.showsFor(state.serverConfig.environment)
+                    ? SandboxBanner.tint
+                    : kycHeaderSurface(colorScheme, isDark: isDark),
               ),
               Expanded(child: SafeArea(top: false, child: sheet)),
             ],
@@ -803,13 +813,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
   }
 
   Widget _screenForStep(KYCStep step) => switch (step) {
-        KYCStep.consent         => const ConsentScreen(),
-        KYCStep.countrySelect   => const CountrySelectScreen(),
-        KYCStep.idType          => const IdTypeScreen(),
-        KYCStep.documentCapture => DocumentCaptureScreen(onError: widget.onError),
-        KYCStep.idInput         => const IdInputScreen(),
-        KYCStep.liveness        => LivenessScreen(onError: widget.onError),
-        KYCStep.submitted       => SubmittedScreen(
+        KYCStep.consent => const ConsentScreen(),
+        KYCStep.countrySelect => const CountrySelectScreen(),
+        KYCStep.idType => const IdTypeScreen(),
+        KYCStep.documentCapture =>
+          DocumentCaptureScreen(onError: widget.onError),
+        KYCStep.idInput => const IdInputScreen(),
+        KYCStep.liveness => LivenessScreen(onError: widget.onError),
+        KYCStep.submitted => SubmittedScreen(
             onSubmitted: widget.onSubmit,
             onError: widget.onError,
             onDone: () {
@@ -823,10 +834,10 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         // land (country-select WS3, questionnaire WS4, contact WS4.5, PoA WS5,
         // NFC Phase 2), so they're never routed to yet. Placeholder keeps the
         // switch exhaustive; each WS replaces its case with the real screen.
-        KYCStep.questionnaire   => const QuestionnaireScreen(),
+        KYCStep.questionnaire => const QuestionnaireScreen(),
         KYCStep.businessDetails => const BusinessDetailsScreen(),
         KYCStep.businessKeyPeople => const BusinessKeyPeopleScreen(),
-        KYCStep.applicantRole   => const ApplicantRoleScreen(),
+        KYCStep.applicantRole => const ApplicantRoleScreen(),
         KYCStep.businessDocuments => BusinessDocumentsScreen(
             onError: (e) => widget.onError?.call(
               e is KYCError
@@ -836,14 +847,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
                       message: 'Business document upload failed.'),
             ),
           ),
-        KYCStep.proofOfAddress  =>
-          ProofOfAddressScreen(onError: (e) => widget.onError?.call(
-                e is KYCError
-                    ? e
-                    : const KYCError(
-                        code: 'upload_failed',
-                        message: 'Proof of address upload failed.'),
-              )),
+        KYCStep.proofOfAddress => ProofOfAddressScreen(
+            onError: (e) => widget.onError?.call(
+                  e is KYCError
+                      ? e
+                      : const KYCError(
+                          code: 'upload_failed',
+                          message: 'Proof of address upload failed.'),
+                )),
         // Both contact steps mount the SAME widget type, so without distinct
         // keys Flutter matches them by (runtimeType, key) and REUSES the State
         // across email → phone: the phone step would inherit the email step's

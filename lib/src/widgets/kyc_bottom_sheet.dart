@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../config/theme.dart';
+import 'sandbox_banner.dart';
 import 'step_window.dart';
 import 'kyc_progress_bar.dart';
 import '../config/kyc_config.dart';
@@ -19,6 +20,8 @@ import 'step_header.dart';
 // navigation callbacks down as parameters.
 
 class KycBottomSheet extends StatelessWidget {
+  /// Server-reported environment, for the sandbox strip. Null hides it.
+  final String? environment;
   final String title;
   final String? description;
 
@@ -77,9 +80,36 @@ class KycBottomSheet extends StatelessWidget {
 
   bool get _hasProgress => progress != null && stepCount != null;
   bool get _showBar => _hasProgress && progressStyle == MyazaProgressStyle.bar;
-  bool get _showSteps => _hasProgress && progressStyle == MyazaProgressStyle.steps;
+  bool get _showSteps =>
+      _hasProgress && progressStyle == MyazaProgressStyle.steps;
+
+  /// Whether the title block under the brand row draws anything. Steps that own
+  /// their own title pass an empty one (consent, submitted) — rendering the
+  /// block anyway costs an empty Text's line height plus `sm` above and below,
+  /// which reads as the brand row sitting high in the header rather than
+  /// centred on one line.
+  bool get _hasTitleBlock =>
+      title.isNotEmpty || description != null || onBack != null;
+
+  /// Vertical space the drag handle occupies above the brand row: its own `sm`
+  /// top padding plus the 4px bar. Bottom sheets draw it, full screen does not.
+  static const double _dragHandleExtent = MyazaSpacing.sm + 4;
+
+  /// Bottom padding for the brand row.
+  ///
+  /// Normally 0 — the title block below supplies the gap. With no title block
+  /// the row is the header's only content, so it should sit on the header's
+  /// centre line, and that means matching everything above it: the row's own
+  /// `sm` top padding AND the drag handle. Counting only `sm` leaves the handle
+  /// unbalanced and the row reads low, which is what the brand and controls
+  /// looked misaligned against.
+  double get _brandRowPaddingBottom {
+    if (_hasTitleBlock) return 0;
+    return MyazaSpacing.sm + (isFullScreen ? 0 : _dragHandleExtent);
+  }
 
   const KycBottomSheet({
+    this.environment,
     super.key,
     required this.title,
     this.description,
@@ -153,6 +183,9 @@ class KycBottomSheet extends StatelessWidget {
               // full-width bottom border set the header apart from the body. The
               // drag handle lives inside the tint so the whole top of the sheet
               // is one colour.
+              // Above the header so a capture step that hides the chrome
+              // still says the session is not live.
+              SandboxBanner(environment: environment),
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
@@ -173,13 +206,14 @@ class KycBottomSheet extends StatelessWidget {
                     // Drag handle — only on bottom sheet
                     if (!isFullScreen) _DragHandle(color: colors.gray300),
 
-                    // Top bar: org brand (left) + close (right), same line
+                    // Top bar: org brand (left) + close (right), same line.
+                    // See _brandRowPaddingBottom for why this is not simply 0.
                     Padding(
-                      padding: const EdgeInsets.fromLTRB(
+                      padding: EdgeInsets.fromLTRB(
                         MyazaSpacing.md,
                         MyazaSpacing.sm,
                         MyazaSpacing.md,
-                        0,
+                        _brandRowPaddingBottom,
                       ),
                       child: Row(
                         children: [
@@ -220,20 +254,21 @@ class KycBottomSheet extends StatelessWidget {
                     ),
 
                     // Title + back arrow (close lives in the top bar)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(
-                        MyazaSpacing.md,
-                        MyazaSpacing.sm,
-                        MyazaSpacing.md,
-                        MyazaSpacing.sm,
+                    if (_hasTitleBlock)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(
+                          MyazaSpacing.md,
+                          MyazaSpacing.sm,
+                          MyazaSpacing.md,
+                          MyazaSpacing.sm,
+                        ),
+                        child: StepHeader(
+                          title: title,
+                          description: description,
+                          onBack: onBack,
+                          country: country,
+                        ),
                       ),
-                      child: StepHeader(
-                        title: title,
-                        description: description,
-                        onBack: onBack,
-                        country: country,
-                      ),
-                    ),
 
                     // Step indicator
                     if (_showSteps)
@@ -398,7 +433,9 @@ class _StepIndicator extends StatelessWidget {
               );
               return Row(
                 children: [
-                  for (int position = 0; position < slots.length; position++) ...[
+                  for (int position = 0;
+                      position < slots.length;
+                      position++) ...[
                     if (slots[position] == kStepEllipsis)
                       // Collapsed run, sized to the circle's height so the
                       // connectors either side stay on one centre line and the
@@ -435,8 +472,8 @@ class _StepIndicator extends StatelessWidget {
                     if (position < slots.length - 1)
                       Expanded(
                         child: _StepConnector(
-                          completed:
-                              slots[position] != kStepEllipsis && slots[position] < active,
+                          completed: slots[position] != kStepEllipsis &&
+                              slots[position] < active,
                           colors: colors,
                         ),
                       ),
