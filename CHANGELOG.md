@@ -1,3 +1,76 @@
+## 2.6.0
+
+### Several IDs in one run
+
+A workflow can now ask for two or three IDs and get back one verification. The
+applicant picks each in turn, an ID already used disappears from the later
+choices, and one selfie covers the whole run — every ID is matched against it
+rather than asking for a new one each time. A position strip above the steps
+says which check they are on, because without it a three-ID run is three visits
+to the same-looking screen with nothing distinguishing them.
+
+### The KYB application catches up
+
+Business flows on Flutter collected a registration number and stopped. They now
+run the whole application: company documents requested by type before the people
+step, key people sectioned into beneficial owners, shareholders, and directors
+and representatives, corporate shareholders recognised as companies rather than
+filed as people, and the registry check running at the moment the applicant
+picks their company so the register's own list of officers is on screen before
+the form asks who they are.
+
+A KYB submission is also no longer described as an identity check. It is a
+company being verified, and calling it "identity verification" told the
+applicant they were doing something other than what they were doing.
+
+### Coming back to where you left off
+
+Closing the app used to mean starting again. A remount now restores the step,
+the captures and what was typed, and an anonymous mount sends a device id so a
+session can be found again without an account. A partial or older snapshot
+restores less rather than breaking — the flow never fails because progress was
+saved by a different build.
+
+### The links the applicant still needs
+
+A KYB applicant's job is not over when they submit: every director and owner
+still has to verify, and those invites outlive the session by days. The success
+screen now shows the server's reconciled list rather than the draft the
+applicant typed, so people the register added appear and roles it corrected are
+right. Tapping Done with checks outstanding offers a way back to the links
+instead of closing over them.
+
+### A refused contact code no longer loops
+
+Contact proofs are single-use and expire about half an hour after the code is
+checked, but they are saved with session progress and restored on resume. A
+returning applicant therefore carried a dead proof while the step still read
+"verified", the submission was refused, and Try Again resubmitted the same dead
+token forever. The SDK now reads which channels were refused, clears exactly
+those, and returns the applicant to that step with an explanation. Verifying
+goes straight back to the submission. Nothing else they entered is touched.
+
+### Redo only what was asked for
+
+When a reviewer sends an application back for one document, the applicant walks
+that step and no others. Previously the narrowing was collected and then
+ignored, so a request to retake one photo restarted the entire flow.
+
+### Smaller things
+
+A name that matches nobody on the register preselects "I'm not one of these
+people" rather than leaving the choice blank, which made claiming to be a
+stranger the easiest way forward. The wait while the register is read shows the
+roster it is about to become instead of a spinner. Sheets take the system's own
+corner radius and sit at the system's height, every one has a handle and a close
+button, and their corners run concentric with the device's display. Text that
+could not be read against its background is fixed, and a sheet no longer runs
+under the Dynamic Island.
+
+Two fixes worth naming: the register's answers were being discarded after the
+lookup that paid for them, and a wrong type on the poll response stopped Flutter
+polling for results at all.
+
 ## 2.5.0
 
 ### Non-production flows say so

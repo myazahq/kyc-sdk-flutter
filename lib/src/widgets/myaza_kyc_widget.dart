@@ -29,6 +29,7 @@ import '../screens/id_type_screen.dart';
 import '../screens/nfc_screen.dart';
 import '../screens/proof_of_address_screen.dart';
 import '../screens/questionnaire_screen.dart';
+import 'multi_id_progress.dart';
 import 'myaza_pulse_loader.dart';
 import 'workflow_gate.dart';
 import '../screens/liveness_screen.dart';
@@ -56,8 +57,12 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   ),
   // documentCapture title/description are computed dynamically below.
   KYCStep.documentCapture: _StepMeta('Capture Document'),
-  // idInput description is computed dynamically from selectedIdType.
-  KYCStep.idInput: _StepMeta('Enter Your Details'),
+  // idInput title is computed dynamically from selectedIdType; this is the
+  // fallback before one is picked.
+  KYCStep.idInput: _StepMeta(
+    'Enter your ID number',
+    'We’ll check this against the official record.',
+  ),
   KYCStep.liveness: _StepMeta(
     'Face Verification',
     'Follow the on-screen instructions',
@@ -94,11 +99,13 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   ),
   KYCStep.businessKeyPeople: _StepMeta(
     'Directors & Owners',
-    "List the company's directors and owners of 25% or more. Each will receive a link to verify their identity.",
+    "List the company's directors and owners. Each person will receive a link "
+        'to verify their identity; a shareholder that is itself a company is '
+        'recorded rather than asked to verify.',
   ),
   KYCStep.businessDocuments: _StepMeta(
     'Business documents',
-    'Upload the supporting documents for your business. Required documents are marked with *.',
+    'Upload the supporting documents for your business. Each one must clearly show the registered business name and registration number. Required documents are marked with *.',
   ),
   KYCStep.applicantRole: _StepMeta(
     'Now verify your own identity',
@@ -471,11 +478,13 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     final step = state.currentStep;
     var meta = _kStepMeta[step]!;
 
-    // For the ID input step, build a dynamic description from the selected type.
+    // The ID input step names the ID it wants. The step asks for the number and
+    // nothing else: the applicant's name comes from the integrator, through the
+    // config or the session, never typed here.
     if (step == KYCStep.idInput && state.selectedIdType != null) {
       meta = _StepMeta(
-        meta.title,
-        'Provide your ${state.selectedIdType!.label} for verification.',
+        'Enter your ${state.selectedIdType!.label}',
+        meta.description,
       );
     }
 
@@ -654,7 +663,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
               }
             },
           )
-        : _screenForStep(step);
+        : _screenWithMultiId(step);
 
     // Keyed so the SAME State moves between the two shells instead of being
     // rebuilt — see _stepKeys.
@@ -810,6 +819,31 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     final idx = steps.indexOf(step);
     if (idx < 0) return null;
     return (progress: (idx + 1) / steps.length, stepCount: steps.length);
+  }
+
+  /// The steps a multi-ID run walks once PER ID — the ones whose screen is
+  /// about one particular check and therefore need the position strip above.
+  static const Set<KYCStep> _multiIdSteps = {
+    KYCStep.idType,
+    KYCStep.idInput,
+    KYCStep.documentCapture,
+    KYCStep.nfc,
+    KYCStep.liveness,
+  };
+
+  /// Wraps a step's screen with the multi-ID position strip when a run is
+  /// active, so a three-ID run is not three visits to the same-looking screen
+  /// with nothing saying which is which.
+  Widget _screenWithMultiId(KYCStep step) {
+    final plan = ref.read(kYCNotifierProvider.notifier).multiIdPlan();
+    if (plan == null || !_multiIdSteps.contains(step)) return _screenForStep(step);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        MultiIdProgress(plan: plan),
+        Expanded(child: _screenForStep(step)),
+      ],
+    );
   }
 
   Widget _screenForStep(KYCStep step) => switch (step) {

@@ -5,6 +5,8 @@ import 'kyc_config.dart';
 import 'nfc_config.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
+import '../providers/step_resubmit.dart';
+import 'multi_id.dart';
 
 /// Merges a resolved workflow's config over the consumer's [base] config —
 /// **flow wins** on every key it defines; props fill the gaps (so a dev can
@@ -65,6 +67,12 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
   final nfc =
       rawNfc is Map ? NfcConfig.fromJson(rawNfc.cast<String, dynamic>()) : null;
 
+  // Set only on a session a reviewer sent back, never on a published workflow.
+  final rawResubmit = flow.raw['resubmit'];
+  final resubmit = rawResubmit is Map
+      ? ResubmitConfig.fromJson(rawResubmit.cast<String, dynamic>())
+      : null;
+
   final rawBusiness = flow.raw['business'];
   final business = rawBusiness is Map
       ? WorkflowBusinessConfig.fromJson(rawBusiness.cast<String, dynamic>())
@@ -75,6 +83,7 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     countries: countries,
     questionnaire: questionnaire,
     proofOfAddress: proofOfAddress,
+    resubmit: resubmit,
     emailVerification: emailVerification,
     phoneVerification: phoneVerification,
     nfc: nfc,
@@ -83,10 +92,16 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     livenessMode: flow.raw['livenessMode'] as String?,
     flashSequenceLength: (flow.raw['flashSequenceLength'] as num?)?.toInt(),
     deviceIntelligence: flow.raw['deviceIntelligence'] as bool?,
+    keyPeopleLinkRecovery: flow.raw['keyPeopleLinkRecovery'] as bool?,
     // Flow-defined idTypes win wholesale (an empty list means "all granted",
     // the same "unset = all" semantic the id-type picker applies). Null = the
     // flow didn't define it, so the consumer's prop is kept.
     idTypes: flow.idTypes,
+    // Multi-ID policy comes from the FLOW only — there is no consumer prop for
+    // it, and the server is the authority on how many checks a run carries.
+    multiId: MultiIdConfig.fromJson(
+      flow.raw['multiId'] as Map<String, dynamic>?,
+    ),
     enableSelfie: flow.enableSelfie,
     enableDocumentCapture: flow.enableDocumentCapture,
     allowDocumentUpload: flow.allowDocumentUpload,
@@ -142,6 +157,11 @@ MyazaKYCConfig overlayApplicantWorkflow(
     country: flow.country,
     countries: countries,
     idTypes: flow.idTypes,
+    // The applicant leg runs the mapped workflow's own capture template, so it
+    // carries that workflow's multi-ID policy too.
+    multiId: MultiIdConfig.fromJson(
+      flow.raw['multiId'] as Map<String, dynamic>?,
+    ),
     enableSelfie: flow.enableSelfie,
     enableDocumentCapture: flow.enableDocumentCapture,
     allowDocumentUpload: flow.allowDocumentUpload,

@@ -21,7 +21,29 @@ class KeyPersonCard extends StatelessWidget {
   final KeyPersonEntry entry;
   final VoidCallback onTap;
 
-  const KeyPersonCard({super.key, required this.entry, required this.onTap});
+  /// Roles whose email is mandatory (they are sent a verification link) —
+  /// threaded from the step so the card and the Continue gate agree on what
+  /// "complete" means.
+  final Set<KeyPersonRole> emailRequiredFor;
+
+  /// The hat THIS section is about. One person can hold several, so the same
+  /// row reads "Beneficial owner" under owners and "Director" under
+  /// representatives; the entry's own headline would name only the strongest
+  /// and quietly contradict the heading above it.
+  final String? roleLabel;
+
+  /// Takes the person out of the section they are being shown in, which is not
+  /// the same as deleting them: see [withoutSection]. Absent on a flat list.
+  final VoidCallback? onRemove;
+
+  const KeyPersonCard({
+    super.key,
+    required this.entry,
+    required this.onTap,
+    this.emailRequiredFor = const {},
+    this.roleLabel,
+    this.onRemove,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -34,11 +56,18 @@ class KeyPersonCard extends StatelessWidget {
         entry.country.trim().isEmpty ? null : entry.country.trim().toUpperCase();
     final pct = entry.ownershipPct.trim();
     // A row persisted by the old inline UI (or interrupted mid-edit) may be
-    // incomplete — the card says so instead of silently blocking Continue.
-    final incomplete = !entry.isValid;
+    // incomplete — the card says so instead of silently blocking Continue. A
+    // missing REQUIRED email gets named specifically: "incomplete" on a row
+    // whose name, role and country are all filled reads as a bug.
+    final incomplete = !entry.isValidWith(emailRequiredFor);
+    final problem = rowNeedsEmail(entry, emailRequiredFor) &&
+            entry.email.trim().isEmpty &&
+            entry.name.trim().length >= 2
+        ? 'Email required, tap to add'
+        : 'Incomplete, tap to finish';
 
     final meta = [
-      entry.role.label,
+      roleLabel ?? entry.role.label,
       if (pct.isNotEmpty) '$pct% ownership',
     ].join(' · ');
     // The flag alone doesn't say WHICH country — spell it out, alongside the
@@ -115,8 +144,9 @@ class KeyPersonCard extends StatelessWidget {
                       Text(name,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: text.bodyMedium
-                              .copyWith(fontWeight: FontWeight.w600)),
+                          style: text.bodyMedium.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.textDark)),
                       const SizedBox(height: 2),
                       Text(meta,
                           maxLines: 1,
@@ -125,7 +155,7 @@ class KeyPersonCard extends StatelessWidget {
                               .copyWith(color: colors.textSecondary)),
                       if (incomplete) ...[
                         const SizedBox(height: 2),
-                        Text('Incomplete — tap to finish',
+                        Text(problem,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: text.bodySmall
@@ -144,6 +174,20 @@ class KeyPersonCard extends StatelessWidget {
                 const SizedBox(width: MyazaSpacing.sm),
                 Icon(LucideIcons.pencil,
                     size: 16, color: colors.textSecondary),
+                if (onRemove != null)
+                  Padding(
+                    padding: const EdgeInsets.only(left: MyazaSpacing.xs),
+                    child: IconButton(
+                      onPressed: onRemove,
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Remove from this section',
+                      constraints:
+                          const BoxConstraints(minWidth: 36, minHeight: 36),
+                      padding: EdgeInsets.zero,
+                      icon: Icon(LucideIcons.x,
+                          size: 16, color: colors.textMuted),
+                    ),
+                  ),
               ],
             ),
           ),

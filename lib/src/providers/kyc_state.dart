@@ -5,6 +5,7 @@ import '../config/kyc_config.dart';
 import '../services/api_service.dart';
 import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
+import '../config/multi_id.dart';
 
 // ─── KYC flow step ────────────────────────────────────────────────────────────
 //
@@ -117,6 +118,9 @@ class ServerSdkConfig {
   /// when the consumer sets `appearance.logo = 'default'`.
   final SdkConfigBranding? branding;
 
+  /// The visitor's country from their IP — a DEFAULT, never evidence.
+  final String? geoCountry;
+
   const ServerSdkConfig({
     required this.status,
     this.idTypes = const [],
@@ -125,6 +129,7 @@ class ServerSdkConfig {
     this.statusCode,
     this.fatal = false,
     this.branding,
+    this.geoCountry,
   });
 
   static const ServerSdkConfig loading =
@@ -166,6 +171,21 @@ class KYCSubmissionResult {
 class KYCState {
   final KYCStep currentStep;
 
+  /// The attempt SESSION this run is recorded under (`/session/start`). Null
+  /// when minting failed — verifying is never conditional on it. Rides the
+  /// /verify body so the verification adopts the session's id, and anchors the
+  /// paid registry check at selection.
+  final String? sessionId;
+
+  /// The session's own hosted web page (see SessionStartResponse.url).
+  final String? sessionUrl;
+
+  /// What the register said about the company the applicant identified — the
+  /// paid check run at SELECTION, so the officer list is already here by the
+  /// time the key-people step asks for it. [checkedNumber] stops a re-check of
+  /// the same company.
+  final BusinessCheckState businessCheck;
+
   /// The country picked in the country-select step (multi-region flows). Null
   /// for single-country flows — the effective country then falls back to
   /// `config.country`. See `effectiveCountry` in step_order.dart.
@@ -175,6 +195,12 @@ class KYCState {
   /// the server config). Null until the user selects one.
   final IdTypeConfig? selectedIdType;
   final String? idNumber;
+
+  /// Multi-ID: which check the applicant is on (0-based), and the ones already
+  /// committed. A committed check keeps its local capture PATHS as well as its
+  /// mediaIds, so stepping back into it restores what was captured.
+  final int multiIdSlotIndex;
+  final List<MultiIdSlot> multiIdSlots;
   final UserData? userData;
   final KYCMediaIds mediaIds;
   final KYCSubmissionResult? submissionResult;
@@ -234,6 +260,15 @@ class KYCState {
   final String? phoneToken;
   final String? phoneNumber;
 
+  /// Channels whose proof the SERVER refused at submit (422
+  /// contact_verification_required). Proofs are single-use and expire ~30
+  /// minutes after the OTP check, but they ride session progress and are
+  /// restored on resume, so a resumed attempt can carry a dead proof while the
+  /// step still shows "verified". This routes the person back to re-verify
+  /// instead of a retry that resubmits the same dead token forever;
+  /// setContactProof clears its channel.
+  final List<String> expiredContact;
+
   /// eMRTD chip data read in the NFC step (null until read or if skipped).
   /// Submitted under `nfc` on /verify.
   final NfcChipData? nfcChipData;
@@ -251,19 +286,43 @@ class KYCState {
   final String? registrationNumber;
   final String? registrationName;
 
+  /// ISO 3166-2 registry region, for the four countries whose register is
+  /// split by state or emirate (US/IN/CA/AE). Empty for everywhere else.
+  /// Rides the search and the selection-time check.
+  final String? businessSubdivisionCode;
+
+  /// Dev/sandbox only: pins the canned outcome served instead of calling the
+  /// register. Sent as `metadata.sandboxOutcome`; production ignores it.
+  final String? businessSandboxOutcome;
+
   /// Contact email for key-people invites (collected when the workflow emails
   /// verification links to full-KYC directors/owners).
   final String? businessContactEmail;
 
   /// Company profile (collectCompanyInfo fields) — echoed on the org's webhook
-  /// and address-matched against the registry record server-side.
+  /// and address-matched against the registry record server-side. The last
+  /// five are registry facts the applicant STATES (their own answer, which the
+  /// server compares against the register — where the two differ is the
+  /// finding).
   final String? businessAddress;
   final String? businessEmail;
   final String? businessPhone;
   final String? businessWebsite;
+  final String? businessDateOfIncorporation;
+  final String? businessTaxId;
+  final String? businessVatNumber;
+  final String? businessCompanyType;
+  final String? businessNatureOfBusiness;
 
   /// Applicant-declared directors & owners (business-key-people step).
   final List<KeyPersonEntry> keyPeople;
+
+  /// The FATF fallback, attested: some companies genuinely have no natural
+  /// person who qualifies as a UBO (listed companies, complex trusts, nominee
+  /// arrangements). Without it the applicant's only moves are to stall or to
+  /// invent one. An attestation the org can branch on, never a verdict — and
+  /// the registry lookup still says whatever it says.
+  final bool uboUnidentifiable;
 
   /// Uploaded supporting documents (business-documents step).
   final List<BusinessDocumentUpload> businessDocuments;
@@ -282,9 +341,14 @@ class KYCState {
 
   const KYCState({
     this.currentStep = KYCStep.consent,
+    this.sessionId,
+    this.sessionUrl,
+    this.businessCheck = const BusinessCheckState(),
     this.selectedCountry,
     this.selectedIdType,
     this.idNumber,
+    this.multiIdSlotIndex = 0,
+    this.multiIdSlots = const [],
     this.userData,
     this.mediaIds = const KYCMediaIds(),
     this.submissionResult,
@@ -305,18 +369,27 @@ class KYCState {
     this.emailAddress,
     this.phoneToken,
     this.phoneNumber,
+    this.expiredContact = const [],
     this.nfcChipData,
     this.mrzScan,
     this.businessCountry,
     this.businessProduct,
     this.registrationNumber,
     this.registrationName,
+    this.businessSubdivisionCode,
+    this.businessSandboxOutcome,
     this.businessContactEmail,
     this.businessAddress,
     this.businessEmail,
     this.businessPhone,
     this.businessWebsite,
+    this.businessDateOfIncorporation,
+    this.businessTaxId,
+    this.businessVatNumber,
+    this.businessCompanyType,
+    this.businessNatureOfBusiness,
     this.keyPeople = const [],
+    this.uboUnidentifiable = false,
     this.businessDocuments = const [],
     this.applicantRole,
     this.applicantName,
@@ -325,9 +398,14 @@ class KYCState {
 
   KYCState copyWith({
     KYCStep? currentStep,
+    String? sessionId,
+    String? sessionUrl,
+    BusinessCheckState? businessCheck,
     String? selectedCountry,
     IdTypeConfig? selectedIdType,
     String? idNumber,
+    int? multiIdSlotIndex,
+    List<MultiIdSlot>? multiIdSlots,
     UserData? userData,
     KYCMediaIds? mediaIds,
     KYCSubmissionResult? submissionResult,
@@ -345,8 +423,12 @@ class KYCState {
     Map<String, dynamic>? integrity,
     String? poaDocumentType,
     String? emailToken,
+    // Explicit flags: null tokens cannot be set via `?? this` (the
+    // clearSelectedIdType pattern) — used by submit recovery.
+    bool clearEmailToken = false,
     String? emailAddress,
     String? phoneToken,
+    bool clearPhoneToken = false,
     String? phoneNumber,
     NfcChipData? nfcChipData,
     MrzScan? mrzScan,
@@ -354,12 +436,20 @@ class KYCState {
     String? businessProduct,
     String? registrationNumber,
     String? registrationName,
+    String? businessSubdivisionCode,
+    String? businessSandboxOutcome,
     String? businessContactEmail,
     String? businessAddress,
     String? businessEmail,
     String? businessPhone,
     String? businessWebsite,
+    String? businessDateOfIncorporation,
+    String? businessTaxId,
+    String? businessVatNumber,
+    String? businessCompanyType,
+    String? businessNatureOfBusiness,
     List<KeyPersonEntry>? keyPeople,
+    bool? uboUnidentifiable,
     List<BusinessDocumentUpload>? businessDocuments,
     ApplicantRole? applicantRole,
     String? applicantName,
@@ -370,15 +460,22 @@ class KYCState {
     // Picking a new country invalidates the selected ID; copyWith can't null a
     // field via `?? this`, so this explicit flag clears it (and its number).
     bool clearSelectedIdType = false,
+    bool clearNfcChipData = false,
     // Removing the PoA upload also clears the kind it was labelled with.
     bool clearPoaDocumentType = false,
+    List<String>? expiredContact,
   }) =>
       KYCState(
         currentStep: currentStep ?? this.currentStep,
+        sessionId: sessionId ?? this.sessionId,
+      sessionUrl: sessionUrl ?? this.sessionUrl,
+        businessCheck: businessCheck ?? this.businessCheck,
         selectedCountry: selectedCountry ?? this.selectedCountry,
         selectedIdType:
             clearSelectedIdType ? null : (selectedIdType ?? this.selectedIdType),
         idNumber: clearSelectedIdType ? null : (idNumber ?? this.idNumber),
+        multiIdSlotIndex: multiIdSlotIndex ?? this.multiIdSlotIndex,
+        multiIdSlots: multiIdSlots ?? this.multiIdSlots,
         userData: userData ?? this.userData,
         mediaIds: mediaIds ?? this.mediaIds,
         submissionResult: submissionResult ?? this.submissionResult,
@@ -397,23 +494,36 @@ class KYCState {
         integrity: integrity ?? this.integrity,
         poaDocumentType:
             clearPoaDocumentType ? null : (poaDocumentType ?? this.poaDocumentType),
-        emailToken: emailToken ?? this.emailToken,
+        emailToken: clearEmailToken ? null : (emailToken ?? this.emailToken),
         emailAddress: emailAddress ?? this.emailAddress,
-        phoneToken: phoneToken ?? this.phoneToken,
+        phoneToken: clearPhoneToken ? null : (phoneToken ?? this.phoneToken),
         phoneNumber: phoneNumber ?? this.phoneNumber,
-        nfcChipData: nfcChipData ?? this.nfcChipData,
+        expiredContact: expiredContact ?? this.expiredContact,
+        nfcChipData: clearNfcChipData ? null : (nfcChipData ?? this.nfcChipData),
         mrzScan: mrzScan ?? this.mrzScan,
         businessCountry: businessCountry ?? this.businessCountry,
         businessProduct: businessProduct ?? this.businessProduct,
         registrationNumber: registrationNumber ?? this.registrationNumber,
         registrationName: registrationName ?? this.registrationName,
+        businessSubdivisionCode:
+            businessSubdivisionCode ?? this.businessSubdivisionCode,
+        businessSandboxOutcome:
+            businessSandboxOutcome ?? this.businessSandboxOutcome,
         businessContactEmail:
             businessContactEmail ?? this.businessContactEmail,
         businessAddress: businessAddress ?? this.businessAddress,
         businessEmail: businessEmail ?? this.businessEmail,
         businessPhone: businessPhone ?? this.businessPhone,
         businessWebsite: businessWebsite ?? this.businessWebsite,
+        businessDateOfIncorporation:
+            businessDateOfIncorporation ?? this.businessDateOfIncorporation,
+        businessTaxId: businessTaxId ?? this.businessTaxId,
+        businessVatNumber: businessVatNumber ?? this.businessVatNumber,
+        businessCompanyType: businessCompanyType ?? this.businessCompanyType,
+        businessNatureOfBusiness:
+            businessNatureOfBusiness ?? this.businessNatureOfBusiness,
         keyPeople: keyPeople ?? this.keyPeople,
+        uboUnidentifiable: uboUnidentifiable ?? this.uboUnidentifiable,
         businessDocuments: businessDocuments ?? this.businessDocuments,
         applicantRole: applicantRole ?? this.applicantRole,
         applicantName: applicantName ?? this.applicantName,
@@ -424,3 +534,63 @@ class KYCState {
 
   KYCState clearError() => copyWith(error: null);
 }
+
+/// The registry check run when the applicant confirms their company.
+///
+/// `skipped` and `limit_reached` are normal outcomes, not failures: the
+/// organisation could not be charged (or this application has spent its lookup
+/// budget), so the flow carries on and the check happens at submission instead.
+/// Mirrors the web SDK's BusinessCheckState — keep the two in lockstep.
+class BusinessCheckState {
+  /// 'idle' | 'checking' | 'found' | 'not_found' | 'skipped' | 'unavailable'
+  /// | 'limit_reached'
+  final String status;
+
+  /// What the register holds, when it answered.
+  final BusinessCompanyRecord? company;
+
+  /// The officers on file — what makes the key-people question a confirmation.
+  final List<RegistryOfficer> officers;
+
+  /// Which company was checked (normalised uppercase), so a changed number
+  /// re-runs it and a repeat press does not pay to be told again.
+  final String? checkedNumber;
+
+  /// Which form fields the REGISTER filled, as opposed to the applicant
+  /// (canonical business field keys, e.g. 'registrationName', 'address').
+  ///
+  /// Kept so that changing which company this is can clear exactly those and
+  /// nothing else. Without it, switching company left the previous register's
+  /// address and email sitting in the form under the new company's name — and
+  /// because the prefill only writes into empty fields, those leftovers also
+  /// blocked the new register's real values from ever landing.
+  final List<String> prefilled;
+
+  const BusinessCheckState({
+    this.status = 'idle',
+    this.company,
+    this.officers = const [],
+    this.checkedNumber,
+    this.prefilled = const [],
+  });
+
+  BusinessCheckState copyWith({
+    String? status,
+    BusinessCompanyRecord? company,
+    List<RegistryOfficer>? officers,
+    String? checkedNumber,
+    List<String>? prefilled,
+    bool clearCompany = false,
+  }) =>
+      BusinessCheckState(
+        status: status ?? this.status,
+        company: clearCompany ? null : (company ?? this.company),
+        officers: officers ?? this.officers,
+        checkedNumber: checkedNumber ?? this.checkedNumber,
+        prefilled: prefilled ?? this.prefilled,
+      );
+}
+
+/// What `checkBusiness` resolves with. Only a definitive "not on the register"
+/// stops the flow; the company record is handed back for the prefill.
+typedef BusinessCheckResult = ({bool canContinue, BusinessCompanyRecord? company});

@@ -187,9 +187,12 @@ class _OptionsSheetState<T> extends State<_OptionsSheet<T>> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Padding(
+              // Tight under the handle, the way the system sheets set a title.
+              // The `lg` that was here stood in for a header that did not
+              // exist; with one above it, it reads as a gap.
               padding: const EdgeInsets.fromLTRB(
                 MyazaSpacing.md,
-                MyazaSpacing.lg,
+                0,
                 MyazaSpacing.md,
                 MyazaSpacing.sm,
               ),

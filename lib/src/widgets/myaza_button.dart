@@ -133,7 +133,20 @@ class MyazaButton extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                 ],
-                Text(label, style: text.button.copyWith(color: effectiveFg)),
+                // Shrink-to-fit, like the RN button's adjustsFontSizeToFit: a
+                // long label ("Confirm details & continue") on a narrow screen
+                // or under a wide brand font must scale, never clip — a button
+                // label truncated by a branding choice reads as a bug.
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      style: text.button.copyWith(color: effectiveFg),
+                    ),
+                  ),
+                ),
               ],
             ),
     );

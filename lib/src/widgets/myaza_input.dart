@@ -27,6 +27,18 @@ class MyazaInput extends StatefulWidget {
   final ValueChanged<String>? onSubmitted;
   final VoidCallback? onTap;
 
+  /// Compact overrides for inline fields (e.g. the 40px search-results filter,
+  /// mirroring the RN MyazaInput's height/fontSize props). Null = the standard
+  /// 48px field at body size.
+  final double? height;
+  final double? fontSize;
+
+  /// Off for proper-noun fields (company names, registration numbers): iOS
+  /// autocorrect rewrites them right before the person submits, so a search
+  /// for the company they typed silently becomes a search for a word the
+  /// keyboard preferred. Defaults on, like the platform.
+  final bool autocorrect;
+
   const MyazaInput({
     super.key,
     this.label,
@@ -49,6 +61,9 @@ class MyazaInput extends StatefulWidget {
     this.onChanged,
     this.onSubmitted,
     this.onTap,
+    this.height,
+    this.fontSize,
+    this.autocorrect = true,
   });
 
   @override
@@ -79,6 +94,16 @@ class _MyazaInputState extends State<MyazaInput> {
     final colors = context.myazaColors;
     final text   = context.myazaText;
     final hasError = widget.errorText != null && widget.errorText!.isNotEmpty;
+    final fieldStyle = widget.fontSize != null
+        ? text.body.copyWith(fontSize: widget.fontSize)
+        : text.body;
+    // The standard field is 48px = 22px of text + 13px padding either side;
+    // a height override keeps the text centred by taking the difference off
+    // the vertical padding.
+    final verticalPad = widget.height != null
+        ? ((widget.height! - (widget.fontSize ?? 16) * 1.375) / 2)
+            .clamp(4.0, 13.0)
+        : 13.0;
 
     Widget? suffixIcon;
     if (widget.obscureText) {
@@ -108,6 +133,8 @@ class _MyazaInputState extends State<MyazaInput> {
       textInputAction: widget.textInputAction,
       inputFormatters: widget.inputFormatters,
       obscureText: _obscured,
+      autocorrect: widget.autocorrect,
+      enableSuggestions: widget.autocorrect,
       readOnly: widget.readOnly,
       autofocus: widget.autofocus,
       maxLength: widget.maxLength,
@@ -115,11 +142,11 @@ class _MyazaInputState extends State<MyazaInput> {
       onChanged: widget.onChanged,
       onSubmitted: widget.onSubmitted,
       onTap: widget.onTap,
-      style: text.body,
+      style: fieldStyle,
       cursorColor: colors.primary,
       decoration: InputDecoration(
         hintText: widget.hint,
-        hintStyle: text.body.copyWith(color: colors.textMuted),
+        hintStyle: fieldStyle.copyWith(color: colors.textMuted),
         prefixIcon: widget.prefix != null
             ? Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -149,15 +176,18 @@ class _MyazaInputState extends State<MyazaInput> {
         focusedErrorBorder: _border(MyazaColors.error, width: 2.0),
         disabledBorder: _border(colors.gray300),
         // Sizing — use contentPadding to achieve 48px height for single-line
-        contentPadding: const EdgeInsets.symmetric(
+        // (or the caller's height override, e.g. the 40px results filter)
+        contentPadding: EdgeInsets.symmetric(
           horizontal: MyazaSpacing.md,
-          vertical: 13,
+          vertical: verticalPad,
         ),
         filled: true,
         fillColor: colors.backgroundSecondary,
         // Counter hidden — maxLength enforced silently
         counterText: '',
-        isDense: false,
+        // Dense only under a height override, so the tighter padding is
+        // honoured; the standard field keeps Material's roomier metrics.
+        isDense: widget.height != null,
       ),
     );
 

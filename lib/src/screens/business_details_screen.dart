@@ -2,22 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/business.dart';
+import '../config/business_details_validity.dart';
+import '../config/business_prefill.dart';
 import '../config/registration_hint.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../providers/step_order.dart' show effectiveCountry;
 import '../widgets/country_field.dart';
 import '../widgets/myaza_button.dart';
-import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
-import 'business_details_parts.dart';
+import 'business_check_panel.dart';
+import 'business_details_fields.dart';
+import 'business_picked_section.dart';
+import 'business_search.dart';
 
-// ─── Business (KYB) details screen ────────────────────────────────────────────
+// ─── Business (KYB) registry details — two screens in one step ────────────────
 //
-// The first step of a business workflow: pick the registry country (when more
-// than one is offered) + product, enter the registration number (+ optional
-// registered name), and fill whatever company profile the workflow asks for.
-// Submits a `business` block instead of media.
+// 'pick' is choosing WHICH company. 'details' is confirming what the register
+// then said about it. They are separate because the register has not been
+// asked yet while you are still picking, so showing the detail fields there
+// would invite somebody to fill in answers we are about to overwrite.
+// Continue is what runs the paid check and moves between them. Mirrors the
+// web and RN SDKs' BusinessDetailsStep — keep the three in lockstep.
 
 class BusinessDetailsScreen extends ConsumerStatefulWidget {
   const BusinessDetailsScreen({super.key});
@@ -27,16 +33,14 @@ class BusinessDetailsScreen extends ConsumerStatefulWidget {
       _BusinessDetailsScreenState();
 }
 
-class _BusinessDetailsScreenState
-    extends ConsumerState<BusinessDetailsScreen> {
+class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
+  String _phase = 'pick'; // 'pick' | 'details'
   final _regCtrl = TextEditingController();
   final _nameCtrl = TextEditingController();
   final _contactEmailCtrl = TextEditingController();
   final _infoCtrls = {
     for (final f in CompanyInfoField.values) f: TextEditingController(),
   };
-  late String _country;
-  late String _product;
 
   WorkflowBusinessConfig get _cfg =>
       ref.read(kycConfigProvider).business ??
@@ -48,27 +52,7 @@ class _BusinessDetailsScreenState
   @override
   void initState() {
     super.initState();
-    final s = ref.read(kYCNotifierProvider);
-    final cfg = _cfg;
-    // Precedence mirrors the web SDK exactly: the visitor's pick, then the
-    // workflow's PRIMARY country. The primary is always in the offered list
-    // but not necessarily FIRST — `offeredCountries.first` defaulted the
-    // picker to the wrong registry whenever the primary sat later.
-    _country = s.businessCountry ?? cfg.country;
-    // The stored product may be from a country the user has since switched
-    // away from — fall back to the first one this country actually offers.
-    final offered = cfg.productsForCountry(_country);
-    final stored = s.businessProduct;
-    _product = (stored != null && offered.contains(stored))
-        ? stored
-        : offered.first;
-    _regCtrl.text = s.registrationNumber ?? '';
-    _nameCtrl.text = s.registrationName ?? '';
-    _contactEmailCtrl.text = s.businessContactEmail ?? '';
-    _infoCtrls[CompanyInfoField.address]!.text = s.businessAddress ?? '';
-    _infoCtrls[CompanyInfoField.email]!.text = s.businessEmail ?? '';
-    _infoCtrls[CompanyInfoField.phone]!.text = s.businessPhone ?? '';
-    _infoCtrls[CompanyInfoField.website]!.text = s.businessWebsite ?? '';
+    _syncFromState();
   }
 
   @override
@@ -82,183 +66,219 @@ class _BusinessDetailsScreenState
     super.dispose();
   }
 
-  String _v(CompanyInfoField f) => _infoCtrls[f]!.text.trim();
-
-  bool get _contactEmailValid {
-    final value = _contactEmailCtrl.text.trim();
-    return value.isEmpty || isValidContactEmail(value);
-  }
-
-  bool get _companyEmailValid {
-    final value = _v(CompanyInfoField.email);
-    return value.isEmpty || isValidContactEmail(value);
-  }
-
-  /// Country-aware registration-number guidance (NG: CAC prefix rules + format
-  /// validation; elsewhere: placeholder + registry tip). Mirrors the web SDK.
-  RegistrationHint get _regHint =>
-      registrationNumberHint(_country, businessProduct(_product));
-
-  bool get _regFormatOk {
-    final check = _regHint.isValidFormat;
-    final value = _regCtrl.text.trim();
-    return check == null || value.isEmpty || check(value);
-  }
-
-  bool get _regNumberValid =>
-      _regCtrl.text.trim().length >= 2 && _regFormatOk;
-
-  bool get _canContinue {
-    final cfg = _cfg;
-    if (!_regNumberValid) return false;
-    if (cfg.requireRegistrationName && _nameCtrl.text.trim().isEmpty) {
-      return false;
+  /// State is the source of truth (every keystroke writes through), so the
+  /// controllers only ever need catching up when something ELSE moved it: a
+  /// register prefill landing, or a company change clearing the fields the
+  /// old register filled.
+  void _syncFromState() {
+    final values = businessFieldValues(ref.read(kYCNotifierProvider));
+    void sync(TextEditingController ctrl, String value) {
+      if (ctrl.text != value) ctrl.text = value;
     }
-    if (!_contactEmailValid || !_companyEmailValid) return false;
-    // Every `required` company-profile field must be filled.
-    final modes = cfg.companyInfoModes;
+
+    sync(_regCtrl, values['registrationNumber']!);
+    sync(_nameCtrl, values['registrationName']!);
+    sync(_contactEmailCtrl, values['contactEmail']!);
     for (final f in CompanyInfoField.values) {
-      if (modes[f] == CompanyInfoMode.required && _v(f).isEmpty) return false;
+      sync(_infoCtrls[f]!, values[f.key]!);
     }
-    return true;
   }
 
-  String? _nullIfEmpty(String value) => value.isEmpty ? null : value;
+  void _set(String key, String value) {
+    ref.read(kYCNotifierProvider.notifier).setBusinessField(key, value);
+    // An identity-key change clears the register-filled fields in state; the
+    // controllers holding those values must follow.
+    _syncFromState();
+    setState(() {});
+  }
 
-  void _onContinue() {
-    if (!_canContinue) return;
+  Future<void> _onContinue() async {
     final notifier = ref.read(kYCNotifierProvider.notifier);
-    notifier.setBusinessDetails(
-      country: _country,
-      product: _product,
-      registrationNumber: _regCtrl.text.trim(),
-      registrationName: _nullIfEmpty(_nameCtrl.text.trim()),
-      contactEmail: _nullIfEmpty(_contactEmailCtrl.text.trim()),
-      address: _nullIfEmpty(_v(CompanyInfoField.address)),
-      email: _nullIfEmpty(_v(CompanyInfoField.email)),
-      phone: _nullIfEmpty(_v(CompanyInfoField.phone)),
-      website: _nullIfEmpty(_v(CompanyInfoField.website)),
-    );
+    // The paid registry check — awaited, so the details screen opens already
+    // holding what the register said. Only a definitive "not on the register"
+    // stops the flow: everything else (a short balance, an outage) continues
+    // and is checked at submission, as it was before.
+    final result = await notifier.checkBusiness();
+    if (!mounted) return;
+    if (!result.canContinue) {
+      setState(() {});
+      return;
+    }
+    // First Continue ends at the details screen rather than the next step: the
+    // register has only just answered, and this is where what it said gets put
+    // in front of them to confirm or correct.
+    if (_phase == 'pick') {
+      final current = businessFieldValues(ref.read(kYCNotifierProvider));
+      final prefill = registerPrefillPatch(result.company, current);
+      if (prefill.prefilled.isNotEmpty) {
+        notifier.applyBusinessPrefill(prefill.patch, prefill.prefilled);
+      }
+      _syncFromState();
+      setState(() => _phase = 'details');
+      return;
+    }
     notifier.nextStep();
-  }
-
-  /// A country switch can invalidate the picked product (the tax variants are
-  /// Nigeria-only), so re-resolve it against the new country's offering.
-  void _onCountryChanged(String value) {
-    final offered = _cfg.productsForCountry(value);
-    setState(() {
-      _country = value;
-      if (!offered.contains(_product)) _product = offered.first;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final text = context.myazaText;
+    final s = ref.watch(kYCNotifierProvider);
     final cfg = _cfg;
     final countries = cfg.offeredCountries;
-    final products = cfg.productsForCountry(_country);
-    final product = businessProduct(_product);
+    // Precedence mirrors the web SDK: the visitor's pick, then the workflow's
+    // PRIMARY country (always in the offered list but not necessarily first).
+    final country = s.businessCountry ?? cfg.country;
+    final products = cfg.productsForCountry(country);
+    final stored = s.businessProduct;
+    // Re-derived per country rather than remembered: a product the picked
+    // country does not offer would be rejected at submit.
+    final product = (stored != null && products.contains(stored))
+        ? stored
+        : products.first;
+    final productDef = businessProduct(product);
+    final regHint = registrationNumberHint(country, productDef);
+
+    final modes = cfg.companyInfoModes;
+    final showCompanyInfo = cfg.showsCompanyInfo;
+    final showContactEmail = cfg.needsKeyPeopleContactEmail;
+
+    final regNumber = (s.registrationNumber ?? '').trim();
+    // A company has been named, so the card replaces the search. The NUMBER is
+    // what names it (a prefilled session sends one without a name; the
+    // register supplies the name on Continue, so an unnamed card is momentary).
+    final picked = regNumber.isNotEmpty;
+    final formatCheck = regHint.isValidFormat;
+    final formatOk =
+        formatCheck == null || regNumber.isEmpty || formatCheck(regNumber);
+    final numberValid = regNumber.length >= 2 && formatOk;
+
+    final isFormValid = businessDetailsValid(
+      phase: _phase,
+      values: businessFieldValues(s),
+      modes: modes,
+      product: product,
+      numberValid: numberValid,
+      nameRequired: cfg.requireRegistrationName,
+      showContactEmail: showContactEmail,
+    );
+    final checking = s.businessCheck.status == 'checking';
+    // Production never shows the test-result toggle, and never honours a pin.
+    final isSandbox = s.serverConfig.environment != 'PRODUCTION';
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // ── Country of registration (when >1) ────────────────────────────────
         if (countries.length > 1) ...[
           Text('Country of registration', style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
-          // The SAME sheet as the phone field's dial-code picker — restricted
-          // to the workflow's registry countries.
           CountryField(
-            country: _country,
+            country: country,
             codes: countries,
-            onChanged: _onCountryChanged,
+            onChanged: (code) {
+              _set('country', code);
+              // The product list narrows per country, so a stale pick is
+              // cleared rather than carried into a refused submission.
+              _set('product', '');
+            },
           ),
           const SizedBox(height: MyazaSpacing.md),
         ],
-
-        // ── Product (when >1 for this country) ───────────────────────────────
         if (products.length > 1) ...[
           Text('Verification type', style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           MyazaSelect<String>(
-            value: _product,
+            value: product,
             sheetTitle: 'Verification type',
             options: [
               for (final p in products)
                 MyazaSelectOption(value: p, label: businessProduct(p).label),
             ],
-            onChanged: (v) => setState(() => _product = v),
+            onChanged: (v) => _set('product', v),
           ),
           const SizedBox(height: MyazaSpacing.md),
         ],
 
-        // ── Registration number / TIN ────────────────────────────────────────
-        // Placeholder + registry tip come from the country-aware hint; a wrong
-        // NG CAC prefix errors live, not on Continue. Mirrors the web SDK.
-        Text(product.inputLabel, style: text.label),
-        const SizedBox(height: MyazaSpacing.xs),
-        MyazaInput(
-          controller: _regCtrl,
-          hint: _regHint.placeholder,
-          autofocus: true,
-          // Registration numbers are uppercase codes (RC1234567, BN…) —
-          // capitalize the keyboard like the RN SDK does.
-          textCapitalization: TextCapitalization.characters,
-          errorText: _regCtrl.text.isNotEmpty && !_regNumberValid
-              ? (!_regFormatOk && _regHint.formatError != null
-                  ? _regHint.formatError
-                  : 'Enter a valid ${product.inputLabel.toLowerCase()}.')
-              : null,
-          onChanged: (_) => setState(() {}),
-        ),
-        if (_regHint.tip != null &&
-            !(_regCtrl.text.isNotEmpty && !_regNumberValid)) ...[
-          const SizedBox(height: MyazaSpacing.xs),
-          Text(
-            _regHint.tip!,
-            style: text.bodySmall
-                .copyWith(color: context.myazaColors.textSecondary),
+        // HIDDEN, not unmounted, once a company is chosen: unmounting threw
+        // away the query and results, so "Change" dropped somebody back to an
+        // empty box. Hiding keeps the picker alive, which makes Change cheap.
+        Offstage(
+          offstage: !(_phase == 'pick' && country.isNotEmpty && !picked),
+          child: BusinessSearch(
+            country: country,
+            onPicked: (hit) {
+              // Names the company and nothing more: the register is asked on
+              // Continue, and the fields it fills live on the screen after.
+              _set('registrationNumber', hit.registrationNumber);
+              _set('registrationName', hit.name);
+            },
+            onManualEntry: () => setState(() => _phase = 'details'),
           ),
+        ),
+
+        if (_phase == 'pick' && picked)
+          BusinessPickedSection(
+            country: country,
+            name: s.registrationName ?? '',
+            registrationNumber: regNumber,
+            isSandbox: isSandbox,
+            onChange: () {
+              // Back to the search rather than an undo: they are changing
+              // WHICH company this is about, and the fields belong to the old
+              // one.
+              _set('registrationNumber', '');
+              _set('registrationName', '');
+            },
+          ),
+
+        if (_phase == 'details')
+          BusinessDetailsFields(
+            productDef: productDef,
+            regHint: regHint,
+            numberValid: numberValid,
+            formatOk: formatOk,
+            requireName: cfg.requireRegistrationName,
+            country: country,
+            modes: modes,
+            showCompanyInfo: showCompanyInfo,
+            showContactEmail: showContactEmail,
+            regCtrl: _regCtrl,
+            nameCtrl: _nameCtrl,
+            contactEmailCtrl: _contactEmailCtrl,
+            infoCtrls: _infoCtrls,
+            phoneValue: s.businessPhone ?? '',
+            contactEmailValid: (s.businessContactEmail ?? '').trim().isEmpty ||
+                isValidContactEmail((s.businessContactEmail ?? '').trim()),
+            onChanged: _set,
+          ),
+
+        if (checkPanelVisible(s.businessCheck.status)) ...[
+          const SizedBox(height: MyazaSpacing.lg),
+          BusinessCheckPanel(status: s.businessCheck.status),
         ],
-        const SizedBox(height: MyazaSpacing.md),
 
-        // ── Registered name (optional unless required) ───────────────────────
-        BusinessFieldLabel(
-          label: 'Registered business name',
-          required: cfg.requireRegistrationName,
-        ),
-        const SizedBox(height: MyazaSpacing.xs),
-        MyazaInput(
-          controller: _nameCtrl,
-          hint: 'Enter the registered business name',
-          onChanged: (_) => setState(() {}),
-        ),
-        const SizedBox(height: MyazaSpacing.md),
-
-        // ── Company profile (workflow-configured) ────────────────────────────
-        if (cfg.showsCompanyInfo)
-          BusinessCompanyInfoFields(
-            modes: cfg.companyInfoModes,
-            controllers: _infoCtrls,
-            emailValid: _companyEmailValid,
-            onChanged: (_) => setState(() {}),
-          ),
-
-        // ── Key-people invite email (only when invites are emailed) ──────────
-        if (cfg.needsKeyPeopleContactEmail)
-          BusinessContactEmailField(
-            controller: _contactEmailCtrl,
-            valid: _contactEmailValid,
-            onChanged: (_) => setState(() {}),
-          ),
-
-        const SizedBox(height: MyazaSpacing.xl),
+        const SizedBox(height: MyazaSpacing.lg),
         MyazaButton(
-          label: 'Continue',
-          onPressed: _canContinue ? _onContinue : null,
+          label: checking
+              ? 'Checking…'
+              : _phase == 'details'
+                  ? 'Confirm details & continue'
+                  : 'Continue',
+          isLoading: checking,
+          onPressed:
+              !isFormValid || checking ? null : () => _persistAndContinue(country, product),
         ),
       ],
     );
+  }
+
+  /// Persist the resolved country/product so the submission uses exactly what
+  /// was on screen — only when different: these are identity keys, and writing
+  /// an unchanged value would needlessly reset the check we just ran.
+  void _persistAndContinue(String country, String product) {
+    final s = ref.read(kYCNotifierProvider);
+    if (s.businessCountry != country) _set('country', country);
+    if (s.businessProduct != product) _set('product', product);
+    _onContinue();
   }
 }

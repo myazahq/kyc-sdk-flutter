@@ -60,8 +60,13 @@ class ContactChannelSettings {
   /// defaults the server clamps to (6 digits, segmented, required).
   factory ContactChannelSettings.resolve(
     MyazaKYCConfig config,
-    String channel,
-  ) {
+    String channel, {
+    /// Where the visitor appears to be, from the server's IP lookup. The LAST
+    /// resort for the phone field: an explicit workflow setting wins, then the
+    /// flow's own country. A guess only ever beats an empty field, and nothing
+    /// downstream treats it as a claim about the person.
+    String? geoCountry,
+  }) {
     final isPhone = channel == 'phone';
     final email = config.emailVerification;
     final phone = config.phoneVerification;
@@ -76,7 +81,8 @@ class ContactChannelSettings {
       offeredChannels:
           isPhone ? (phone?.offeredChannels ?? const ['sms']) : const [],
       maxAttempts: isPhone ? phone?.maxAttempts : email?.maxAttempts,
-      defaultCountry: phone?.defaultCountry ?? config.country ?? '',
+      defaultCountry:
+          phone?.defaultCountry ?? config.country ?? geoCountry ?? '',
     );
   }
 }

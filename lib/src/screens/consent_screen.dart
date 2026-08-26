@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../config/theme.dart';
 import '../config/brand.dart';
 import '../config/business_application.dart';
+import '../providers/step_resubmit.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 
@@ -185,10 +186,49 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         ),
     ];
 
+    // A reviewer sent this applicant back. Say so, and say why — the note is
+    // the only thing on screen that explains a flow which has silently lost
+    // most of its steps. Above the hero so it is read before the instructions.
+    final redoNote = resubmitNote(config.resubmit);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: MyazaSpacing.sm),
+
+        if (redoNote != null) ...[
+          Container(
+            padding: const EdgeInsets.all(MyazaSpacing.md),
+            decoration: BoxDecoration(
+              color: colors.warningBg,
+              borderRadius: BorderRadius.circular(MyazaRadius.lg),
+              border: Border.all(
+                color: MyazaColors.warning.withValues(alpha: 0.4),
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(LucideIcons.refreshCw, size: 16, color: MyazaColors.warning),
+                const SizedBox(width: MyazaSpacing.sm),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'A few things to redo',
+                        style: text.bodyMedium.copyWith(color: MyazaColors.warning),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(redoNote, style: text.bodySmall.copyWith(color: colors.textSecondary)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: MyazaSpacing.lg),
+        ],
 
         // ── Shield hero ──────────────────────────────────────────────────────
         Center(child: _ShieldHero(colors: colors)),

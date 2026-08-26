@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -9,6 +10,9 @@ import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
+import 'session_progress.dart';
+import 'session_restore.dart';
+import '../config/key_people_prefill.dart';
 import '../services/api_service.dart';
 import '../services/device_metadata_service.dart';
 import '../services/fingerprint_service.dart';
@@ -20,6 +24,7 @@ import '../utils/resolve_url.dart';
 import '../utils/step_log.dart';
 import 'kyc_state.dart';
 import 'step_order.dart';
+import '../config/multi_id.dart';
 
 part 'kyc_provider.g.dart';
 
@@ -45,6 +50,11 @@ MyazaKYCConfig kycConfig(Ref ref) {
 /// needed to add it.
 final preloadedServerConfigProvider =
     Provider<ServerSdkConfig?>((ref) => null);
+
+/// The API client, as a provider so tests can stub the network. Null (the
+/// default) means "build one from the mounted config"; a plain provider (not
+/// codegen) so no build_runner step is needed to add it.
+final kycApiServiceProvider = Provider<KYCApiService?>((ref) => null);
 
 // ─── Shared UUID generator ────────────────────────────────────────────────────
 
@@ -94,8 +104,26 @@ class KYCNotifier extends _$KYCNotifier {
     StepLog.reset();
     StepLog.record(KYCStep.consent);
     listenSelf((previous, next) {
-      if (previous?.currentStep != next.currentStep) StepLog.record(next.currentStep);
+      if (previous?.currentStep != next.currentStep) {
+        StepLog.record(
+          next.currentStep,
+          slot: next.multiIdSlots.isNotEmpty ? next.multiIdSlots.length + 1 : null,
+          idType: next.selectedIdType?.key,
+        );
+      }
+      _scheduleProgressSave(next);
     });
+
+    // The attempt session: minted at launch (a fresh provider lifecycle IS a
+    // fresh attempt). Best-effort by contract — sessions power resumability,
+    // the dashboard's live attempt view, and the registry check at selection;
+    // verifying is never conditional on one existing. Called directly rather
+    // than through a scheduled Future: a zero-duration timer reads as pending
+    // work to widget tests, and there is nothing here that needs deferring.
+    unawaited(_startAttemptSession());
+    // A debounce timer must not outlive its provider — in production that is a
+    // leak, in a widget test it is a teardown failure.
+    ref.onDispose(() => _progressTimer?.cancel());
 
     // When the launcher resolved a workflow before mount, its idTypes/branding
     // are already known — use them directly and skip the /config fetch.
@@ -121,6 +149,7 @@ class KYCNotifier extends _$KYCNotifier {
           idTypes: response.idTypes,
           environment: response.environment,
           branding: response.branding,
+          geoCountry: response.geoCountry,
         ),
       );
     } catch (err) {
@@ -182,7 +211,9 @@ class KYCNotifier extends _$KYCNotifier {
 
   MyazaKYCConfig get _config => ref.read(kycConfigProvider);
 
-  KYCApiService get api => KYCApiService(
+  KYCApiService get api =>
+      ref.read(kycApiServiceProvider) ??
+      KYCApiService(
         baseUrl: resolveBaseUrl(_config.apiKey, devUrl: _config.devUrl),
         apiKey: _config.apiKey,
       );
@@ -198,16 +229,176 @@ class KYCNotifier extends _$KYCNotifier {
 
   /// Advances to the next step in the computed order (no-op at the terminal
   /// step or if the current step isn't in the order).
+  /// The steps that make up ONE ID's evidence. Leaving this set is what ends a
+  /// multi-ID check — the leg has several exits depending on the ID.
+  static const Set<KYCStep> _idEvidenceSteps = {
+    KYCStep.idInput,
+    KYCStep.documentCapture,
+    KYCStep.nfc,
+  };
+
   void nextStep() {
     final order = buildStepOrder(_config, state);
     final idx = order.indexOf(state.currentStep);
-    if (idx >= 0 && idx + 1 < order.length) {
-      state = state.copyWith(currentStep: order[idx + 1]);
+    if (idx < 0 || idx + 1 >= order.length) return;
+    final next = order[idx + 1];
+
+    // Multi-ID: the run walks the capture leg once PER ID. Intercepted at this
+    // one seam rather than in each screen because it is one rule — "the
+    // applicant finished this check" — and the leg has several exits (a
+    // number-only ID leaves from idInput, a document ID from documentCapture
+    // or the chip read after it).
+    final plan = multiIdPlan();
+    if (plan != null &&
+        _idEvidenceSteps.contains(state.currentStep) &&
+        !_idEvidenceSteps.contains(next)) {
+      commitMultiIdSlot(plan.last ? next : KYCStep.idType);
+      return;
     }
+    state = state.copyWith(currentStep: next);
+  }
+
+  /// The chip payload as the wire wants it. One builder, so a check's chip and
+  /// a single-ID run's are byte-identical to the server.
+  static VerifyNfc _nfcPayload(NfcChipData chip) => VerifyNfc(
+        dg1: chip.dg1Base64,
+        sod: chip.sodBase64,
+        dg2: chip.dg2Base64,
+        dg7: chip.dg7Base64,
+        dg11: chip.dg11Base64,
+        dg12: chip.dg12Base64,
+        dg15: chip.dg15Base64,
+        aaSignature: chip.aaSignatureBase64,
+        aaChallengeId: chip.aaChallengeId,
+        chipAuth: chip.chipAuth,
+        paceOutcome: chip.paceOutcome,
+        paceDetail: chip.paceDetail,
+      );
+
+  /// The active multi-ID plan for the current state, or null on an ordinary run.
+  ///
+  /// Mirrors the web SDK's `multiIdPlan`: the server validates the pick
+  /// sequence this produces, so the options offered here and the options the
+  /// server accepts have to be the same set.
+  MultiIdPlan? multiIdPlan() {
+    final cfg = _config.multiId;
+    if (cfg == null || _config.subjectType == 'business') return null;
+
+    final country = effectiveCountry(_config, state);
+    final entry = (_config.countries ?? const <WorkflowCountryOption>[])
+        .cast<WorkflowCountryOption?>()
+        .firstWhere((c) => c?.country == country, orElse: () => null);
+
+    // The country's pinned list, else everything the server granted there.
+    final offered = (entry?.idTypes != null && entry!.idTypes!.isNotEmpty)
+        ? entry.idTypes!
+        : (_config.idTypes != null && _config.idTypes!.isNotEmpty)
+            ? _config.idTypes!
+            : state.serverConfig.idTypes
+                .where((row) => row.country == country)
+                .map((row) => row.idType)
+                .toList(growable: false);
+
+    final options = multiIdSlotOptions(cfg.count, entry?.multiIdSlots, offered);
+    final picked =
+        state.multiIdSlots.map((s) => s.idType).toList(growable: false);
+    final index = state.multiIdSlotIndex.clamp(0, cfg.count);
+    return MultiIdPlan(
+      count: cfg.count,
+      minPassed: cfg.minPassed,
+      index: index,
+      last: index >= cfg.count - 1,
+      picked: picked,
+      safeOptions:
+          index < cfg.count ? multiIdSafeOptions(options, index, picked) : const [],
+    );
+  }
+
+  /// Commits the current check's evidence and moves on.
+  ///
+  /// The SELFIE and its video are run-level and deliberately untouched: one
+  /// selfie covers every ID in the run.
+  void commitMultiIdSlot(KYCStep nextStep) {
+    final idType = state.selectedIdType;
+    if (idType == null) return;
+    final media = state.mediaIds;
+    final slot = MultiIdSlot(
+      idType: idType.key,
+      idNumber: state.idNumber,
+      documentFront: media.documentFront,
+      documentBack: media.documentBack,
+      documentFrontVideo: media.documentFrontVideo,
+      documentBackVideo: media.documentBackVideo,
+      chipData: state.nfcChipData,
+    );
+    state = state.copyWith(
+      multiIdSlots: [...state.multiIdSlots, slot],
+      multiIdSlotIndex: state.multiIdSlotIndex + 1,
+      clearSelectedIdType: true,
+      // Rebuilt rather than copyWith'd: copyWith cannot CLEAR a document id,
+      // and carrying the last check's document into the next one would file it
+      // against the wrong ID. The selfie and its video are run-level and kept.
+      // Rebuilt rather than copyWith'd: copyWith cannot CLEAR an id, and
+      // carrying this check's document or its recording into the next one
+      // would file them against the wrong ID. The selfie and its liveness
+      // video are run-level and kept.
+      mediaIds: KYCMediaIds(
+        selfie: media.selfie,
+        livenessVideo: media.livenessVideo,
+        proofOfAddress: media.proofOfAddress,
+      ),
+      documentScanPhase: 'front',
+      docReviewPhase: 'camera',
+      // The chip belongs to the check just committed; the next reads its own.
+      clearNfcChipData: true,
+      currentStep: nextStep,
+    );
+  }
+
+  /// Steps BACK into the previous check, restoring what it captured.
+  void uncommitMultiIdSlot() {
+    if (state.multiIdSlots.isEmpty) return;
+    final last = state.multiIdSlots.last;
+    final row = state.serverConfig.idTypes
+        .cast<SdkConfigIdType?>()
+        .firstWhere((r) => r?.idType == last.idType, orElse: () => null);
+    final def = resolveIdTypeDefinition(
+      effectiveCountry(_config, state),
+      last.idType,
+      label: row?.label,
+      requiresDocumentCapture: row?.requiresDocumentCapture,
+      scanSides: row?.scanSides,
+      supportsNfc: row?.supportsNfc,
+    );
+    state = state.copyWith(
+      multiIdSlots:
+          state.multiIdSlots.sublist(0, state.multiIdSlots.length - 1),
+      multiIdSlotIndex: (state.multiIdSlots.length - 1).clamp(0, 3),
+      selectedIdType: def,
+      idNumber: last.idNumber,
+      mediaIds: state.mediaIds.copyWith(
+        documentFront: last.documentFront,
+        documentBack: last.documentBack,
+        documentFrontVideo: last.documentFrontVideo,
+        documentBackVideo: last.documentBackVideo,
+      ),
+      nfcChipData: last.chipData,
+      currentStep: def.requiresDocumentCapture
+          ? KYCStep.documentCapture
+          : KYCStep.idInput,
+    );
   }
 
   /// Goes back one step in the computed order (no-op at the first step).
   void previousStep() {
+    // Multi-ID: stepping back from the picker means re-doing the PREVIOUS
+    // check, not leaving the flow. The check is uncommitted so its ID number
+    // and captures come back — changing an earlier ID must not mean
+    // re-photographing a document that is still perfectly good.
+    if (state.currentStep == KYCStep.idType && state.multiIdSlots.isNotEmpty) {
+      uncommitMultiIdSlot();
+      return;
+    }
     final order = buildStepOrder(_config, state);
     final idx = order.indexOf(state.currentStep);
     if (idx > 0) {
@@ -321,11 +512,36 @@ class KYCNotifier extends _$KYCNotifier {
   /// Stores a contact-verification proof (email or phone OTP token +
   /// destination). Submitted under `contact` on /verify.
   void setContactProof(String channel, String token, String destination) {
+    // A fresh proof clears its channel's "server refused this" flag.
+    final expired = [
+      for (final c in state.expiredContact)
+        if (c != channel) c,
+    ];
     if (channel == 'email') {
-      state = state.copyWith(emailToken: token, emailAddress: destination);
+      state = state.copyWith(
+          emailToken: token, emailAddress: destination, expiredContact: expired);
     } else {
-      state = state.copyWith(phoneToken: token, phoneNumber: destination);
+      state = state.copyWith(
+          phoneToken: token, phoneNumber: destination, expiredContact: expired);
     }
+  }
+
+  /// The server refused these channels' proofs at submit (single-use tokens
+  /// expire ~30 minutes after the OTP check, and session restore can resurrect
+  /// a dead one). Drop the tokens, keep the destinations, and flag the
+  /// channels so their steps explain, re-verify, and resubmit.
+  void clearContactProofs(List<String> channels) {
+    state = state.copyWith(
+      clearEmailToken: channels.contains('email'),
+      clearPhoneToken: channels.contains('phone'),
+      expiredContact: channels,
+    );
+  }
+
+  /// Jump to a specific step (used by submit recovery to return the applicant
+  /// to a contact step, and by that step to return to `submitted`).
+  void goToStep(KYCStep step) {
+    if (state.currentStep != step) state = state.copyWith(currentStep: step);
   }
 
   /// Stores the liveness step's capture-integrity claim (mode + flash result).
@@ -344,34 +560,85 @@ class KYCNotifier extends _$KYCNotifier {
     state = state.copyWith(mrzScan: scan);
   }
 
-  /// Stores the KYB business-details step inputs. Submitted under `business`.
-  void setBusinessDetails({
-    required String country,
-    required String product,
-    required String registrationNumber,
-    String? registrationName,
-    String? contactEmail,
-    String? address,
-    String? email,
-    String? phone,
-    String? website,
-  }) {
-    state = state.copyWith(
-      businessCountry: country,
-      businessProduct: product,
-      registrationNumber: registrationNumber,
-      registrationName: registrationName,
-      businessContactEmail: contactEmail,
-      businessAddress: address,
-      businessEmail: email,
-      businessPhone: phone,
-      businessWebsite: website,
+  /// The business fields whose change means a DIFFERENT company is being
+  /// asked about — which invalidates the register's answer.
+  static const _businessIdentityKeys = {
+    'registrationNumber',
+    'country',
+    'product',
+  };
+
+  /// One business field, in the canonical-key vocabulary shared with
+  /// `registerPrefillPatch` and `businessFieldValues`.
+  KYCState _withBusinessValue(KYCState s, String key, String value) =>
+      switch (key) {
+        'country' => s.copyWith(businessCountry: value),
+        'product' => s.copyWith(businessProduct: value),
+        'registrationNumber' => s.copyWith(registrationNumber: value),
+        'registrationName' => s.copyWith(registrationName: value),
+        'subdivisionCode' => s.copyWith(businessSubdivisionCode: value),
+        'sandboxOutcome' => s.copyWith(businessSandboxOutcome: value),
+        'contactEmail' => s.copyWith(businessContactEmail: value),
+        'address' => s.copyWith(businessAddress: value),
+        'email' => s.copyWith(businessEmail: value),
+        'phone' => s.copyWith(businessPhone: value),
+        'website' => s.copyWith(businessWebsite: value),
+        'dateOfIncorporation' =>
+          s.copyWith(businessDateOfIncorporation: value),
+        'taxId' => s.copyWith(businessTaxId: value),
+        'vatNumber' => s.copyWith(businessVatNumber: value),
+        'companyType' => s.copyWith(businessCompanyType: value),
+        'natureOfBusiness' => s.copyWith(businessNatureOfBusiness: value),
+        _ => s,
+      };
+
+  /// Stores one KYB business-details field. Submitted under `business`.
+  ///
+  /// Any change to WHICH company this is about (number/country/product)
+  /// invalidates the answer we hold, so the check never describes one business
+  /// while the field names another. Everything the previous register told us
+  /// about the old company goes with it — only what the REGISTER wrote: an
+  /// applicant who typed their own address meant it. Clearing it also unblocks
+  /// the next lookup, whose prefill only ever writes into an empty field, so
+  /// leftovers were not merely stale, they were suppressing the real answer.
+  /// Mirrors the RN store's setBusinessField.
+  void setBusinessField(String key, String value) {
+    final identityChanged = _businessIdentityKeys.contains(key);
+    var next = state;
+    if (identityChanged) {
+      for (final prefilledKey in state.businessCheck.prefilled) {
+        if (prefilledKey != key) {
+          next = _withBusinessValue(next, prefilledKey, '');
+        }
+      }
+    }
+    next = _withBusinessValue(next, key, value);
+    if (identityChanged) {
+      next = next.copyWith(businessCheck: const BusinessCheckState());
+    }
+    state = next;
+  }
+
+  /// Writes the register's answers into empty fields + records which ones it
+  /// filled, in one set — so a company change can clear exactly those.
+  void applyBusinessPrefill(Map<String, String> patch, List<String> prefilled) {
+    var next = state;
+    patch.forEach((key, value) {
+      next = _withBusinessValue(next, key, value);
+    });
+    state = next.copyWith(
+      businessCheck: next.businessCheck.copyWith(prefilled: prefilled),
     );
   }
 
   /// Replaces the applicant-declared directors/owners (business-key-people).
   void setKeyPeople(List<KeyPersonEntry> people) {
     state = state.copyWith(keyPeople: people);
+  }
+
+  /// The applicant attests that no natural person qualifies as a UBO.
+  void setUboUnidentifiable(bool value) {
+    state = state.copyWith(uboUnidentifiable: value);
   }
 
   /// Records one uploaded supporting document, replacing any prior upload for
@@ -454,13 +721,33 @@ class KYCNotifier extends _$KYCNotifier {
       final integrity = state.integrity;
       // Step journey recorded during the session — powers the dashboard's
       // verification timeline. See utils/step_log.
-      final stepLog = StepLog.snapshot();
+      // Each part is collected on its OWN so one failure costs that part alone.
+      // A single catch around the lot meant a TypeError in the step-log
+      // snapshot silently discarded the whole device block — no fingerprint, no
+      // SDK identity, no journey — and the verification looked like it came
+      // from an unknown device. Diagnostics must degrade piecewise; losing all
+      // of them together is indistinguishable from an SDK that sends none.
+      Map<String, dynamic>? stepLog;
+      try {
+        stepLog = StepLog.snapshot();
+      } catch (_) {
+        stepLog = null;
+      }
+
+      Map<String, dynamic>? fingerprint;
+      if (_config.deviceIntelligence) {
+        try {
+          fingerprint = await FingerprintService.instance.collect();
+        } catch (_) {
+          fingerprint = null;
+        }
+      }
+
       return {
         ...collected,
         if (integrity.isNotEmpty) 'integrity': integrity,
         if (stepLog != null) 'stepLog': stepLog,
-        if (_config.deviceIntelligence)
-          'fingerprint': await FingerprintService.instance.collect(),
+        if (fingerprint != null) 'fingerprint': fingerprint,
       };
     } catch (_) {
       return null;
@@ -509,6 +796,7 @@ class KYCNotifier extends _$KYCNotifier {
     state = state.copyWith(isLoading: true);
     final requestId = _uuid.v4();
     final request = VerifyRequest(
+      sessionId: state.sessionId,
       country: country,
       idType: product, // the product key rides idType for KYB
       workflowId: _config.workflowId,
@@ -523,8 +811,16 @@ class KYCNotifier extends _$KYCNotifier {
         email: state.businessEmail,
         phone: state.businessPhone,
         website: state.businessWebsite,
+        // The five registry facts the applicant STATES, sent only when filled
+        // (VerifyBusiness.toJson drops empties). Mirrors the RN submission.
+        dateOfIncorporation: state.businessDateOfIncorporation,
+        taxId: state.businessTaxId,
+        vatNumber: state.businessVatNumber,
+        companyType: state.businessCompanyType,
+        natureOfBusiness: state.businessNatureOfBusiness,
         documents: documents,
         keyPeople: keyPeople,
+        uboUnidentifiable: state.uboUnidentifiable,
         applicant: applicant,
       ),
       questionnaire: state.questionnaireAnswers.isNotEmpty
@@ -539,7 +835,13 @@ class KYCNotifier extends _$KYCNotifier {
           : null,
       metadata: VerifyMetadata(
         requestId: requestId,
-        extra: _extraMetadata(),
+        extra: {
+          ...?_extraMetadata(),
+          // The dev/sandbox test-result pin. Ignored by production, so it is
+          // safe to send whenever it is set.
+          if ((state.businessSandboxOutcome ?? '').isNotEmpty)
+            'sandboxOutcome': state.businessSandboxOutcome!,
+        },
         device: await _collectDeviceMetadata(),
       ),
     );
@@ -623,6 +925,9 @@ class KYCNotifier extends _$KYCNotifier {
     final lastName = resolved?.lastName ?? split?.lastName;
 
     final mediaIds = state.mediaIds;
+    // Deliberately NO sessionId: a session carries ONE submitted verification
+    // and the business application has already claimed this one. The applicant
+    // leg links back through metadata.userId instead.
     final request = VerifyRequest(
       country: country,
       idType: idTypeConfig.key,
@@ -648,15 +953,11 @@ class KYCNotifier extends _$KYCNotifier {
       deviceIntelligence: _config.deviceIntelligence,
       // The chip read, when the leg ran the NFC step (an overlaid applicant
       // workflow can enable it). Same validate-and-drop as the main submit.
+      // Built by the SHARED builder, not a second copy of the block: a
+      // hand-rolled twin drifts silently, and the applicant's chip must reach
+      // the server in the same shape as everyone else's.
       nfc: (state.nfcChipData != null && idTypeConfig.supportsNfc)
-          ? VerifyNfc(
-              dg1: state.nfcChipData!.dg1Base64,
-              sod: state.nfcChipData!.sodBase64,
-              dg2: state.nfcChipData!.dg2Base64,
-              chipAuth: state.nfcChipData!.chipAuth,
-              paceOutcome: state.nfcChipData!.paceOutcome,
-              paceDetail: state.nfcChipData!.paceDetail,
-            )
+          ? _nfcPayload(state.nfcChipData!)
           : null,
       metadata: VerifyMetadata(
         requestId: _uuid.v4(),
@@ -677,8 +978,15 @@ class KYCNotifier extends _$KYCNotifier {
       return _submitBusiness(onRetry: onRetry);
     }
 
+    // A MULTI-ID run has no current selection by the time it submits: every
+    // check committed its own slot and cleared the picker for the next one, so
+    // the run's ID types live on the slots. Requiring a live selection here
+    // refused EVERY multi-ID submission with "No ID type selected" — the run
+    // was walked in full, the documents were uploaded, and the submit was
+    // rejected by the client before a request was ever made.
     final idTypeConfig = state.selectedIdType;
-    if (idTypeConfig == null) {
+    final committedSlots = state.multiIdSlots;
+    if (idTypeConfig == null && committedSlots.isEmpty) {
       throw const KYCApiException(
         statusCode: 0,
         error: 'invalid_state',
@@ -686,28 +994,32 @@ class KYCNotifier extends _$KYCNotifier {
       );
     }
 
-    // Number-only IDs require a typed-in idNumber and must pass format validation.
+    // Number-only IDs require a typed-in idNumber and must pass format
+    // validation. Only for the SINGLE-ID path: each multi-ID check validated
+    // its own evidence at its own step, and its number rides its own slot.
     String? idNumber = state.idNumber;
-    if (!idTypeConfig.requiresDocumentCapture) {
-      if (idNumber == null || idNumber.isEmpty) {
-        throw const KYCApiException(
-          statusCode: 0,
-          error: 'invalid_state',
-          message: 'No ID number provided',
-        );
+    if (idTypeConfig != null) {
+      if (!idTypeConfig.requiresDocumentCapture) {
+        if (idNumber == null || idNumber.isEmpty) {
+          throw const KYCApiException(
+            statusCode: 0,
+            error: 'invalid_state',
+            message: 'No ID number provided',
+          );
+        }
+        final validation = validateIdNumber(
+            idNumber, effectiveCountry(_config, state), idTypeConfig.key);
+        if (!validation.isValid) {
+          throw KYCApiException(
+            statusCode: 0,
+            error: 'invalid_state',
+            message: validation.errorMessage ?? 'Invalid ID number',
+          );
+        }
+      } else {
+        // For document-required IDs, the server extracts the number via OCR.
+        idNumber = null;
       }
-      final validation = validateIdNumber(
-          idNumber, effectiveCountry(_config, state), idTypeConfig.key);
-      if (!validation.isValid) {
-        throw KYCApiException(
-          statusCode: 0,
-          error: 'invalid_state',
-          message: validation.errorMessage ?? 'Invalid ID number',
-        );
-      }
-    } else {
-      // For document-required IDs, the server extracts the number via OCR.
-      idNumber = null;
     }
 
     state = state.copyWith(isLoading: true);
@@ -720,10 +1032,27 @@ class KYCNotifier extends _$KYCNotifier {
     final deviceMetadata = await _collectDeviceMetadata();
 
     final mediaIds = state.mediaIds;
+
+    // Multi-ID: every check was committed as a slot, and the whole run submits
+    // as ONE verification the server judges by the pass policy. The FIRST slot
+    // fills the single-ID fields.
+    final multiSlots = state.multiIdSlots.length >= 2 ? state.multiIdSlots : null;
+    final primary = multiSlots?.first;
+
     final request = VerifyRequest(
+      sessionId: state.sessionId,
       country: effectiveCountry(_config, state),
-      idType: idTypeConfig.key,
-      idNumber: idNumber,
+      idType: primary?.idType ?? idTypeConfig?.key ?? '',
+      idNumber: primary?.idNumber ?? idNumber,
+      // Each check carries its OWN chip read — a top-level payload could only
+      // ever be attributed to the primary check.
+      idChecks: multiSlots
+          ?.map((slot) => {
+                ...slot.toWire(),
+                if (slot.chipData != null)
+                  'nfc': _nfcPayload(slot.chipData!).toJson(),
+              })
+          .toList(growable: false),
       workflowId: _config.workflowId,
       // Only sent for prop mounts; a resolved workflow's mode wins server-side.
       livenessMode: _config.workflowId == null ? _config.livenessMode : null,
@@ -739,8 +1068,12 @@ class KYCNotifier extends _$KYCNotifier {
       userData: resolveVerifyUserData(_config.userData, state.userData),
       mediaIds: mediaIds.hasAny
           ? VerifyMediaIds(
-              documentFront: mediaIds.documentFront,
-              documentBack: mediaIds.documentBack,
+              // Multi-ID: the slot documents ride idChecks; only the RUN-level
+              // media (the one selfie and its video) sit at the top level.
+              // Sending a slot's document here too would file the last ID's
+              // capture as though it were the verification's own.
+              documentFront: multiSlots == null ? mediaIds.documentFront : null,
+              documentBack: multiSlots == null ? mediaIds.documentBack : null,
               selfie: mediaIds.selfie,
               documentFrontVideo: mediaIds.documentFrontVideo,
               documentBackVideo: mediaIds.documentBackVideo,
@@ -762,15 +1095,10 @@ class KYCNotifier extends _$KYCNotifier {
           : null,
       // Validate-and-drop: only send chip data for a chip-capable selected ID
       // (mirrors the server, which drops the block for non-chip IDs).
-      nfc: (state.nfcChipData != null && idTypeConfig.supportsNfc)
-          ? VerifyNfc(
-              dg1: state.nfcChipData!.dg1Base64,
-              sod: state.nfcChipData!.sodBase64,
-              dg2: state.nfcChipData!.dg2Base64,
-              chipAuth: state.nfcChipData!.chipAuth,
-              paceOutcome: state.nfcChipData!.paceOutcome,
-              paceDetail: state.nfcChipData!.paceDetail,
-            )
+      nfc: (multiSlots == null &&
+              state.nfcChipData != null &&
+              (idTypeConfig?.supportsNfc ?? false))
+          ? _nfcPayload(state.nfcChipData!)
           : null,
       metadata: VerifyMetadata(
         requestId: requestId,
@@ -797,10 +1125,184 @@ class KYCNotifier extends _$KYCNotifier {
 
   // ── Reset ──────────────────────────────────────────────────────────────────
 
+  Future<void> _startAttemptSession() async {
+    try {
+      // The device id is the anonymous-mount resume fallback: without a
+      // userId the server has nothing else to find the previous attempt by,
+      // and every relaunch minted a fresh session. Hashed server-side.
+      final deviceRef = await FingerprintService.instance.persistentDeviceId();
+      final res = await api.startSession(
+        externalUserId: _config.userId ?? _config.metadata?['userId'],
+        workflowId: _config.workflowId,
+        deviceRef: deviceRef,
+      );
+      state = state.copyWith(sessionId: res.sessionId, sessionUrl: res.url);
+      // Resuming: put the user back where they were, exactly as web does.
+      // The stored snapshot hydrates the state (session_restore.dart), so
+      // their step, captures and typed data survive an app restart.
+      final progress = res.progress;
+      if (progress != null && progress.isNotEmpty) {
+        state = restoredState(
+          state,
+          progress,
+          // The country the flow would use anyway — without it a session whose
+          // applicant never picked one cannot rebuild its ID type.
+          fallbackCountry: effectiveCountry(_config, state),
+        );
+      }
+    } catch (_) {
+      // Resuming is a convenience; verifying is not conditional on it.
+    }
+  }
+
   void reset() {
     // Fresh step journey per session (mirrors the RN store's reset).
     StepLog.reset();
     StepLog.record(KYCStep.consent);
+    _progressTimer?.cancel();
+    _lastSavedProgress = '';
     state = const KYCState();
+  }
+
+  // ── Attempt-session progress ────────────────────────────────────────────
+  //
+  // Written as the user advances, debounced and deduped, mirroring the web
+  // SDK's useSessionProgress. Untouched progress is never written: the
+  // presence of stored progress IS "they started", and a save-on-mount would
+  // make every opened flow look started.
+
+  Timer? _progressTimer;
+  String _lastSavedProgress = '';
+
+  void _scheduleProgressSave(KYCState next) {
+    if (next.sessionId == null) return;
+    _progressTimer?.cancel();
+    _progressTimer = Timer(const Duration(milliseconds: 800), () {
+      final s = state;
+      final sessionId = s.sessionId;
+      if (sessionId == null) return;
+      final payload = progressFromState(
+        s,
+        effectiveCountryValue: effectiveCountry(_config, s),
+      );
+      if (isUntouchedProgress(payload)) return;
+      final fingerprint = jsonEncode(payload);
+      if (fingerprint == _lastSavedProgress) return;
+      _lastSavedProgress = fingerprint;
+      // Losing a save costs some re-typing on a future resume, never anything
+      // now.
+      api.saveProgress(sessionId, payload).catchError((_) {});
+    });
+  }
+
+  /// The paid registry check for the typed company, run at selection so the
+  /// register answers BEFORE the details screen asks the applicant to confirm
+  /// what it said — and its key people arrive before that step asks for them
+  /// (they also prefill it). Only a definitive "not on the register" stops the
+  /// flow: everything else (a short balance, an outage, a spent lookup budget)
+  /// continues and is checked at submission, exactly as before. Mirrors the
+  /// web SDK's useBusinessCheck and the RN store's runBusinessCheck.
+  Future<BusinessCheckResult> checkBusiness() async {
+    final s = state;
+    final registrationNumber = s.registrationNumber?.trim() ?? '';
+    if (registrationNumber.isEmpty) return (canContinue: true, company: null);
+
+    // Already checked this exact company — do not pay to be told again.
+    //
+    // Only a SETTLED answer is reused. 'unavailable' is deliberately not one:
+    // an outage said nothing about the company, so a repeat press retries the
+    // register rather than replaying the outage. And a remembered answer keeps
+    // its meaning — a stored not_found still blocks.
+    final normalized = registrationNumber.toUpperCase();
+    final check = s.businessCheck;
+    final settled = check.status != 'idle' &&
+        check.status != 'checking' &&
+        check.status != 'unavailable';
+    if (check.checkedNumber == normalized && settled) {
+      return (
+        canContinue: check.status != 'not_found',
+        company: check.company,
+      );
+    }
+
+    // No session means no anchor for the charge, so there is nothing to run
+    // against. The check happens at submission, exactly as it did before.
+    final sessionId = s.sessionId;
+    if (sessionId == null) return (canContinue: true, company: null);
+
+    state = s.copyWith(
+      businessCheck:
+          check.copyWith(status: 'checking', checkedNumber: normalized),
+    );
+    try {
+      final registrationName = (s.registrationName ?? '').trim();
+      final res = await api.businessSelect(
+        sessionId: sessionId,
+        country: s.businessCountry ?? _config.business?.country ?? '',
+        subdivisionCode: s.businessSubdivisionCode,
+        registrationNumber: registrationNumber,
+        registrationName: registrationName.isEmpty ? null : registrationName,
+        product: s.businessProduct,
+      );
+      if (!res.checked) {
+        // The organisation could not be charged. Not the applicant's problem
+        // and not something they can fix, so it is not shown as an error — the
+        // flow continues and the check runs at submission.
+        // `lookup_limit_reached` is the one they DID cause, by re-picking
+        // company after company, and the one they can act on: check the number
+        // rather than keep trying.
+        state = state.copyWith(
+          businessCheck: state.businessCheck.copyWith(
+            status: res.reason == 'lookup_limit_reached'
+                ? 'limit_reached'
+                : 'skipped',
+          ),
+        );
+        return (canContinue: true, company: null);
+      }
+      if (!res.found) {
+        // A definitive "not on the register" is worth stopping for: continuing
+        // would spend the applicant's time on documents for a company that
+        // will fail anyway.
+        state = state.copyWith(
+          businessCheck: state.businessCheck.copyWith(
+            status: 'not_found',
+            clearCompany: true,
+            officers: const [],
+          ),
+        );
+        return (canContinue: false, company: null);
+      }
+      final company = res.business;
+      state = state.copyWith(
+        businessCheck: state.businessCheck.copyWith(
+          status: 'found',
+          company: company,
+          officers: res.officers,
+        ),
+      );
+      // Start the key-people step from the register's own officer list, so it
+      // is a confirmation rather than a memory test. Applied at ARRIVAL rather
+      // than at step mount (the screen is stateless) — same outcome, same
+      // guard: never over anything the applicant has typed.
+      if (res.officers.isNotEmpty && shouldPrefill(state.keyPeople)) {
+        state = state.copyWith(
+          keyPeople: prefillKeyPeople(
+            res.officers,
+            state.businessCountry ?? _config.business?.country ?? '',
+          ),
+        );
+      }
+      return (canContinue: true, company: company);
+    } catch (_) {
+      // A register outage is NOT "this company does not exist" — telling the
+      // applicant their business is unregistered on the strength of a 503 is
+      // the one wrong answer here. Retryable, and it never blocks: the check
+      // still happens at submission.
+      state = state.copyWith(
+        businessCheck: state.businessCheck.copyWith(status: 'unavailable'),
+      );
+      return (canContinue: true, company: null);
+    }
   }
 }

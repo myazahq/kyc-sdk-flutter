@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/contact_recovery.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/contact_errors.dart';
+import '../widgets/myaza_alert.dart';
 import 'contact_header_sync.dart';
 import 'contact_verification_actions.dart';
 import 'contact_verification_entry.dart';
@@ -50,7 +52,10 @@ class _ContactVerificationScreenState
 
   bool get _isPhone => widget.channel == 'phone';
   ContactChannelSettings get _settings => ContactChannelSettings.resolve(
-      ref.read(kycConfigProvider), widget.channel);
+        ref.read(kycConfigProvider),
+        widget.channel,
+        geoCountry: ref.read(kYCNotifierProvider).serverConfig.geoCountry,
+      );
 
   /// Any request in flight — drives the button loader and input disabling.
   bool get _busy => _sending || _checking;
@@ -58,7 +63,27 @@ class _ContactVerificationScreenState
       _isPhone ? _phoneValid : isPlausibleContactEmail(_destination);
   bool get _canVerify => _code.trim().length >= kMinCodeLength;
   KYCApiService get _api => ref.read(kYCNotifierProvider.notifier).api;
-  void _advance() => ref.read(kYCNotifierProvider.notifier).nextStep();
+
+  /// Entered via submit recovery? (The server refused this channel's proof at
+  /// submit — the token had expired or was already claimed.) Captured once:
+  /// verifying clears the flag, and Continue must still route back to
+  /// `submitted` afterwards (which auto-submits with the fresh proof).
+  late final bool _recovery =
+      ref.read(kYCNotifierProvider).expiredContact.contains(widget.channel);
+
+  void _advance() {
+    final notifier = ref.read(kYCNotifierProvider.notifier);
+    final target = stepAfterContactVerified(
+      recovery: _recovery,
+      expired: ref.read(kYCNotifierProvider).expiredContact,
+      channel: widget.channel,
+    );
+    if (target != null) {
+      notifier.goToStep(target);
+    } else {
+      notifier.nextStep();
+    }
+  }
 
   @override
   void dispose() {
@@ -156,6 +181,15 @@ class _ContactVerificationScreenState
           via: _isPhone ? (_via ?? settings.defaultChannel ?? '') : '',
           destination: hasChallenge ? _destination : '',
         ),
+        if (_recovery && !hasChallenge) ...[
+          MyazaAlert(
+            variant: MyazaAlertVariant.warning,
+            title: 'Please verify again',
+            message:
+                'Your earlier confirmation has expired, so please verify ${_isPhone ? 'your number' : 'your email'} once more. Everything else is saved, and we will submit again straight after.',
+          ),
+          const SizedBox(height: 16),
+        ],
         if (!hasChallenge)
           ContactEntryPanel(
             isPhone: _isPhone,

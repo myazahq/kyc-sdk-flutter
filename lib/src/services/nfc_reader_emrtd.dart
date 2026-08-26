@@ -9,6 +9,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_nfc_kit/flutter_nfc_kit.dart';
 
+import '../nfc/emrtd_active_auth.dart';
+import '../nfc/emrtd_extras.dart';
 import '../nfc/emrtd_session.dart';
 import 'nfc_reader.dart';
 
@@ -41,6 +43,7 @@ class EmrtdNfcChipReader implements NfcChipReader {
     NfcMrzKey key, {
     String iosAlertMessage = 'Hold your phone near the document’s chip',
     void Function(NfcReadStage stage)? onStage,
+    AaChallenge? aaChallenge,
   }) async {
     var connected = false;
     try {
@@ -48,7 +51,7 @@ class EmrtdNfcChipReader implements NfcChipReader {
       await _pollForTag(iosAlertMessage, onStage);
       connected = true;
       _log('tag acquired');
-      return await _readOpenedChip(key, onStage, () => connected = false);
+      return await _readOpenedChip(key, onStage, () => connected = false, aaChallenge);
     } on NfcReadException {
       if (connected) await _finish(error: 'Chip read failed');
       rethrow;
@@ -137,6 +140,7 @@ class EmrtdNfcChipReader implements NfcChipReader {
     NfcMrzKey key,
     void Function(NfcReadStage stage)? onStage,
     void Function() markFinished,
+    AaChallenge? aaChallenge,
   ) async {
     {
       final session = EmrtdSession(
@@ -229,6 +233,27 @@ class EmrtdNfcChipReader implements NfcChipReader {
         }
       }
 
+      // The OPTIONAL groups last of all, and only when the SOD came back: the
+      // server can only TRUST them by hashing against it, so without one they
+      // would be unverifiable bytes bought with extra seconds on the document.
+      var extras = const ExtraGroupReads();
+      var activeAuth = const ActiveAuthRead();
+      if (sod != null) {
+        try {
+          extras = await readExtraGroups(session);
+        } catch (_) {
+          // Costs the extras alone — never the banked DG1/SOD/DG2.
+        }
+        // The anti-clone challenge LAST: it is the only step that asks the chip
+        // to COMPUTE rather than read, so it is the slowest per byte and the
+        // one worth losing if the document leaves contact.
+        try {
+          activeAuth = await readActiveAuth(session, aaChallenge);
+        } catch (_) {
+          // Same contract — the check is lost, the read is not.
+        }
+      }
+
       onStage?.call(NfcReadStage.done);
       await _finish(message: 'Chip read complete');
       markFinished();
@@ -249,13 +274,35 @@ class EmrtdNfcChipReader implements NfcChipReader {
         ' (pace: ${session.paceOutcome?.name ?? 'n/a'}'
         '${session.paceDetail == null ? '' : ' — ${session.paceDetail}'})'
         ' · sod=${sod == null ? 'missing' : '${sod.length}B'}'
-        ' · dg2=${dg2 == null ? 'missing' : '${dg2.length}B'}',
+        ' · dg2=${dg2 == null ? 'missing' : '${dg2.length}B'}'
+        ' · extras=${extras.isEmpty ? 'none' : [
+            if (extras.dg7 != null) 'dg7',
+            if (extras.dg11 != null) 'dg11',
+            if (extras.dg12 != null) 'dg12',
+          ].join('+')}'
+        ' · aa=${activeAuth.isEmpty ? 'none' : activeAuth.signature == null ? 'dg15-only' : 'signed'}',
       );
 
       return NfcChipData(
         dg1Base64: base64.encode(dg1),
         sodBase64: sod == null ? null : base64.encode(sod),
         dg2Base64: dg2 == null ? null : base64.encode(dg2),
+        dg7Base64:
+            extras.dg7 == null ? null : base64.encode(extras.dg7!),
+        dg11Base64:
+            extras.dg11 == null ? null : base64.encode(extras.dg11!),
+        dg12Base64:
+            extras.dg12 == null ? null : base64.encode(extras.dg12!),
+        dg15Base64:
+            activeAuth.dg15 == null ? null : base64.encode(activeAuth.dg15!),
+        aaSignatureBase64: activeAuth.signature == null
+            ? null
+            : base64.encode(activeAuth.signature!),
+        // Only when the chip actually SIGNED: the id is what the server spends,
+        // and spending a nonce for a signature that never arrived would burn it
+        // for nothing.
+        aaChallengeId:
+            activeAuth.signature == null ? null : aaChallenge?.id,
         // STRICTLY the protocol: the server validates this against
         // ('bac'|'pace'|'none') and rejects the whole submission otherwise.
         // The PACE diagnostic travels in its own field.

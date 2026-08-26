@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../config/theme.dart';
 import '../services/nfc_reader.dart';
 import 'nfc_read_progress.dart';
+import 'themed_sheet.dart';
 
 // ─── NFC read sheet (Android) ─────────────────────────────────────────────────
 //
@@ -31,7 +32,20 @@ Future<void> showNfcReadSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (_) => _NfcReadSheet(stage: stage),
+    builder: (sheetContext) {
+      // The same floating-card geometry as every other SDK sheet
+      // (themed_sheet.dart): detached from the edges, system-sheet radius.
+      final safeBottom = MediaQuery.paddingOf(sheetContext).bottom;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(
+          kMyazaSheetInset,
+          0,
+          kMyazaSheetInset,
+          safeBottom > kMyazaSheetInset ? safeBottom : kMyazaSheetInset,
+        ),
+        child: _NfcReadSheet(stage: stage),
+      );
+    },
   );
 }
 
@@ -52,68 +66,65 @@ class _NfcReadSheet extends StatelessWidget {
         return Container(
           decoration: BoxDecoration(
             color: colors.background,
-            borderRadius: BorderRadius.vertical(
-              top: Radius.circular(MyazaRadius.lg),
-            ),
+            // A floating card: all four corners, concentric with the device's
+            // display — never the brand-scaled tokens (themed_sheet.dart).
+            borderRadius: BorderRadius.circular(myazaSheetRadius(context)),
           ),
-          padding: const EdgeInsets.fromLTRB(
-              MyazaSpacing.lg, MyazaSpacing.sm, MyazaSpacing.lg, MyazaSpacing.lg),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: colors.gray300,
-                      borderRadius: BorderRadius.circular(MyazaRadius.full),
-                    ),
+          padding: const EdgeInsets.fromLTRB(MyazaSpacing.lg, MyazaSpacing.sm,
+              MyazaSpacing.lg, MyazaSpacing.lg),
+          // No SafeArea: the float itself already clears the home indicator
+          // (the outer Padding takes max(safeBottom, inset)), so an inner
+          // inset would pad for it a second time inside the card.
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.gray300,
+                    borderRadius: BorderRadius.circular(MyazaRadius.full),
                   ),
                 ),
-                const SizedBox(height: MyazaSpacing.lg),
-
-                _PulsingChipIcon(waiting: waiting),
-                const SizedBox(height: MyazaSpacing.md),
-
-                Text(
-                  // Waiting is an instruction; everything after it is a report.
-                  waiting ? 'Hold your document to the phone' : 'Reading the chip',
-                  style: text.heading3,
-                  textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: MyazaSpacing.lg),
+              _PulsingChipIcon(waiting: waiting),
+              const SizedBox(height: MyazaSpacing.md),
+              Text(
+                // Waiting is an instruction; everything after it is a report.
+                waiting
+                    ? 'Hold your document to the phone'
+                    : 'Reading the chip',
+                style: text.heading3,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: MyazaSpacing.xs),
+              Text(
+                current.detail,
+                style: text.bodySmall.copyWith(color: colors.textSecondary),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: MyazaSpacing.lg),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(MyazaRadius.full),
+                child: LinearProgressIndicator(
+                  value: waiting ? null : current.progress,
+                  minHeight: 6,
+                  backgroundColor: colors.gray300,
+                  valueColor: AlwaysStoppedAnimation(colors.primary),
                 ),
-                const SizedBox(height: MyazaSpacing.xs),
-                Text(
-                  current.detail,
-                  style: text.bodySmall.copyWith(color: colors.textSecondary),
-                  textAlign: TextAlign.center,
-                ),
-
-                const SizedBox(height: MyazaSpacing.lg),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(MyazaRadius.full),
-                  child: LinearProgressIndicator(
-                    value: waiting ? null : current.progress,
-                    minHeight: 6,
-                    backgroundColor: colors.gray300,
-                    valueColor: AlwaysStoppedAnimation(colors.primary),
-                  ),
-                ),
-                const SizedBox(height: MyazaSpacing.lg),
-
-                NfcReadProgress(stage: current),
-                const SizedBox(height: MyazaSpacing.md),
-
-                Text(
-                  'Keep the document still until every step is ticked.',
-                  style: text.bodySmall.copyWith(color: colors.gray400),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
+              ),
+              const SizedBox(height: MyazaSpacing.lg),
+              NfcReadProgress(stage: current),
+              const SizedBox(height: MyazaSpacing.md),
+              Text(
+                'Keep the document still until every step is ticked.',
+                style: text.bodySmall.copyWith(color: colors.gray400),
+                textAlign: TextAlign.center,
+              ),
+            ],
           ),
         );
       },

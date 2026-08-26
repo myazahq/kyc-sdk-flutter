@@ -6,6 +6,8 @@
 // flutter_nfc_kit) lives in nfc_reader_emrtd.dart; tests inject a fake via
 // [nfcChipReaderOverride].
 
+import '../nfc/emrtd_active_auth.dart';
+
 /// The MRZ-derived Basic Access Control key needed to open a BAC chip session:
 /// document number + date of birth + date of expiry (from the document's MRZ).
 class NfcMrzKey {
@@ -35,6 +37,27 @@ class NfcChipData {
   /// face match. null ⇒ the chip check runs without it, exactly as before.
   final String? dg2Base64;
 
+  /// Base64 DG7 / DG11 / DG12 — the OPTIONAL groups: the displayed signature
+  /// image, and additional personal / document details. Read last and
+  /// best-effort; the server hash-verifies each against the SOD exactly as it
+  /// does DG2 and records what they said. None of them changes a verdict, and
+  /// DG3/DG4 (fingerprints, iris) are never read at all — they are
+  /// EAC-protected and reserved for government terminals.
+  final String? dg7Base64;
+  final String? dg11Base64;
+  final String? dg12Base64;
+
+  /// Base64 DG15 — the chip's ACTIVE-AUTHENTICATION public key — and its
+  /// signature over the challenge the server issued, plus which challenge that
+  /// was. Together they are the ANTI-CLONE proof: passive authentication says
+  /// the issuing state signed this data, and only these say it is the chip they
+  /// signed it onto. Verified SERVER-side against a SOD-bound DG15; a client
+  /// that checked its own chip could be patched to say yes. All null on the
+  /// many chips that support no Active Authentication at all.
+  final String? dg15Base64;
+  final String? aaSignatureBase64;
+  final String? aaChallengeId;
+
   final String chipAuth;
 
   /// Why the session ended up on [chipAuth] — `used`, `notOffered`,
@@ -57,6 +80,12 @@ class NfcChipData {
     required this.dg1Base64,
     this.sodBase64,
     this.dg2Base64,
+    this.dg7Base64,
+    this.dg11Base64,
+    this.dg12Base64,
+    this.dg15Base64,
+    this.aaSignatureBase64,
+    this.aaChallengeId,
     this.chipAuth = 'bac',
     this.sodError,
     this.paceOutcome,
@@ -182,6 +211,10 @@ abstract class NfcChipReader {
     NfcMrzKey key, {
     String iosAlertMessage,
     void Function(NfcReadStage stage)? onStage,
+    /// The Active-Authentication challenge issued by the SERVER. Absent ⇒ the
+    /// anti-clone step is skipped and the read is exactly what it was before —
+    /// the capability null-degrades rather than failing.
+    AaChallenge? aaChallenge,
   });
 }
 

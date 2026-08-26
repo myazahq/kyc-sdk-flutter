@@ -60,6 +60,11 @@ class FingerprintService {
 
   /// A per-install UUID persisted to the app support dir (the mobile analog of
   /// the web SDK's localStorage `myaza-kyc-did`). Generated once, then reused.
+  /// The persistent device id alone — the anonymous-mount session resume
+  /// fallback (the server hashes it before storage). Same id `collect()`
+  /// carries in the fingerprint.
+  Future<String?> persistentDeviceId() => _persistentDeviceId();
+
   Future<String?> _persistentDeviceId() async {
     if (_cachedDeviceId != null) return _cachedDeviceId;
     try {

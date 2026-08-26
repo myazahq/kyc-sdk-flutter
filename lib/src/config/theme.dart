@@ -53,7 +53,13 @@ class MyazaColorScheme extends ThemeExtension<MyazaColorScheme> {
     backgroundSecondary: Color(0xFFF6F5FE),
     textDark:            Color(0xFF070330),
     textSecondary:       Color(0xFF5A5775),
-    textMuted:           Color(0xFF828197),
+    // React's muted-foreground, exactly. The mobile SDKs had invented a THIRD,
+    // dimmer text tier that web does not have, and it failed WCAG AA in both
+    // modes: 3.79:1 on white and 2.97:1 on the default dark, dropping to
+    // 2.45:1 on the dark backgrounds orgs actually brand with. Nothing is
+    // gained by a tier nobody can read, so it takes the same value as the tier
+    // above it, the way web does with one token for both.
+    textMuted:           Color(0xFF5A5775),
     border:              Color(0xFFD3CFFC),
     primary:             Color(0xFF5645F5),
     onPrimary:           Color(0xFFFFFFFF),
@@ -75,7 +81,7 @@ class MyazaColorScheme extends ThemeExtension<MyazaColorScheme> {
     backgroundSecondary: Color(0xFF0F0C2E),
     textDark:            Color(0xFFF6F5FE),
     textSecondary:       Color(0xFFACABBA),
-    textMuted:           Color(0xFF5A5775),
+    textMuted:           Color(0xFFACABBA),
     border:              Color(0xFF302D53),
     primary:             Color(0xFF7B6EF7),
     onPrimary:           Color(0xFFFFFFFF),

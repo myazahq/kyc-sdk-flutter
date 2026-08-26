@@ -1,6 +1,13 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+
+import '../nfc/emrtd_active_auth.dart';
+import 'api_business.dart';
+
+// Re-exported so callers keep a single view of the HTTP contract.
+export 'api_business.dart';
 
 // ─── SDK version ─────────────────────────────────────────────────────────────
 //
@@ -8,7 +15,7 @@ import 'package:dio/dio.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.5.0';
+const String kSdkVersion = '2.6.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -131,6 +138,15 @@ class VerifyBusiness {
   final String? phone;
   final String? website;
 
+  /// The five registry facts the applicant STATES, sent only when filled. The
+  /// server drops any the workflow has switched off (validate-and-drop), and
+  /// an under-send is what the required-field 422 is for.
+  final String? dateOfIncorporation;
+  final String? taxId;
+  final String? vatNumber;
+  final String? companyType;
+  final String? natureOfBusiness;
+
   /// Uploaded supporting documents (`[{ type, mediaId }]`) — only honored when
   /// the workflow's `business.documents` block configures them.
   final List<Map<String, dynamic>>? documents;
@@ -138,6 +154,11 @@ class VerifyBusiness {
   /// Applicant-declared directors & owners (≤20; `email` drives auto-sent
   /// invites). Only honored when the workflow sets `keyPeople.collect`.
   final List<Map<String, dynamic>>? keyPeople;
+
+  /// The FATF fallback, attested: no natural person qualifies as a UBO.
+  /// Branchable server-side as `keyPeople.uboUnidentifiable`; a claim, never a
+  /// finding.
+  final bool uboUnidentifiable;
 
   /// The applicant's declared role (+ optional name — the server backfills it
   /// from their verified KYC when absent).
@@ -152,8 +173,14 @@ class VerifyBusiness {
     this.email,
     this.phone,
     this.website,
+    this.dateOfIncorporation,
+    this.taxId,
+    this.vatNumber,
+    this.companyType,
+    this.natureOfBusiness,
     this.documents,
     this.keyPeople,
+    this.uboUnidentifiable = false,
     this.applicant,
   });
 
@@ -168,8 +195,14 @@ class VerifyBusiness {
         if (_has(email)) 'email': email,
         if (_has(phone)) 'phone': phone,
         if (_has(website)) 'website': website,
+        if (_has(dateOfIncorporation)) 'dateOfIncorporation': dateOfIncorporation,
+        if (_has(taxId)) 'taxId': taxId,
+        if (_has(vatNumber)) 'vatNumber': vatNumber,
+        if (_has(companyType)) 'companyType': companyType,
+        if (_has(natureOfBusiness)) 'natureOfBusiness': natureOfBusiness,
         if (documents != null && documents!.isNotEmpty) 'documents': documents,
         if (keyPeople != null && keyPeople!.isNotEmpty) 'keyPeople': keyPeople,
+        if (uboUnidentifiable) 'uboUnidentifiable': true,
         if (applicant != null) 'applicant': applicant,
       };
 }
@@ -185,6 +218,23 @@ class VerifyNfc {
   /// DG2 hash; omitted when the portrait couldn't be read.
   final String? dg2;
 
+  /// The OPTIONAL groups: the displayed signature image (DG7) and additional
+  /// personal / document details (DG11 / DG12). Verified against the SOD like
+  /// DG2; recorded on the result, never decisive.
+  final String? dg7;
+  final String? dg11;
+  final String? dg12;
+
+  /// DG15 (the chip's ACTIVE-AUTHENTICATION public key), its signature over the
+  /// challenge the server issued, and which challenge that was — the ANTI-CLONE
+  /// proof. Passive authentication says the issuing state signed this data;
+  /// only these say it is the chip they signed it onto. Verified server-side
+  /// against a SOD-bound DG15, never here: a client that checked its own chip
+  /// could be patched to say yes.
+  final String? dg15;
+  final String? aaSignature;
+  final String? aaChallengeId;
+
   /// STRICTLY `bac` | `pace` | `none` — the server validates it as an enum and
   /// rejects the whole submission for anything else.
   final String chipAuth;
@@ -197,6 +247,12 @@ class VerifyNfc {
     required this.dg1,
     this.sod,
     this.dg2,
+    this.dg7,
+    this.dg11,
+    this.dg12,
+    this.dg15,
+    this.aaSignature,
+    this.aaChallengeId,
     this.chipAuth = 'bac',
     this.paceOutcome,
     this.paceDetail,
@@ -206,6 +262,15 @@ class VerifyNfc {
         'dg1': dg1,
         if (sod != null) 'sod': sod,
         if (dg2 != null) 'dg2': dg2,
+        // The optional groups. Hash-verified server-side against the SOD like
+        // DG2; recorded, never decisive.
+        if (dg7 != null) 'dg7': dg7,
+        if (dg11 != null) 'dg11': dg11,
+        if (dg12 != null) 'dg12': dg12,
+        // The anti-clone proof. Sent only when the chip actually signed.
+        if (dg15 != null) 'dg15': dg15,
+        if (aaSignature != null) 'aaSignature': aaSignature,
+        if (aaChallengeId != null) 'aaChallengeId': aaChallengeId,
         'chipAuth': chipAuth,
         if (paceOutcome != null) 'paceOutcome': paceOutcome,
         if (paceDetail != null) 'paceDetail': paceDetail,
@@ -235,6 +300,10 @@ class VerifyRequest {
   final String idType;
   final String? idNumber;
 
+  /// The attempt session this run happened under — the verification adopts its
+  /// id, and a registry check paid at selection is not paid again at submit.
+  final String? sessionId;
+
   /// Attribution to the workflow this submission ran under. The server
   /// validates-and-drops a stale/foreign id — it never fails the submission.
   final String? workflowId;
@@ -242,6 +311,12 @@ class VerifyRequest {
   /// Liveness method (`gestures`/`flash`/`both`) — the server prices by it. Only
   /// sent for prop-configured mounts; a resolved workflow wins server-side.
   final String? livenessMode;
+
+  /// Multi-ID: every check in the run, in pick order (2–3). ONE verification
+  /// comes back, judged by the workflow's pass policy. The top-level
+  /// `idType`/`idNumber` mirror the first entry, so anything reading a
+  /// verification's own ID keeps one meaning.
+  final List<Map<String, dynamic>>? idChecks;
 
   /// The org's user reference → Entity.externalUserId at the seam (not matched).
   final String? userId;
@@ -280,6 +355,7 @@ class VerifyRequest {
     required this.country,
     required this.idType,
     this.idNumber,
+    this.sessionId,
     this.workflowId,
     this.livenessMode,
     this.userId,
@@ -290,6 +366,7 @@ class VerifyRequest {
     this.deviceIntelligence,
     this.contact,
     this.nfc,
+    this.idChecks,
     this.business,
     this.subjectType,
     required this.metadata,
@@ -299,6 +376,8 @@ class VerifyRequest {
         'country': country,
         'idType': idType,
         if (idNumber != null) 'idNumber': idNumber,
+        if (idChecks != null && idChecks!.isNotEmpty) 'idChecks': idChecks,
+        if (sessionId != null) 'sessionId': sessionId,
         if (workflowId != null) 'workflowId': workflowId,
         if (livenessMode != null) 'livenessMode': livenessMode,
         if (userId != null) 'userId': userId,
@@ -320,6 +399,84 @@ class VerifyRequest {
 
 /// One key person the server minted an invite link for (KYB submissions where
 /// a role resolves to full KYC).
+/// One person a submitted KYB application is still waiting on.
+///
+/// The SERVER's view, not the applicant's: registry discovery runs AFTER
+/// submission and can add directors the applicant never listed, so the invite
+/// links returned at submit are only ever a first draft.
+class AwaitingPerson {
+  final String id;
+  final String name;
+  final String role;
+  final double? ownershipPct;
+
+  /// ISO-2, or null when the register gave free text no flag matches.
+  final String? country;
+
+  /// One of `verified` | `failed` | `submitted` | `pending` | `not_needed`.
+  final String status;
+
+  /// Null once their check is done, or when they never needed one.
+  final String? inviteUrl;
+  final bool isApplicant;
+
+  /// A company completes a KYB application, not a KYC — the list labels it so.
+  final bool isCorporate;
+
+  const AwaitingPerson({
+    required this.id,
+    required this.name,
+    required this.role,
+    this.ownershipPct,
+    this.country,
+    required this.status,
+    this.inviteUrl,
+    this.isApplicant = false,
+    this.isCorporate = false,
+  });
+
+  /// Still owes a check — drives whether the list keeps refreshing.
+  bool get stillOwes =>
+      status == 'pending' || status == 'submitted' || status == 'failed';
+
+  factory AwaitingPerson.fromJson(Map<String, dynamic> json) => AwaitingPerson(
+        id: json['id'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        role: json['role'] as String? ?? '',
+        ownershipPct: (json['ownershipPct'] as num?)?.toDouble(),
+        country: json['country'] as String?,
+        status: json['status'] as String? ?? 'pending',
+        inviteUrl: json['inviteUrl'] as String?,
+        isApplicant: json['isApplicant'] as bool? ?? false,
+        isCorporate: json['isCorporate'] as bool? ?? false,
+      );
+}
+
+/// The completed-session summary: who the application is waiting on, and
+/// whether the server has finished reconciling that list.
+class SessionSummaryResponse {
+  /// False while registry discovery is still reconciling the people list. A
+  /// list rendered before it settles is one director short, permanently.
+  final bool keyPeopleSettled;
+  final List<AwaitingPerson> keyPeople;
+
+  const SessionSummaryResponse({
+    required this.keyPeopleSettled,
+    required this.keyPeople,
+  });
+
+  factory SessionSummaryResponse.fromJson(Map<String, dynamic> json) =>
+      SessionSummaryResponse(
+        // Absent means an older server that never reconciled — treat as settled
+        // rather than spinning forever on a field it will never send.
+        keyPeopleSettled: json['keyPeopleSettled'] as bool? ?? true,
+        keyPeople: ((json['keyPeople'] as List?) ?? const [])
+            .whereType<Map>()
+            .map((e) => AwaitingPerson.fromJson(e.cast<String, dynamic>()))
+            .toList(growable: false),
+      );
+}
+
 class KeyPersonInvite {
   final String keyPersonId;
   final String name;
@@ -336,6 +493,37 @@ class KeyPersonInvite {
         keyPersonId: (json['keyPersonId'] ?? '').toString(),
         name: (json['name'] ?? '').toString(),
         inviteUrl: (json['inviteUrl'] ?? '').toString(),
+      );
+}
+
+/// `POST /session/start` — mint (or resume) an attempt session.
+class SessionStartResponse {
+  final String sessionId;
+  final bool resumed;
+
+  /// Where the user got to, when resuming: `{ step, mediaIds, data }` — the
+  /// snapshot progressFromState wrote, replayed by session_restore.dart.
+  /// Media references are already pruned server-side of anything expired.
+  final Map<String, dynamic>? progress;
+
+  /// The session's own hosted web page. After a KYB submission it is the
+  /// rehydrated success screen with every key person's invite link — the
+  /// applicant's way back to those links once the app closes.
+  final String? url;
+
+  const SessionStartResponse({
+    required this.sessionId,
+    required this.resumed,
+    this.progress,
+    this.url,
+  });
+
+  factory SessionStartResponse.fromJson(Map<String, dynamic> json) =>
+      SessionStartResponse(
+        sessionId: json['sessionId'] as String,
+        resumed: json['resumed'] == true,
+        progress: (json['progress'] as Map?)?.cast<String, dynamic>(),
+        url: json['url'] as String?,
       );
 }
 
@@ -486,8 +674,20 @@ class StatusResult {
 
 class StatusResponse {
   final String verificationId;
-  /// 'pending' | 'verified' | 'failed' | 'not_found' | 'error'
+
+  /// The one status vocabulary: 'not_started' | 'in_progress' | 'processing' |
+  /// 'in_review' | 'awaiting_resubmission' | 'approved' | 'declined' |
+  /// 'abandoned' | 'expired' | 'error'.
+  ///
+  /// What HAPPENED. [checkStatus] beside it is what the checks found, and the
+  /// two differ when a person overrode the automated result: 'approved' with a
+  /// checkStatus of 'failed' means somebody accepted the applicant despite a
+  /// failed check, and [reason] says what they accepted them despite.
   final String status;
+
+  /// What the CHECKS found: 'pending' | 'verified' | 'failed' | 'not_found' |
+  /// 'error'. Never moves once they finish, whatever anybody decides after.
+  final String? checkStatus;
   final String? reason;
   final StatusResult? result;
   final DateTime createdAt;
@@ -496,18 +696,30 @@ class StatusResponse {
   const StatusResponse({
     required this.verificationId,
     required this.status,
+    this.checkStatus,
     this.reason,
     this.result,
     required this.createdAt,
     this.completedAt,
   });
 
-  bool get isPending => status == 'pending';
+  /// Still running the checks.
+  ///
+  /// Compares against 'processing', which is what the server now calls this
+  /// state. It said 'pending' before the status vocabulary merged, and leaving
+  /// the old value here would have made every verification look instantly
+  /// finished the moment it was submitted.
+  bool get isPending => status == 'processing';
+
+  /// The checks have finished. A verification a workflow routed to a person
+  /// ('in_review') counts as complete here: the checks ARE done, and an SDK
+  /// must not sit polling for however long a human takes to answer.
   bool get isComplete => !isPending;
 
   factory StatusResponse.fromJson(Map<String, dynamic> json) => StatusResponse(
         verificationId: json['verificationId'] as String,
         status: json['status'] as String,
+        checkStatus: json['checkStatus'] as String?,
         reason: json['reason'] as String?,
         result: json['result'] != null
             ? StatusResult.fromJson(json['result'] as Map<String, dynamic>)
@@ -614,10 +826,18 @@ class SdkConfigResponse {
   /// Org branding (logo, name, color). May be null on older servers.
   final SdkConfigBranding? branding;
 
+  /// The visitor's country, resolved from their IP.
+  ///
+  /// A GUESS and only ever a DEFAULT — nothing branches on it and it never
+  /// reaches a verification. Deliberately not evidence: device intelligence
+  /// carries the same lookup as a RISK signal, and the two must not be confused.
+  final String? geoCountry;
+
   const SdkConfigResponse({
     required this.environment,
     required this.idTypes,
     this.branding,
+    this.geoCountry,
   });
 
   factory SdkConfigResponse.fromJson(Map<String, dynamic> json) =>
@@ -631,6 +851,7 @@ class SdkConfigResponse {
             ? SdkConfigBranding.fromJson(
                 (json['branding'] as Map).cast<String, dynamic>())
             : null,
+        geoCountry: json['geoCountry'] as String?,
       );
 }
 
@@ -879,6 +1100,121 @@ class KYCApiService {
     }
   }
 
+  // ── Attempt sessions ──────────────────────────────────────────────────────
+  //
+  // Best-effort by contract: sessions power resumability, the dashboard's
+  // live attempt view, and the registry check at selection. Verifying is
+  // never conditional on one existing, so callers swallow failures.
+
+  /// Mint (or resume) the attempt session this run is recorded under.
+  Future<SessionStartResponse> startSession({
+    String? externalUserId,
+    String? workflowId,
+    String? deviceRef,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/kyc/session/start',
+        data: {
+          if (externalUserId != null) 'externalUserId': externalUserId,
+          if (deviceRef != null) 'deviceRef': deviceRef,
+          if (workflowId != null) 'workflowId': workflowId,
+        },
+        options: Options(contentType: 'application/json'),
+      );
+      return SessionStartResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Save where the user has got to. Losing a save costs some re-typing on a
+  /// future resume, never anything now.
+  Future<void> saveProgress(String sessionId, Map<String, dynamic> progress) async {
+    try {
+      await _dio.put<void>(
+        '/api/kyc/session/${Uri.encodeComponent(sessionId)}/progress',
+        data: progress,
+        options: Options(contentType: 'application/json'),
+      );
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// The PAID registry check for the company the applicant identified, run at
+  /// selection so the register's key people come back BEFORE the form asks
+  /// for them. Never fails the flow: a short balance or a spent lookup budget
+  /// returns `checked: false` and the lookup happens at submit as before.
+  Future<BusinessSelectResponse> businessSelect({
+    required String sessionId,
+    required String country,
+    required String registrationNumber,
+    String? subdivisionCode,
+    String? registrationName,
+    String? product,
+  }) async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>(
+        '/api/kyc/business/select',
+        data: {
+          'sessionId': sessionId,
+          'country': country,
+          'registrationNumber': registrationNumber,
+          if (subdivisionCode != null && subdivisionCode.isNotEmpty)
+            'subdivisionCode': subdivisionCode,
+          if (registrationName != null && registrationName.isNotEmpty)
+            'registrationName': registrationName,
+          if (product != null) 'product': product,
+        },
+        options: Options(contentType: 'application/json'),
+      );
+      return BusinessSelectResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Find a business by name. FREE — no provider charge here or upstream, so
+  /// the applicant may look as many times as they need. Throws on a provider
+  /// failure so the caller can show "unavailable" rather than an empty list,
+  /// which would read as "this business is not registered".
+  Future<BusinessSearchResponse> businessSearch({
+    required String country,
+    required String query,
+    String? subdivisionCode,
+    int? limit,
+  }) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/kyc/business/search',
+        queryParameters: {
+          'country': country,
+          'query': query,
+          if (subdivisionCode != null && subdivisionCode.isNotEmpty)
+            'subdivisionCode': subdivisionCode,
+          if (limit != null) 'limit': limit,
+        },
+      );
+      return BusinessSearchResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// Registry regions for a country. Empty when it has a single register.
+  Future<BusinessRegionsResponse> businessRegions(String country) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/kyc/business/regions',
+        queryParameters: {'country': country},
+      );
+      return BusinessRegionsResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
   // ── Status — poll a verification's current status ──────────────────────────
 
   Future<StatusResponse> status(String verificationId) async {
@@ -897,6 +1233,41 @@ class KYCApiService {
   // Auth: API key (Bearer pk_*). The SDK calls this once on mount and uses
   // the response to filter the IdType picker and decide whether to skip
   // disabled steps (liveness, etc.).
+
+  /// The completed-session summary — who this application is still waiting on.
+  ///
+  /// Read AFTER submission: the invite links returned at submit are the
+  /// applicant's own list, and registry discovery can add people to it.
+  Future<SessionSummaryResponse> sessionSummary(String sessionId) async {
+    try {
+      final response = await _dio.get<Map<String, dynamic>>(
+        '/api/kyc/session/${Uri.encodeComponent(sessionId)}/summary',
+      );
+      return SessionSummaryResponse.fromJson(response.data!);
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
+
+  /// A fresh Active-Authentication challenge for a chip read — the nonce the
+  /// chip signs to prove it is the original document rather than a copy of one.
+  ///
+  /// It has to come from the SERVER: a nonce the client chose would let a
+  /// captured signature be replayed forever, which is the clone the check
+  /// exists to catch. Best-effort at every call site — a chip read without one
+  /// is exactly the read this SDK did before Active Authentication existed.
+  Future<AaChallenge> nfcChallenge() async {
+    try {
+      final response = await _dio.post<Map<String, dynamic>>('/api/kyc/nfc/challenge');
+      final body = response.data!;
+      return AaChallenge(
+        id: body['challengeId'] as String,
+        bytes: base64.decode(body['challenge'] as String),
+      );
+    } on DioException catch (e) {
+      throw _mapDioError(e);
+    }
+  }
 
   Future<SdkConfigResponse> config() async {
     try {
@@ -1004,6 +1375,11 @@ class KYCApiService {
           if (data['balance'] != null) 'balance': data['balance'],
           if (data['currency'] != null) 'currency': data['currency'],
         };
+      }
+      // 422 contact_verification_required carries `missing` (email | phone) —
+      // what submit recovery routes on.
+      if (statusCode == 422 && data['missing'] is List) {
+        details = {'missing': data['missing']};
       }
       // 403 feature_disabled carries `feature` (document_verification | gov_db_check).
       // 403 id_type_not_allowed carries `country`, `idType`, `reason`.

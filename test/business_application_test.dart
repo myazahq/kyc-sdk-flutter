@@ -222,8 +222,8 @@ void main() {
         [
           KYCStep.consent,
           KYCStep.businessDetails,
-          KYCStep.businessKeyPeople,
           KYCStep.businessDocuments,
+          KYCStep.businessKeyPeople,
           KYCStep.submitted,
         ],
       );
@@ -237,6 +237,45 @@ void main() {
         KYCStep.applicantRole,
         KYCStep.idType,
         // No ID picked yet, so the order assumes the document path.
+        KYCStep.documentCapture,
+        KYCStep.liveness,
+        KYCStep.submitted,
+      ]);
+    });
+
+    test('the applicant capture leg ends at submission, never the questionnaire',
+        () {
+      // The web SDK once routed post-capture to the questionnaire, which in a
+      // business flow LOOPED (questionnaire → key people → applicant capture →
+      // questionnaire). Flutter walks this one list in both directions, so the
+      // leak cannot happen — this pins the shape so a refactor cannot
+      // reintroduce it: questionnaire with the COMPANY section, capture leg
+      // straight into submitted.
+      final config = MyazaKYCConfig(
+        apiKey: 'pk_test_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        country: 'NG',
+        workflowId: 'wf_test',
+        subjectType: 'business',
+        business: WorkflowBusinessConfig.fromJson({
+          'country': 'NG',
+          'keyPeople': {'enabled': true, 'collect': true},
+          'applicant': {'verification': true},
+        }),
+        questionnaire: const QuestionnaireConfig(fields: [
+          QuestionnaireField(
+            key: 'source_of_funds',
+            type: QuestionnaireFieldType.text,
+            label: 'Source of funds',
+          ),
+        ]),
+      );
+      expect(buildStepOrder(config, const KYCState()), [
+        KYCStep.consent,
+        KYCStep.businessDetails,
+        KYCStep.questionnaire,
+        KYCStep.businessKeyPeople,
+        KYCStep.applicantRole,
+        KYCStep.idType,
         KYCStep.documentCapture,
         KYCStep.liveness,
         KYCStep.submitted,
@@ -301,12 +340,15 @@ void main() {
         ]),
       );
 
+      // The questionnaire sits BEFORE key people: its questions are about the
+      // COMPANY, and naming the directors hands the application over to other
+      // people. Mirrors the web and RN SDKs.
       expect(buildStepOrder(config, const KYCState()), [
         KYCStep.consent,
         KYCStep.businessDetails,
-        KYCStep.businessKeyPeople,
         KYCStep.businessDocuments,
         KYCStep.questionnaire,
+        KYCStep.businessKeyPeople,
         KYCStep.submitted,
       ]);
     });
@@ -357,6 +399,61 @@ void main() {
     test('the TIN product asks for a TIN, not a registration number', () {
       expect(businessProduct('business-tin').inputLabel, contains('TIN'));
       expect(businessProduct('business').inputLabel, 'Registration number');
+    });
+  });
+
+  _corporateTests();
+}
+
+void _corporateTests() {
+  group('a corporate shareholder', () {
+    const corp = KeyPersonEntry(
+      name: 'Acme Holdings Ltd',
+      role: KeyPersonRole.shareholder,
+      ownershipPct: '60',
+      isCorporate: true,
+      registrationNumber: 'RC123456',
+      owners: [
+        KeyPersonOwnerEntry(name: 'Jane Doe', ownershipPct: '75', country: 'gb'),
+        KeyPersonOwnerEntry(),
+      ],
+    );
+
+    test('sends the company flag, its number, and its named owners', () {
+      final json = keyPeoplePayload([corp]).single;
+      expect(json['isCorporate'], isTrue);
+      expect(json['registrationNumber'], 'RC123456');
+      expect(json['owners'], [
+        {'name': 'Jane Doe', 'ownershipPct': 75.0, 'country': 'GB'},
+      ]);
+    });
+
+    test('never sends the applicant themselves as a company', () {
+      // A company cannot be the person filling in the form.
+      final json = keyPeoplePayload([corp], applicantIndex: 0).single;
+      expect(json['isApplicant'], isTrue);
+      expect(json.containsKey('isCorporate'), isFalse);
+      expect(json.containsKey('owners'), isFalse);
+    });
+
+    test('sends nothing corporate for a person', () {
+      final json = keyPeoplePayload([corp.copyWith(isCorporate: false)]).single;
+      expect(json.containsKey('isCorporate'), isFalse);
+      expect(json.containsKey('registrationNumber'), isFalse);
+    });
+  });
+
+  group('looksCorporate', () {
+    test('recognises a company from a trailing designator', () {
+      expect(looksCorporate('Acme Holdings Ltd'), isTrue);
+      expect(looksCorporate('ACCESS HOLDINGS  PLC'), isTrue);
+    });
+
+    test('leaves a person whose given name reads corporate alone', () {
+      // "Trust" and "Grace" are ordinary Nigerian given names, so only a
+      // designator at the END of a name counts.
+      expect(looksCorporate('Trust Chukwu'), isFalse);
+      expect(looksCorporate('Bola Owner'), isFalse);
     });
   });
 }

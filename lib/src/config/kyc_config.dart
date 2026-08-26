@@ -5,6 +5,8 @@ import 'contact_verification.dart';
 import 'nfc_config.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
+import '../providers/step_resubmit.dart';
+import 'multi_id.dart';
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
@@ -361,13 +363,28 @@ class WorkflowCountryOption {
   /// Per-country ID-type subset (null/empty = every granted ID for the country).
   final List<String>? idTypes;
 
-  const WorkflowCountryOption({required this.country, this.idTypes});
+  /// Multi-ID: which IDs THIS country offers for each check in the run. A
+  /// pinned entry keeps its list; an absent one offers everything.
+  final List<List<String>?>? multiIdSlots;
+
+  const WorkflowCountryOption({
+    required this.country,
+    this.idTypes,
+    this.multiIdSlots,
+  });
 
   factory WorkflowCountryOption.fromJson(Map<String, dynamic> json) =>
       WorkflowCountryOption(
         country: json['country'] as String,
         idTypes: (json['idTypes'] as List?)
             ?.map((e) => e as String)
+            .toList(growable: false),
+        multiIdSlots: (json['multiIdSlots'] as List?)
+            ?.map((slot) => (slot is Map<String, dynamic>
+                    ? (slot['idTypes'] as List?)
+                        ?.map((e) => e as String)
+                        .toList(growable: false)
+                    : null))
             .toList(growable: false),
       );
 }
@@ -423,6 +440,10 @@ class MyazaKYCConfig {
   /// flow. The picked country becomes the effective country for the rest of the
   /// flow.
   final List<WorkflowCountryOption>? countries;
+
+  /// Multi-ID policy: several ID checks in one run, judged by a pass policy.
+  /// KYC only — publish rejects it on a KYB workflow.
+  final MultiIdConfig? multiId;
 
   /// Subset of ID-type keys to offer (e.g. `['bvn', 'passport']`). Empty or
   /// null means "offer everything the org is granted". Intersected with the
@@ -518,6 +539,12 @@ class MyazaKYCConfig {
   /// and the server skips the analysis + charge. Normally set by a workflow.
   final bool deviceIntelligence;
 
+  /// KYB success screen: after submitting with key people still to verify,
+  /// tapping Done offers the session's own web page so the applicant can
+  /// reach the invite links again after the app closes. Default true;
+  /// workflow opt-out `keyPeopleLinkRecovery: false`.
+  final bool keyPeopleLinkRecovery;
+
   /// Extra-info / compliance questionnaire asked after capture, before
   /// submission. Null or empty = no questionnaire step. Normally set by a
   /// resolved workflow.
@@ -526,6 +553,14 @@ class MyazaKYCConfig {
   /// Proof-of-address document collection (after capture). Null or disabled =
   /// no PoA step. Normally set by a resolved workflow.
   final ProofOfAddressConfig? proofOfAddress;
+
+  /// A reviewer sent this attempt back to redo specific steps.
+  ///
+  /// Never set by a consumer and never part of a published workflow — it is
+  /// stamped onto ONE session's config snapshot when somebody clicks "Send
+  /// back", so it arrives through the hosted bootstrap like any other session
+  /// config. Null means the ordinary full flow.
+  final ResubmitConfig? resubmit;
 
   /// Email OTP verification step (after consent). Null or disabled = no step.
   final EmailVerificationConfig? emailVerification;
@@ -555,6 +590,7 @@ class MyazaKYCConfig {
     this.applicantWorkflowId,
     this.devUrl,
     this.countries,
+    this.multiId,
     this.idTypes,
     this.enableSelfie = true,
     this.enableDocumentCapture = true,
@@ -574,7 +610,9 @@ class MyazaKYCConfig {
     this.voiceGuidance = const VoiceGuidanceConfig(),
     this.userData,
     this.deviceIntelligence = true,
+    this.keyPeopleLinkRecovery = true,
     this.questionnaire,
+    this.resubmit,
     this.proofOfAddress,
     this.emailVerification,
     this.phoneVerification,
@@ -590,6 +628,7 @@ class MyazaKYCConfig {
   MyazaKYCConfig copyWith({
     String? country,
     List<WorkflowCountryOption>? countries,
+    MultiIdConfig? multiId,
     List<String>? idTypes,
     bool? enableSelfie,
     bool? enableDocumentCapture,
@@ -605,7 +644,9 @@ class MyazaKYCConfig {
     KYCSuccessContent? success,
     VoiceGuidanceConfig? voiceGuidance,
     bool? deviceIntelligence,
+    bool? keyPeopleLinkRecovery,
     QuestionnaireConfig? questionnaire,
+    ResubmitConfig? resubmit,
     ProofOfAddressConfig? proofOfAddress,
     EmailVerificationConfig? emailVerification,
     PhoneVerificationConfig? phoneVerification,
@@ -621,6 +662,7 @@ class MyazaKYCConfig {
         applicantWorkflowId: applicantWorkflowId ?? this.applicantWorkflowId,
         devUrl: devUrl,
         countries: countries ?? this.countries,
+        multiId: multiId ?? this.multiId,
         idTypes: idTypes ?? this.idTypes,
         enableSelfie: enableSelfie ?? this.enableSelfie,
         enableDocumentCapture:
@@ -641,7 +683,9 @@ class MyazaKYCConfig {
         voiceGuidance: voiceGuidance ?? this.voiceGuidance,
         userData: userData,
         deviceIntelligence: deviceIntelligence ?? this.deviceIntelligence,
+        keyPeopleLinkRecovery: keyPeopleLinkRecovery ?? this.keyPeopleLinkRecovery,
         questionnaire: questionnaire ?? this.questionnaire,
+        resubmit: resubmit ?? this.resubmit,
         proofOfAddress: proofOfAddress ?? this.proofOfAddress,
         emailVerification: emailVerification ?? this.emailVerification,
         phoneVerification: phoneVerification ?? this.phoneVerification,

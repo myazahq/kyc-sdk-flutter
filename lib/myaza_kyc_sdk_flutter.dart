@@ -81,6 +81,8 @@ export 'src/config/business_application.dart'
         resolveBusinessDocumentTypes,
         ResolvedBusinessDocumentType,
         KeyPersonEntry,
+        KeyPersonOwnerEntry,
+        looksCorporate,
         BusinessDocumentUpload,
         keyPeoplePayload;
 

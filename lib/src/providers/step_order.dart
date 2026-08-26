@@ -1,6 +1,7 @@
 import '../config/business_application.dart';
 import '../config/kyc_config.dart';
 import 'kyc_state.dart';
+import 'step_resubmit.dart';
 
 /// The effective country for the flow: the one picked in the country-select step
 /// (multi-region), else the config's country. Every country-sensitive read
@@ -98,7 +99,15 @@ bool livenessEnabledFor(MyazaKYCConfig config, KYCState state) {
 /// Builds the ordered step list for [config] + [state]. Recomputed on every
 /// navigation, so a step that depends on later state (document-capture vs
 /// id-input, per-ID liveness) resolves correctly once that state is known.
+///
+/// A reviewer's resubmission narrowing is applied LAST, over the fully-built
+/// order, so it works the same whichever branch below produced it.
 List<KYCStep> buildStepOrder(MyazaKYCConfig config, KYCState state) {
+  return applyResubmitSteps(_fullStepOrder(config, state), config.resubmit);
+}
+
+/// The flow as configured, before any reviewer narrowing.
+List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
   final requiresCapture = requiresCaptureFor(config, state);
   final hasLiveness = livenessEnabledFor(config, state);
   final hasQuestionnaire = config.questionnaire?.isActive ?? false;
@@ -116,8 +125,18 @@ List<KYCStep> buildStepOrder(MyazaKYCConfig config, KYCState state) {
       if (hasEmailVerify) KYCStep.contactEmail,
       if (hasPhoneVerify) KYCStep.contactPhone,
       KYCStep.businessDetails,
-      if (hasKeyPeopleCollection(business)) KYCStep.businessKeyPeople,
+      // Documents BEFORE key people: they are about the company the applicant
+      // has just identified, so they follow that thread, and the register's
+      // officer list — which the key-people step is a confirmation of — is what
+      // should still be in mind when they get to naming people.
       if (hasBusinessDocumentsStep(business)) KYCStep.businessDocuments,
+      // The questionnaire BEFORE key people: its questions are about the
+      // COMPANY (volumes, source of funds), so they belong with the company
+      // section — and naming the directors hands the application over to other
+      // people, so the applicant's own questions must not trail that. Mirrors
+      // the web and RN SDKs.
+      if (hasQuestionnaire) KYCStep.questionnaire,
+      if (hasKeyPeopleCollection(business)) KYCStep.businessKeyPeople,
       if (hasApplicantVerification(business)) ...[
         KYCStep.applicantRole,
         // The applicant may hold an ID issued anywhere the org can verify —
@@ -133,7 +152,6 @@ List<KYCStep> buildStepOrder(MyazaKYCConfig config, KYCState state) {
         if (hasNfcStep(config, state)) KYCStep.nfc,
         if (hasLiveness) KYCStep.liveness,
       ],
-      if (hasQuestionnaire) KYCStep.questionnaire,
       KYCStep.submitted,
     ];
   }

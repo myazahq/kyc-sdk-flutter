@@ -259,6 +259,31 @@ class EmrtdSession {
     }
   }
 
+  /// INTERNAL AUTHENTICATE — hand the chip a challenge, take back its signature.
+  ///
+  /// Le is 0 ("as much as you have"): the answer is one RSA modulus or one raw
+  /// r||s pair, and the length varies by document. Naming a length would work
+  /// on the passports we happened to test and truncate the rest.
+  ///
+  /// Null on any refusal. This is the anti-clone step (see emrtd_active_auth.dart)
+  /// and it is optional by standard, so a chip that will not answer costs the
+  /// check and never the read.
+  Future<Uint8List?> internalAuthenticate(Uint8List challenge) async {
+    final sm = _sm;
+    if (sm == null) return null;
+    try {
+      final apdu = sm.protect(
+        Uint8List.fromList([0x00, 0x88, 0x00, 0x00]),
+        data: challenge,
+        le: 0,
+      );
+      final data = sm.unprotect(await _transceive(apdu));
+      return data.isEmpty ? null : data;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Uint8List _randomBytes(int n) =>
       Uint8List.fromList(List.generate(n, (_) => _random.nextInt(256)));
 

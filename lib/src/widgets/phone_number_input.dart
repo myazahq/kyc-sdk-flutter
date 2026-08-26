@@ -22,10 +22,24 @@ class PhoneNumberInput extends StatefulWidget {
   final String defaultCountry;
   final PhoneChanged onChanged;
 
+  /// The current E.164 value, when the OWNER holds one (e.g. the register's
+  /// phone number prefilled into the business form). The widget displays it —
+  /// a prefill the applicant cannot SEE is a value they cannot correct — and
+  /// re-seeds itself when it changes under it (a register prefill landing, or
+  /// a company change clearing it). The widget's own keystrokes never loop
+  /// back through this.
+  final String? value;
+
+  /// The contact-verification step autofocuses (the phone IS the screen);
+  /// a phone sitting mid-form must not steal focus from the fields above it.
+  final bool autofocus;
+
   const PhoneNumberInput({
     super.key,
     required this.defaultCountry,
     required this.onChanged,
+    this.value,
+    this.autofocus = true,
   });
 
   @override
@@ -35,6 +49,7 @@ class PhoneNumberInput extends StatefulWidget {
 class _PhoneNumberInputState extends State<PhoneNumberInput> {
   late String _iso;
   String _national = '';
+  String? _lastEmitted;
   final _controller = TextEditingController();
 
   @override
@@ -42,6 +57,52 @@ class _PhoneNumberInputState extends State<PhoneNumberInput> {
     super.initState();
     final up = widget.defaultCountry.toUpperCase();
     _iso = kDialCodes.containsKey(up) ? up : 'NG';
+    if ((widget.value ?? '').isNotEmpty) _seedFrom(widget.value!);
+  }
+
+  @override
+  void didUpdateWidget(PhoneNumberInput oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Only an EXTERNAL change re-seeds: our own emit comes straight back as
+    // the new `value`, and re-seeding on that would fight the formatter
+    // mid-keystroke.
+    final incoming = widget.value ?? '';
+    if (incoming != (oldWidget.value ?? '') && incoming != _lastEmitted) {
+      _seedFrom(incoming);
+    }
+  }
+
+  /// Display a value handed down from above: split an E.164 into dial code +
+  /// national digits (preferring the current country when its code matches,
+  /// since +1 alone cannot say US or CA), or show bare digits as national.
+  void _seedFrom(String raw) {
+    final trimmed = raw.trim();
+    var digits = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (trimmed.startsWith('+') && digits.isNotEmpty) {
+      String? matchedIso;
+      if (digits.startsWith(_dial)) {
+        matchedIso = _iso;
+      } else {
+        var bestLen = 0;
+        kDialCodes.forEach((iso, dial) {
+          if (digits.startsWith(dial) && dial.length > bestLen) {
+            matchedIso = iso;
+            bestLen = dial.length;
+          }
+        });
+      }
+      if (matchedIso != null) {
+        _iso = matchedIso!;
+        digits = digits.substring(_dial.length);
+      }
+    }
+    final formatted = digits.isEmpty ? '' : _format(digits);
+    _controller.value = TextEditingValue(
+      text: formatted,
+      selection: TextSelection.collapsed(offset: formatted.length),
+    );
+    _national = formatted;
+    if (mounted) setState(() {});
   }
 
   String get _dial => kDialCodes[_iso] ?? '234';
@@ -55,6 +116,7 @@ class _PhoneNumberInputState extends State<PhoneNumberInput> {
   void _emit() {
     final digits = _national.replaceAll(RegExp(r'\D'), '');
     final e164 = '+$_dial$digits';
+    _lastEmitted = e164;
 
     var valid = digits.length >= 6 && digits.length <= 15;
     try {
@@ -157,7 +219,7 @@ class _PhoneNumberInputState extends State<PhoneNumberInput> {
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9 ]')),
             ],
-            autofocus: true,
+            autofocus: widget.autofocus,
             onChanged: _onTyped,
           ),
         ),

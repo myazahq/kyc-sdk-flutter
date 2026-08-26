@@ -81,7 +81,7 @@ RegistrationHint registrationNumberHint(
       placeholder: 'e.g. RC0000000',
       tip: _ngTip,
       isValidFormat: (value) => _ngPrefixRe.hasMatch(value.trim()),
-      formatError: 'Start with RC, BN, IT, LP or LLP followed by the number — '
+      formatError: 'Start with RC, BN, IT, LP or LLP followed by the number, '
           'no spaces, e.g. RC0000000.',
     );
   }

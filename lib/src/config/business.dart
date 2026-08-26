@@ -85,7 +85,20 @@ bool isValidContactEmail(String value) =>
 
 /// The company-profile fields a workflow can collect on the business-details
 /// step. The address is cross-checked against the registry record server-side.
-enum CompanyInfoField { address, email, phone, website }
+/// The last five are registry facts the applicant STATES: asked as their own
+/// answer rather than filled from the register, because where the two differ
+/// that is the finding. Mirrors the web SDK's CompanyInfoField exactly.
+enum CompanyInfoField {
+  address,
+  email,
+  phone,
+  website,
+  dateOfIncorporation,
+  taxId,
+  vatNumber,
+  companyType,
+  natureOfBusiness,
+}
 
 /// Per-field collection mode. `off` hides it, `required` blocks Continue.
 enum CompanyInfoMode { off, optional, required }
@@ -104,6 +117,11 @@ extension CompanyInfoFieldX on CompanyInfoField {
         CompanyInfoField.email => 'Business email',
         CompanyInfoField.phone => 'Business phone',
         CompanyInfoField.website => 'Website',
+        CompanyInfoField.dateOfIncorporation => 'Date of incorporation',
+        CompanyInfoField.taxId => 'Tax ID',
+        CompanyInfoField.vatNumber => 'VAT number',
+        CompanyInfoField.companyType => 'Company type',
+        CompanyInfoField.natureOfBusiness => 'Nature of business',
       };
 
   String get placeholder => switch (this) {
@@ -111,6 +129,11 @@ extension CompanyInfoFieldX on CompanyInfoField {
         CompanyInfoField.email => 'hello@company.com',
         CompanyInfoField.phone => '+234 800 000 0000',
         CompanyInfoField.website => 'company.com',
+        CompanyInfoField.dateOfIncorporation => 'YYYY-MM-DD',
+        CompanyInfoField.taxId => 'e.g. 01234567-0001',
+        CompanyInfoField.vatNumber => 'e.g. NG123456789',
+        CompanyInfoField.companyType => 'e.g. Private Limited Company',
+        CompanyInfoField.natureOfBusiness => 'What the company does',
       };
 }
 
@@ -199,8 +222,15 @@ class WorkflowKeyPeopleConfig {
   final int minEntries;
 
   /// Ownership % at/above which the server escalates a person to beneficial
-  /// owner (mirrors the workflow's `keyPeople.ownershipThreshold`, default 25).
-  final double ownershipThreshold;
+  /// owner (the workflow's `keyPeople.ownershipThreshold`).
+  ///
+  /// NULLABLE, because the default is PER REGISTER and this class does not know
+  /// the country: the server's `uboThresholdFor` uses 25 globally but 10 for
+  /// Nigeria, whose CAMA files significant control from a lower bar. Defaulted
+  /// to 25 here, an NG flow classified at 25 on screen while the submission was
+  /// read at 10, and the two disagreed about who was a beneficial owner.
+  /// Resolve with [defaultUboThreshold], never with a literal.
+  final double? ownershipThreshold;
 
   /// In-scope roles. Empty = all four.
   final List<KeyPersonRole> roles;
@@ -214,16 +244,32 @@ class WorkflowKeyPeopleConfig {
   /// Invite distribution channel for full-KYC people (e.g. `email`).
   final String? inviteChannel;
 
+  /// Emails are mandatory for the roles that are sent a verification link.
+  final bool requireEmail;
+
+  /// Explicit override of WHICH roles must carry an email.
+  final List<KeyPersonRole> requireEmailRoles;
+
   const WorkflowKeyPeopleConfig({
     this.enabled = false,
     this.collect = false,
     this.minEntries = 0,
-    this.ownershipThreshold = 25,
+    this.ownershipThreshold,
     this.roles = const [],
+    this.corporateKyb = false,
     this.level,
     this.perRole = const {},
     this.inviteChannel,
+    this.requireEmail = false,
+    this.requireEmailRoles = const [],
   });
+
+  /// Nested KYB: a corporate shareholder is invited into its OWN business
+  /// application rather than merely screened. Changes what the applicant is
+  /// told about a company they list — with it on the company receives a link
+  /// and its owners are identified there; without it the company is screened
+  /// and its owners reviewed separately.
+  final bool corporateKyb;
 
   /// The roles actually in scope (all four when unset).
   List<KeyPersonRole> get scopedRoles =>
@@ -244,22 +290,29 @@ class WorkflowKeyPeopleConfig {
       });
     }
     final rawRoles = json['roles'];
+    List<KeyPersonRole> roleList(dynamic raw) => raw is List
+        ? raw
+            .map((e) => keyPersonRoleFromKey(e.toString()))
+            .whereType<KeyPersonRole>()
+            .toList(growable: false)
+        : const [];
     return WorkflowKeyPeopleConfig(
       enabled: json['enabled'] as bool? ?? false,
       collect: json['collect'] as bool? ?? false,
       minEntries: (json['minEntries'] as num?)?.toInt() ?? 0,
-      ownershipThreshold: (json['ownershipThreshold'] as num?)?.toDouble() ?? 25,
-      roles: rawRoles is List
-          ? rawRoles
-              .map((e) => keyPersonRoleFromKey(e.toString()))
-              .whereType<KeyPersonRole>()
-              .toList(growable: false)
-          : const [],
+      ownershipThreshold: (json['ownershipThreshold'] as num?)?.toDouble(),
+      roles: roleList(rawRoles),
+      // `{ enabled, workflowId }` — only the switch matters to the SDK; WHICH
+      // workflow the company is sent to is the server's business.
+      corporateKyb: (json['corporateKyb'] is Map) &&
+          ((json['corporateKyb'] as Map)['enabled'] as bool? ?? false),
       level: json['level'] != null ? _levelFromKey(json['level'].toString()) : null,
       perRole: perRole,
       inviteChannel: (json['invite'] is Map)
           ? (json['invite'] as Map)['channel']?.toString()
           : null,
+      requireEmail: json['requireEmail'] as bool? ?? false,
+      requireEmailRoles: roleList(json['requireEmailRoles']),
     );
   }
 }

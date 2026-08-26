@@ -10,6 +10,7 @@ import '../widgets/nfc_read_sheet.dart';
 import '../widgets/nfc_scan_illustration.dart';
 import '../providers/kyc_provider.dart';
 import '../services/mrz_parser.dart';
+import '../nfc/emrtd_active_auth.dart';
 import '../services/nfc_reader.dart';
 import '../services/nfc_reader_emrtd.dart';
 import '../widgets/myaza_button.dart';
@@ -148,6 +149,20 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
     _stageNotifier.value = NfcReadStage.waiting;
     _openSheet();
     try {
+      // The anti-clone challenge, asked for BEFORE the read so the whole thing
+      // happens in one session on the document. Best-effort by design: the
+      // server may not answer, and a chip read without a challenge is exactly
+      // the read this SDK did before Active Authentication existed. It must
+      // never be the reason a passport cannot be scanned.
+      AaChallenge? aaChallenge;
+      try {
+        aaChallenge =
+            await ref.read(kYCNotifierProvider.notifier).api.nfcChallenge();
+      } catch (_) {
+        aaChallenge = null;
+      }
+      if (!mounted) return;
+
       final data = await _reader.read(
         NfcMrzKey(
           documentNumber: scan.documentNumber,
@@ -155,6 +170,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           dateOfExpiry: scan.dateOfExpiry,
         ),
         onStage: _setStage,
+        aaChallenge: aaChallenge,
       );
       if (!mounted) return;
       _closeSheet();

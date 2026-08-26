@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../config/business.dart' show KeyPersonRole;
 import '../config/business_application.dart';
+import '../config/key_people_sections.dart';
 import '../config/theme.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/themed_sheet.dart';
@@ -38,35 +39,53 @@ class KeyPersonRemoved extends KeyPersonSheetResult {
 Future<KeyPersonSheetResult?> showKeyPersonSheet(
   BuildContext context, {
   required bool editing,
+  required KeyPeopleSection section,
   required KeyPersonEntry initial,
   double uboThreshold = 25,
+  bool corporateKyb = false,
   required double otherPctTotal,
+  Set<KeyPersonRole> emailRequiredFor = const {},
 }) {
   return showMyazaSheet<KeyPersonSheetResult>(
     context,
     isScrollControlled: true,
     builder: (_) => _KeyPersonSheetBody(
       editing: editing,
+      section: section,
       initial: initial,
       uboThreshold: uboThreshold,
+      corporateKyb: corporateKyb,
       otherPctTotal: otherPctTotal,
+      emailRequiredFor: emailRequiredFor,
     ),
   );
 }
 
 class _KeyPersonSheetBody extends StatefulWidget {
   final bool editing;
+  final KeyPeopleSection section;
   final KeyPersonEntry initial;
   final double uboThreshold;
+
+  /// Nested KYB — changes what a listed company is told to expect.
+  final bool corporateKyb;
 
   /// Sum of every OTHER person's ownership % — for the combined warning.
   final double otherPctTotal;
 
+  /// Roles whose email is mandatory — save is gated on the same rule the
+  /// list's Continue uses, so the sheet can never hand back a row the step
+  /// immediately flags.
+  final Set<KeyPersonRole> emailRequiredFor;
+
   const _KeyPersonSheetBody({
     required this.editing,
+    required this.section,
     required this.initial,
     required this.uboThreshold,
+    this.corporateKyb = false,
     required this.otherPctTotal,
+    required this.emailRequiredFor,
   });
 
   @override
@@ -76,23 +95,29 @@ class _KeyPersonSheetBody extends StatefulWidget {
 class _KeyPersonSheetBodyState extends State<_KeyPersonSheetBody> {
   late KeyPersonEntry _draft;
   late final TextEditingController _name;
+  late final TextEditingController _title;
   late final TextEditingController _email;
   late final TextEditingController _pct;
+  late final TextEditingController _registration;
 
   @override
   void initState() {
     super.initState();
     _draft = widget.initial;
     _name = TextEditingController(text: _draft.name);
+    _title = TextEditingController(text: _draft.title);
     _email = TextEditingController(text: _draft.email);
     _pct = TextEditingController(text: _draft.ownershipPct);
+    _registration = TextEditingController(text: _draft.registrationNumber);
   }
 
   @override
   void dispose() {
     _name.dispose();
+    _title.dispose();
     _email.dispose();
     _pct.dispose();
+    _registration.dispose();
     super.dispose();
   }
 
@@ -101,16 +126,15 @@ class _KeyPersonSheetBodyState extends State<_KeyPersonSheetBody> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = context.myazaColors;
     final text = context.myazaText;
 
     final draftPct = _draft.ownershipValue;
     final combinedTotal = widget.otherPctTotal + (draftPct ?? 0);
     final combinedPctError = combinedTotal > 100
-        ? 'Combined ownership would be ${_fmtPct(combinedTotal)}% — over by '
+        ? 'Combined ownership would be ${_fmtPct(combinedTotal)}%, over by '
             '${_fmtPct(combinedTotal - 100)}%.'
         : null;
-    final canSave = _draft.isValid;
+    final canSave = _draft.isValidWith(widget.emailRequiredFor);
 
     // The sheet is lifted above the keyboard and sized against the space that
     // remains, so the focused field is never underneath the keys.
@@ -123,40 +147,19 @@ class _KeyPersonSheetBodyState extends State<_KeyPersonSheetBody> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const SizedBox(height: MyazaSpacing.sm),
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: colors.border,
-                  borderRadius: BorderRadius.circular(MyazaRadius.full),
-                ),
-              ),
-            ),
+            // Handle and close come from showMyazaSheet now. What is left is
+            // this sheet's own heading, sitting tight under the handle the way
+            // the system sheets set a title.
             Padding(
               padding: const EdgeInsets.fromLTRB(
                 MyazaSpacing.md,
-                MyazaSpacing.sm + 4,
+                0,
                 MyazaSpacing.md,
                 MyazaSpacing.sm,
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.editing ? 'Edit person' : 'Add a person',
-                      style: text.body.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    visualDensity: VisualDensity.compact,
-                    tooltip: 'Close',
-                    icon: Icon(LucideIcons.x,
-                        size: 20, color: colors.textSecondary),
-                  ),
-                ],
+              child: Text(
+                widget.editing ? 'Edit person' : 'Add a person',
+                style: text.body.copyWith(fontWeight: FontWeight.w700),
               ),
             ),
             Flexible(
@@ -167,11 +170,16 @@ class _KeyPersonSheetBodyState extends State<_KeyPersonSheetBody> {
                     horizontal: MyazaSpacing.md),
                 child: KeyPersonForm(
                   entry: _draft,
+                  section: widget.section,
                   nameCtrl: _name,
+                  titleCtrl: _title,
                   emailCtrl: _email,
                   pctCtrl: _pct,
+                  registrationCtrl: _registration,
                   uboThreshold: widget.uboThreshold,
+                  corporateKyb: widget.corporateKyb,
                   combinedPctError: combinedPctError,
+                  emailRequiredFor: widget.emailRequiredFor,
                   onChange: (entry) => setState(() => _draft = entry),
                 ),
               ),

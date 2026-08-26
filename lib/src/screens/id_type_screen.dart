@@ -60,9 +60,18 @@ class IdTypeScreen extends ConsumerWidget {
     // skipping its capture step: that produced a submission with no document
     // for an ID that needs one. "This ID cannot be verified in this flow" is a
     // fact about availability, not a step to skip. Mirrors the web SDK.
-    final visible = config.enableDocumentCapture
+    final base = config.enableDocumentCapture
         ? available
         : available.where((t) => !t.requiresDocumentCapture).toList();
+
+    // Multi-ID: this picker is for ONE check of several. It may only offer
+    // picks that are still free AND leave every later check something to
+    // offer — the server validates the same rule, so an unsafe pick would be a
+    // submission it rejects.
+    final plan = ref.read(kYCNotifierProvider.notifier).multiIdPlan();
+    final visible = plan == null
+        ? base
+        : base.where((t) => plan.safeOptions.contains(t.key)).toList();
 
     if (serverConfig.status == ServerConfigStatus.loading) {
       return const Padding(

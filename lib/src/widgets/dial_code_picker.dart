@@ -18,8 +18,8 @@ import 'themed_sheet.dart';
 // showModalBottomSheet lands on a sibling route where the theme extension isn't
 // found, and renders light over a dark flow.
 //
-// Height is bounded against the space left ABOVE the keyboard. The search field
-// autofocuses, so sizing against the full screen (as this used to) made the
+// Height is bounded against the space left ABOVE the keyboard: once someone
+// taps into search, sizing against the full screen (as this used to) made the
 // sheet effectively full-screen the moment the keys appeared — with the
 // filtered results hidden underneath them.
 
@@ -116,9 +116,11 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                   MyazaSpacing.md,
                   MyazaSpacing.sm,
                 ),
+                // Deliberately NOT autofocused: springing the keyboard the
+                // instant the sheet opens hides half the list before the
+                // person has even seen it - search is one tap away.
                 child: MyazaInput(
                   hint: widget.showDial ? 'Search country or code' : 'Search country',
-                  autofocus: true,
                   prefix: Icon(LucideIcons.search,
                       size: 18, color: colors.textSecondary),
                   onChanged: (v) => setState(() => _query = v),
@@ -146,19 +148,23 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: MyazaSpacing.md,
-                                  vertical: MyazaSpacing.sm,
+                                  vertical: 12,
                                 ),
                                 child: Row(
                                   children: [
-                                    MyazaCountryFlag(country: e.iso, size: 24),
+                                    MyazaCountryFlag(country: e.iso, size: 28),
                                     const SizedBox(width: MyazaSpacing.md),
                                     Expanded(
+                                      // Full body size in the foreground
+                                      // colour: the name IS the row, not its
+                                      // caption.
                                       child: Text(e.name,
-                                          style: text.bodyMedium),
+                                          style: text.body
+                                              .copyWith(color: colors.textDark)),
                                     ),
                                     if (widget.showDial)
                                       Text('+${e.dial}',
-                                          style: text.label.copyWith(
+                                          style: text.bodyMedium.copyWith(
                                               color: colors.textSecondary)),
                                   ],
                                 ),

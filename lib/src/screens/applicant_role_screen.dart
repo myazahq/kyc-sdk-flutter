@@ -52,13 +52,15 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
   ApplicantRole? _role;
   _Selection? _selection;
 
-  /// Valid entered people with their ORIGINAL index — the payload flag is
-  /// index-based, so the list and the submission can never disagree.
+  /// Valid entered PEOPLE with their ORIGINAL index — the payload flag is
+  /// index-based, so the list and the submission can never disagree. A
+  /// corporate shareholder is excluded: "which of these is you?" is a question
+  /// about humans, and a company can never be the person filling in the form.
   List<(int, KeyPersonEntry)> get _people {
     final rows = ref.read(kYCNotifierProvider).keyPeople;
     return [
       for (var i = 0; i < rows.length; i++)
-        if (rows[i].isValid) (i, rows[i]),
+        if (!rows[i].isCorporate && rows[i].isValid) (i, rows[i]),
     ];
   }
 
@@ -75,7 +77,10 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
     _nameCtrl.text = s.applicantName ?? prop;
 
     // Stored choice wins; first arrival pre-selects the applicant's own entry
-    // when the userData name matches (they still confirm explicitly).
+    // when the userData name matches (they still confirm explicitly) — and
+    // when the name matches NOBODY listed, "I'm not one of these people" is
+    // what that fact means, so it is pre-selected instead (mirrors the web
+    // and RN SDKs). The selection stays theirs to change.
     if (s.applicantKeyPersonIndex != null) {
       _selection = _SelectionPerson(s.applicantKeyPersonIndex!);
     } else if (s.applicantRole != null) {
@@ -86,6 +91,9 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
           _selection = _SelectionPerson(index);
           break;
         }
+      }
+      if (_selection == null && _people.isNotEmpty) {
+        _selection = const _SelectionOther();
       }
     }
   }

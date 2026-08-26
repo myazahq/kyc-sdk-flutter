@@ -118,6 +118,15 @@ KYCError mapToKycError(Object error, {required ErrorContext context}) {
           },
           details: error.details,
         );
+      // The SDK caught its OWN inconsistency before making a request. It is
+      // neither a network fault nor a server fault, and titling it "Connection
+      // Failed" sends everyone — the applicant, and whoever they report it to —
+      // looking at the network for something that never left the device.
+      case 'invalid_state':
+        return KYCError(
+          code: 'invalid_state',
+          message: error.message ?? 'Something is missing. Please try again.',
+        );
       case 'upload_failed':
         return KYCError(
           code: 'upload_failed',
@@ -132,8 +141,20 @@ KYCError mapToKycError(Object error, {required ErrorContext context}) {
         );
     }
 
-    // 5xx that survived retries.
-    if (error.statusCode >= 500 || error.statusCode == 0) {
+    // Nothing came back at all — DNS, routing, a refused connection, a device
+    // with no path to the host. Kept SEPARATE from a 5xx on purpose: telling
+    // somebody the server errored when their request never arrived sends them
+    // (and whoever they report it to) looking through server logs for a request
+    // that was never made.
+    if (error.statusCode == 0) {
+      return KYCError(
+        code: uploadCtx ? 'upload_failed' : 'network_error',
+        message: error.message ?? "Couldn't reach the server. Check your connection and try again.",
+      );
+    }
+
+    // 5xx that survived retries — the request DID arrive.
+    if (error.statusCode >= 500) {
       return KYCError(
         code: uploadCtx ? 'upload_failed' : 'network_error',
         message: 'A server error occurred. Please try again in a moment.',
