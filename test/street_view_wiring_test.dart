@@ -9,6 +9,10 @@ import 'package:flutter_test/flutter_test.dart';
 // from one mirror is a platform where the entrance step silently falls back to
 // the photo. Read across the monorepo, the way the RN foldVectors test reads
 // this package's fixture. The second group pins this SDK's own wiring.
+//
+// The public mirror (myazahq/kyc-sdk-flutter) carries this package alone, so
+// the two sibling reads SKIP there rather than fail: the 2.7.0 publish was
+// refused by exactly these two tests. The monorepo's own CI still runs them.
 
 const _mirrors = {
   'web': '../kyc-sdk-react/src/lib/map-frame.ts',
@@ -19,6 +23,7 @@ const _mirrors = {
 void main() {
   group('the street-view protocol is mirrored on every SDK', () {
     for (final entry in _mirrors.entries) {
+      final present = File(entry.value).existsSync();
       test('${entry.key} carries every page message and the page path', () {
         final source = File(entry.value).readAsStringSync();
         for (final token in [
@@ -31,7 +36,7 @@ void main() {
         ]) {
           expect(source, contains(token), reason: '${entry.key}: $token');
         }
-      });
+      }, skip: present ? false : 'needs the monorepo: ${entry.value} is not here');
     }
   });
 
