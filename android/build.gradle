@@ -69,4 +69,18 @@ dependencies {
     implementation "androidx.camera:camera-core:$cameraxVersion"
     implementation "androidx.camera:camera-camera2:$cameraxVersion"
     implementation "androidx.camera:camera-lifecycle:$cameraxVersion"
+
+    // OS geofencing for the background presence tier (PresenceGeofencer).
+    // Google's client is the only geofencing API that survives app death and
+    // reboot; hosts without Play services degrade to the foreground tier at
+    // runtime (arm() reports failure, never crashes).
+    implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // NotificationCompat + the registerReceiver flag for the foreground-service
+    // presence tier (PresenceForegroundService.kt).
+    implementation 'androidx.core:core:1.13.1'
+
+    // PresenceFoldTest runs on the JVM, where android.jar's org.json is a
+    // stub — the real library stands in for unit tests only.
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
 }

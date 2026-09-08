@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
@@ -81,7 +82,7 @@ class ErrorView extends StatelessWidget {
                 child: MyazaButton.outline(
                   label: 'Try Again',
                   onPressed: onRetry,
-                  leadingIcon: const Icon(Icons.refresh_rounded),
+                  leadingIcon: const Icon(LucideIcons.refreshCw),
                 ),
               ),
               const SizedBox(width: MyazaSpacing.md),
@@ -119,7 +120,7 @@ class _ErrorBadge extends StatelessWidget {
         ),
       ),
       child: const Icon(
-        Icons.error_outline_rounded,
+        LucideIcons.circleAlert,
         size: 44,
         color: MyazaColors.error,
       ),

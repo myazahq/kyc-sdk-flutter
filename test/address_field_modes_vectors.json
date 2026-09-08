@@ -1,0 +1,92 @@
+{
+  "_comment": "Shared vectors for the address-field-modes mirrors: web steps/address/address-field-modes.ts, RN lib/address-field-modes.ts, Flutter config/address_field_modes.dart. All three tests replay every vector; a rule changed in one mirror must change here and in the other two in the same commit. `typed` merges onto `address`: a key present with \"\" is a field the applicant deliberately cleared, an absent key is one they never touched.",
+  "address": {
+    "lat": 4.94,
+    "lng": 8.33,
+    "propertyName": "",
+    "propertyNumber": "",
+    "directions": "",
+    "parts": {
+      "street": "Bassey Street",
+      "area": "Idim Ita",
+      "city": "Calabar",
+      "state": "Cross River",
+      "postcode": "540281",
+      "country": "NG"
+    }
+  },
+  "vectors": [
+    {
+      "name": "no config: every field optional, nothing missing, nothing added",
+      "config": null,
+      "typed": {},
+      "expectModes": { "propertyNumber": "optional", "city": "optional", "street": "optional" },
+      "expectMissing": [],
+      "expectPrefill": {}
+    },
+    {
+      "name": "propertyFields required requires the NUMBER only",
+      "config": { "propertyFields": "required" },
+      "typed": {},
+      "expectModes": { "propertyNumber": "required", "propertyName": "optional", "city": "optional" },
+      "expectMissing": ["propertyNumber"],
+      "expectPrefill": {}
+    },
+    {
+      "name": "propertyFields off hides every typed field",
+      "config": { "propertyFields": "off" },
+      "typed": {},
+      "expectModes": { "propertyNumber": "off", "street": "off", "city": "off", "postcode": "off" },
+      "expectMissing": [],
+      "expectPrefill": {}
+    },
+    {
+      "name": "fields overrides beat the group default",
+      "config": { "propertyFields": "off", "fields": { "city": "required" } },
+      "typed": {},
+      "expectModes": { "city": "required", "street": "off", "propertyNumber": "off" },
+      "expectMissing": [],
+      "expectPrefill": { "city": "Calabar" }
+    },
+    {
+      "name": "a required field showing its map prefill is NOT missing and rides the wire",
+      "config": { "fields": { "city": "required", "state": "required" } },
+      "typed": {},
+      "expectModes": { "city": "required", "state": "required" },
+      "expectMissing": [],
+      "expectPrefill": { "city": "Calabar", "state": "Cross River" }
+    },
+    {
+      "name": "a deliberately CLEARED prefill counts as missing and is not resurrected",
+      "config": { "fields": { "city": "required" } },
+      "typed": { "city": "" },
+      "expectModes": { "city": "required" },
+      "expectMissing": ["city"],
+      "expectPrefill": {}
+    },
+    {
+      "name": "typed values are the payload's own and never in the prefill submission",
+      "config": { "fields": { "city": "required", "state": "required", "street": "optional" } },
+      "typed": { "state": "Cross River State" },
+      "expectModes": { "street": "optional" },
+      "expectMissing": [],
+      "expectPrefill": { "city": "Calabar" }
+    },
+    {
+      "name": "a required field with no prefill and a typed value is satisfied",
+      "config": { "propertyFields": "required" },
+      "typed": { "propertyNumber": " 11 " },
+      "expectModes": { "propertyNumber": "required" },
+      "expectMissing": [],
+      "expectPrefill": {}
+    },
+    {
+      "name": "an unknown mode string falls back to the group default",
+      "config": { "propertyFields": "required", "fields": { "propertyNumber": "sometimes" } },
+      "typed": {},
+      "expectModes": { "propertyNumber": "required" },
+      "expectMissing": ["propertyNumber"],
+      "expectPrefill": {}
+    }
+  ]
+}

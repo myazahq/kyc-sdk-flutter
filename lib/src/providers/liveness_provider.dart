@@ -497,7 +497,10 @@ class LivenessNotifier extends _$LivenessNotifier {
     state = state.copyWith(
       phase: LivenessPhase.complete,
       selfieBase64: base64Encode(jpegBytes),
-      instruction: 'Capture complete',
+      // No line at all. The ring closing green on the same frame as the
+      // shutter IS the completion signal, and the review follows within the
+      // beat — narrating the upload over it said nothing the user needed.
+      instruction: '',
       clearActiveChallenge: true,
       clearPositionGuidance: true,
     );

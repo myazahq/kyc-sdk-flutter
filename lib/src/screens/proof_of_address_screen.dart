@@ -1,18 +1,24 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../config/poa_country_gate.dart';
 import '../config/proof_of_address.dart';
+import '../config/scope.dart';
 import '../config/theme.dart';
+import '../config/upload_limits.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
+import '../widgets/address_country_control.dart';
 import '../widgets/media_source_sheet.dart';
 import '../widgets/myaza_button.dart';
-import '../widgets/myaza_select.dart';
+import 'proof_of_address_kinds.dart';
 import 'proof_of_address_parts.dart';
+import 'proof_of_address_pick.dart';
+
+part 'proof_of_address_upload.dart';
 
 // ─── Proof of Address screen ──────────────────────────────────────────────────
 //
@@ -24,12 +30,6 @@ import 'proof_of_address_parts.dart';
 // The UI mirrors the web SDK: a DASHED drop zone that names the document being
 // asked for ("Upload your utility bill") and what's accepted, replaced after
 // upload by a row showing the file, its kind, and an X to remove it.
-
-const _kAllowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-
-/// Matches the web SDK's cap. The server allows more, but rejecting locally
-/// gives an immediate, specific message instead of a slow 413.
-const int kPoaMaxBytes = 20 * 1024 * 1024;
 
 class ProofOfAddressScreen extends ConsumerStatefulWidget {
   final void Function(Object error)? onError;
@@ -55,129 +55,82 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
       ref.read(kycConfigProvider).proofOfAddress ??
       const ProofOfAddressConfig(enabled: true);
 
+  /// The country the document is for — on the address scope the control at
+  /// the top of this screen changes it, and an org may accept different
+  /// papers per market.
+  String? get _country =>
+      ref.read(kYCNotifierProvider).selectedCountry ??
+      ref.read(kycConfigProvider).country;
+
   @override
   void initState() {
     super.initState();
-    final offered = _cfg.offeredTypes;
+    final offered = _cfg.offeredTypesFor(_country);
     _type = offered.isNotEmpty ? offered.first : PoaDocumentType.other;
   }
 
   String get _typeLabel => _cfg.labelFor(_type ?? PoaDocumentType.other);
 
-  String _mimeFor(String? ext) => switch (ext?.toLowerCase()) {
-        'png' => 'image/png',
-        'webp' => 'image/webp',
-        'pdf' => 'application/pdf',
-        _ => 'image/jpeg',
-      };
+  /// `setState` for the upload ops in the part file: a protected member may
+  /// only be called from the State itself, so the extension goes through this.
+  void _rebuild(VoidCallback fn) => setState(fn);
 
   Future<void> _pick() async {
     setState(() => _error = null);
     final source = await showMediaSourceSheet(context);
     if (source == null || !mounted) return;
-    switch (source) {
-      case MediaSource.photoLibrary:
-        await _pickImage(ImageSource.gallery);
-      case MediaSource.camera:
-        await _pickImage(ImageSource.camera);
-      case MediaSource.files:
-        await _pickFile();
-    }
-  }
-
-  /// Camera roll / camera — always an image, so the mime comes from the name.
-  Future<void> _pickImage(ImageSource source) async {
     try {
-      final picked =
-          await ImagePicker().pickImage(source: source, imageQuality: 90);
-      if (picked == null || !mounted) return;
-      final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      final ext = picked.name.split('.').lastOrNull;
-      await _upload(bytes, _mimeFor(ext), picked.name);
-    } catch (e) {
-      _failUpload('Could not read that photo. Please try another.');
+      final picked = switch (source) {
+        MediaSource.photoLibrary => await pickPoaImage(ImageSource.gallery),
+        MediaSource.camera => await pickPoaImage(ImageSource.camera),
+        MediaSource.files => await pickPoaFile(),
+      };
+      if (picked == null || !mounted) return; // cancelled
+      await _upload(picked.bytes, picked.mime, picked.name);
+    } on PoaPickException catch (e) {
+      _failUpload(e.message);
     }
-  }
-
-  /// Files — the only path that can supply a PDF.
-  Future<void> _pickFile() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: _kAllowedExtensions,
-        withData: true,
-      );
-      final file = result?.files.firstOrNull;
-      final bytes = file?.bytes;
-      if (file == null || bytes == null || !mounted) return; // cancelled
-      await _upload(bytes, _mimeFor(file.extension), file.name);
-    } catch (e) {
-      _failUpload('Could not read that file. Please try another.');
-    }
-  }
-
-  Future<void> _upload(Uint8List bytes, String mime, String name) async {
-    if (bytes.length > kPoaMaxBytes) {
-      _failUpload('File is too large (max 20MB).');
-      return;
-    }
-    final isPdf = mime == 'application/pdf';
-    setState(() {
-      _uploading = true;
-      _fileName = name;
-      _previewIsPdf = isPdf;
-      // Only images are renderable; a PDF falls back to the document tile.
-      _previewBytes = isPdf ? null : bytes;
-    });
-    try {
-      final api = ref.read(kYCNotifierProvider.notifier).api;
-      final mediaId =
-          await api.upload(bytes, mime, MediaType.proofOfAddress);
-      if (!mounted) return;
-      ref
-          .read(kYCNotifierProvider.notifier)
-          .setProofOfAddress(mediaId, (_type ?? PoaDocumentType.other).key);
-      setState(() => _uploading = false);
-    } on KYCApiException catch (e) {
-      _failUpload(e.message ?? 'Upload failed. Please try again.');
-      widget.onError?.call(e);
-    } catch (e) {
-      _failUpload('Upload failed. Please try again.');
-    }
-  }
-
-  void _failUpload(String message) {
-    if (!mounted) return;
-    setState(() {
-      _uploading = false;
-      _fileName = null;
-      _previewBytes = null;
-      _previewIsPdf = false;
-      _error = message;
-    });
-  }
-
-  void _remove() {
-    ref.read(kYCNotifierProvider.notifier).clearProofOfAddress();
-    setState(() {
-      _fileName = null;
-      _previewBytes = null;
-      _previewIsPdf = false;
-      _error = null;
-    });
   }
 
   @override
   Widget build(BuildContext context) {
     final text = context.myazaText;
-    final offered = _cfg.offeredTypes;
+    final selectedCountry = ref.watch(kYCNotifierProvider).selectedCountry;
+    final config = ref.watch(kycConfigProvider);
+    final offered = _cfg.offeredTypesFor(selectedCountry ?? config.country);
+    // The flag on the attachment area: on the address scope only a country the
+    // applicant picked (the scope has no seeded country to show), else the
+    // flow's effective country.
+    final flagCountry = configScope(config.scope) == 'address'
+        ? selectedCountry
+        : (selectedCountry ?? config.country);
+    // A country change can withdraw the picked kind; fall back to the first
+    // offered rather than submitting a label that country does not accept.
+    ref.listen(kYCNotifierProvider.select((s) => s.selectedCountry), (_, __) {
+      final now = _cfg.offeredTypesFor(_country);
+      if (_type != null && !now.contains(_type)) {
+        setState(() =>
+            _type = now.isNotEmpty ? now.first : PoaDocumentType.other);
+      }
+    });
     final uploaded =
         ref.watch(kYCNotifierProvider).mediaIds.proofOfAddress != null;
+    // The address scope's country is the applicant's declaration and drives
+    // the document's market; Continue holds until it is made (the control
+    // above asks for it). Never bites elsewhere. See poa_country_gate.dart.
+    final countryDeclared = poaCountryDeclared(
+      scope: configScope(config.scope),
+      selectedCountry: selectedCountry,
+      offered: poaOfferedCountries(config.proofOfAddress?.countries ?? const []),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The declared-country picker — renders nothing outside the address
+        // scope.
+        const AddressCountryControl(),
+
         // ── Document type picker (only when >1 offered) ──────────────────────
         //
         // Locked once a file is attached: switching the kind afterwards would
@@ -185,14 +138,11 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
         if (offered.length > 1) ...[
           Text('Document type', style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
-          MyazaSelect<PoaDocumentType>(
+          PoaDocumentTypeList(
+            options: offered,
             value: _type,
-            sheetTitle: 'Document type',
             enabled: !uploaded && !_uploading,
-            options: [
-              for (final t in offered)
-                MyazaSelectOption(value: t, label: _cfg.labelFor(t)),
-            ],
+            labelFor: _cfg.labelFor,
             onChanged: (v) => setState(() => _type = v),
           ),
           const SizedBox(height: MyazaSpacing.lg),
@@ -205,12 +155,14 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
             typeLabel: _typeLabel,
             previewBytes: _previewBytes,
             isPdf: _previewIsPdf,
+            country: flagCountry,
             onRemove: _remove,
           )
         else
           PoaDropzone(
             uploading: _uploading,
             typeLabel: _typeLabel,
+            country: flagCountry,
             onTap: _pick,
           ),
 
@@ -223,7 +175,7 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
         const SizedBox(height: MyazaSpacing.xl),
         MyazaButton(
           label: 'Continue',
-          onPressed: uploaded && !_uploading
+          onPressed: uploaded && !_uploading && countryDeclared
               ? () => ref.read(kYCNotifierProvider.notifier).nextStep()
               : null,
         ),

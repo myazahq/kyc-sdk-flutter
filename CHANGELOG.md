@@ -1,3 +1,52 @@
+## 2.7.0
+
+### The address flow, complete
+
+Address Intelligence on Flutter now walks the same four steps as the web SDK:
+a search box (Google autocomplete where the org has it, an explicit search
+otherwise), a satellite map with the pin to place, an entrance step that frames
+the doorway in Street View imagery where coverage exists and falls back to a
+photo where it does not, and a confirmation card. The details sheet edits every
+part of the address, a workflow can require any of them, and the flow will not
+confirm until the required ones are filled. On a development key the
+confirmation card carries a test-result picker for the address verdict, and a
+sandbox key gets placeholder maps and a canned device fix rather than live
+vendor calls.
+
+### Proof of address knows its market
+
+The proof-of-address step names the document kinds the org accepts, per
+country, and asks for the applicant's country on the address scope so the
+right kinds are offered. Whether the applicant's name must appear on the
+document is now the workflow's rule (required, optional, or not needed), and
+the copy follows it.
+
+### Presence that reports
+
+The presence reporter waits for the server to mint its watch before posting
+(a report made straight after submission used to land on nothing), and takes
+the platform's last known position when a fresh fix does not arrive in time.
+The session start now sends the device block, so the dashboard knows the phone
+and SDK from the moment the flow opens rather than after it submits.
+
+### Biometric flows
+
+The face check and enrolment screens are one design with the React Native SDK:
+a selfie review that a workflow can switch off, one loading screen from the
+shutter to the verdict when the workflow delivers it in the app, the org's own
+words on the waiting and verdict screens, and a `show()` that takes the flash
+sequence length. The liveness ring builds in the workflow's brand colour
+rather than the default purple.
+
+### Smaller fixes
+
+A workflow can skip the opening consent screen, and a flow with no consent
+opens on its first real step (an address flow used to open on the pin instead
+of the search). The confirmation card falls back from the static picture to the
+framed Google map before the built-in tiles, without a second pin, and its
+address band fits a 360dp phone. Android map gestures no longer fight the page,
+and a review whose entrance image never arrives drops the empty frame.
+
 ## 2.6.0
 
 ### Several IDs in one run

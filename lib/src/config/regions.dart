@@ -49,3 +49,34 @@ List<RegionGroup> groupCountriesByRegion(List<String> codes) {
   }
   return groups;
 }
+
+/// Lift the visitor's IP country out of its region (or the alphabet) to the
+/// top of a picker, so the one country most likely to be theirs is the first
+/// thing they see rather than something to scroll for.
+///
+/// Takes the ALREADY-FILTERED list: the pin stays subject to the search, so
+/// typing narrows to what was asked for rather than keeping a row that does
+/// not match it. Generic over the row shape because the country-select step
+/// pins bare ISO codes and the dial-code sheet pins its entry records; one
+/// rule, two callers. Mirrors the web SDK's CountryRegionPicker +
+/// PhoneNumberInput and the RN SDK's `pinGeoRow`.
+({T? pinned, List<T> rest}) pinGeoRow<T>(
+  List<T> visible,
+  String? geoCountry,
+  String Function(T item) codeOf,
+) {
+  final geo = geoCountry?.trim().toUpperCase();
+  if (geo == null || geo.isEmpty) return (pinned: null, rest: List.of(visible));
+  T? hit;
+  for (final item in visible) {
+    if (codeOf(item).toUpperCase() == geo) {
+      hit = item;
+      break;
+    }
+  }
+  if (hit == null) return (pinned: null, rest: List.of(visible));
+  return (
+    pinned: hit,
+    rest: [for (final item in visible) if (item != hit) item],
+  );
+}

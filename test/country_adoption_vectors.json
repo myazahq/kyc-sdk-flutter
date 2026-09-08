@@ -1,0 +1,28 @@
+{
+  "note": "Shared by web (steps/address/country-adoption.test.ts), RN (__tests__/countryAdoption.test.ts) and Flutter (country_adoption_test.dart). A drift in any mirror fails here. `scope` is the workflow scope (null = a full verification); `accepted` is proofOfAddress.countries (null or empty = all).",
+  "adoption": [
+    { "name": "a geocode corrects a guessed declaration", "input": { "country": "NG", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": null, "explicit": false }, "expect": "set-auto" },
+    { "name": "an explicit pick survives a geocode guess", "input": { "country": "GH", "selectedCountry": "NG", "countryAutoPicked": false, "scope": "address", "accepted": null, "explicit": false }, "expect": null },
+    { "name": "a picked address replaces even an explicit choice", "input": { "country": "GH", "selectedCountry": "NG", "countryAutoPicked": false, "scope": "address", "accepted": null, "explicit": true }, "expect": "set" },
+    { "name": "the accepted list refuses a guess the gate would reject at submit", "input": { "country": "NG", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": ["GH"], "explicit": false }, "expect": null },
+    { "name": "the accepted list is case-insensitive", "input": { "country": "NG", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": ["ng"], "explicit": false }, "expect": "set-auto" },
+    { "name": "an empty accepted list accepts everyone", "input": { "country": "NG", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": [], "explicit": false }, "expect": "set-auto" },
+    { "name": "outside the address scope a bare country is the ID choice, left alone", "input": { "country": "NG", "selectedCountry": null, "countryAutoPicked": false, "scope": null, "accepted": null, "explicit": false }, "expect": null },
+    { "name": "outside the address scope even a picked address leaves the ID country alone", "input": { "country": "GH", "selectedCountry": "NG", "countryAutoPicked": false, "scope": null, "accepted": null, "explicit": true }, "expect": null },
+    { "name": "outside the address scope a guessed country is still corrected", "input": { "country": "GH", "selectedCountry": "NG", "countryAutoPicked": true, "scope": null, "accepted": null, "explicit": false }, "expect": "set-auto" },
+    { "name": "the address scope with nothing declared adopts the geocode", "input": { "country": "NG", "selectedCountry": null, "countryAutoPicked": false, "scope": "address", "accepted": null, "explicit": false }, "expect": "set-auto" },
+    { "name": "the same country is a no-op, even when explicit", "input": { "country": "NG", "selectedCountry": "ng", "countryAutoPicked": true, "scope": "address", "accepted": null, "explicit": true }, "expect": null },
+    { "name": "a lowercase geocode is normalised", "input": { "country": " ng ", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": null, "explicit": false }, "expect": "set-auto" },
+    { "name": "junk is ignored", "input": { "country": "Nigeria", "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": null, "explicit": false }, "expect": null },
+    { "name": "no country is nothing to adopt", "input": { "country": null, "selectedCountry": "US", "countryAutoPicked": true, "scope": "address", "accepted": null, "explicit": true }, "expect": null }
+  ],
+  "geoDefault": [
+    { "name": "the address scope defaults to the IP country", "input": { "geoCountry": "NG", "selectedCountry": null, "scope": "address", "accepted": null }, "expect": "NG" },
+    { "name": "a full flow never defaults from the IP", "input": { "geoCountry": "NG", "selectedCountry": null, "scope": null, "accepted": null }, "expect": null },
+    { "name": "a declared country is never re-defaulted", "input": { "geoCountry": "NG", "selectedCountry": "GH", "scope": "address", "accepted": null }, "expect": null },
+    { "name": "a guess the gate would refuse never becomes the default", "input": { "geoCountry": "NG", "selectedCountry": null, "scope": "address", "accepted": ["GH"] }, "expect": null },
+    { "name": "an accepted guess is normalised", "input": { "geoCountry": " ng ", "selectedCountry": null, "scope": "address", "accepted": ["NG", "GH"] }, "expect": "NG" },
+    { "name": "no IP answer leaves the country unset", "input": { "geoCountry": null, "selectedCountry": null, "scope": "address", "accepted": null }, "expect": null },
+    { "name": "junk from the IP lookup is ignored", "input": { "geoCountry": "NGA", "selectedCountry": null, "scope": "address", "accepted": null }, "expect": null }
+  ]
+}

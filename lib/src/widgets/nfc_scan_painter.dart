@@ -161,16 +161,14 @@ class NfcScanPainter extends CustomPainter {
   }
 
   void _field(Canvas canvas) {
-    final glow = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          colors.primary.withValues(alpha: 0.18),
-          colors.primary.withValues(alpha: 0.06),
-          colors.primary.withValues(alpha: 0),
-        ],
-        stops: const [0, 0.55, 1],
-      ).createShader(Rect.fromCircle(center: nfcScanCoupling, radius: 90));
-    canvas.drawCircle(nfcScanCoupling, 90, glow);
+    // The field falls off with distance — said as flat concentric steps (no
+    // gradients in the flow, house rule 2026-08-29; web + RN mirror this).
+    canvas.drawCircle(
+        nfcScanCoupling, 90, _fill(colors.primary.withValues(alpha: 0.04)));
+    canvas.drawCircle(
+        nfcScanCoupling, 56, _fill(colors.primary.withValues(alpha: 0.07)));
+    canvas.drawCircle(
+        nfcScanCoupling, 28, _fill(colors.primary.withValues(alpha: 0.12)));
     canvas.drawCircle(nfcScanCoupling, 4.5, _fill(colors.primary));
 
     for (final (r, base, delay) in nfcScanWaves) {

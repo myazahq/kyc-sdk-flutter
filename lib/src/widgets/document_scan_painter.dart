@@ -84,7 +84,9 @@ class DocumentScanPainter extends CustomPainter {
     canvas.restore();
   }
 
-  /// Scan line with a gradient trail, ping-ponging so it never jumps.
+  /// Scan line with a soft trailing band, ping-ponging so it never jumps.
+  /// Flat translucency — no gradients in the flow (house rule 2026-08-29;
+  /// the web scan-painter mirrors this).
   void _paintSweep(Canvas canvas, Rect rect, RRect guide, double phase) {
     final t = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
     final y = rect.top + rect.height * t;
@@ -92,33 +94,11 @@ class DocumentScanPainter extends CustomPainter {
 
     canvas.save();
     canvas.clipRRect(guide);
-    // Soft trailing glow.
-    canvas.drawRect(
-      band,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            accent.withValues(alpha: 0),
-            accent.withValues(alpha: 0.22),
-            accent.withValues(alpha: 0),
-          ],
-        ).createShader(band),
-    );
+    // Soft trailing band.
+    canvas.drawRect(band, Paint()..color = accent.withValues(alpha: 0.12));
     // Bright core line.
     final core = Rect.fromLTWH(rect.left, y - 1.5, rect.width, 3);
-    canvas.drawRect(
-      core,
-      Paint()
-        ..shader = LinearGradient(
-          colors: [
-            accent.withValues(alpha: 0),
-            accent.withValues(alpha: 0.95),
-            accent.withValues(alpha: 0),
-          ],
-        ).createShader(core),
-    );
+    canvas.drawRect(core, Paint()..color = accent.withValues(alpha: 0.9));
     canvas.restore();
   }
 

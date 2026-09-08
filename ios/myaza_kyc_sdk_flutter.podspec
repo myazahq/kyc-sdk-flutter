@@ -18,4 +18,10 @@ builds and runs on Apple-Silicon iOS simulators.
   # Flutter.framework does not contain an i386 slice.
   s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES', 'EXCLUDED_ARCHS[sdk=iphonesimulator*]' => 'i386' }
   s.swift_version = '5.0'
+
+  # Pins PresenceFold to the cross-language vectors in test/ (see the header
+  # of PresenceFoldTests.swift). Test-only; nothing ships from here.
+  s.test_spec 'Tests' do |test|
+    test.source_files = 'Tests/**/*.swift'
+  end
 end

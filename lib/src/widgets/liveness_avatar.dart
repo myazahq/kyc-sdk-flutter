@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
@@ -16,10 +17,20 @@ class LivenessAvatar extends StatelessWidget {
   /// Current liveness phase — drives whether the avatar is visible.
   final LivenessPhase phase;
 
+  /// The badge diameter. 80 on a tall phone; the screen hands a smaller size
+  /// down on a short one (liveness/liveness_layout.dart) so the gesture stays
+  /// on screen beside the circle.
+  final double size;
+
+  /// The fallback icon when the GIF cannot load.
+  final double iconSize;
+
   const LivenessAvatar({
     super.key,
     required this.activeChallenge,
     required this.phase,
+    this.size = 80,
+    this.iconSize = 40,
   });
 
   @override
@@ -48,6 +59,8 @@ class LivenessAvatar extends StatelessWidget {
       child: _AvatarContent(
         key: ValueKey(challenge),
         challenge: challenge,
+        size: size,
+        iconSize: iconSize,
       ),
     );
   }
@@ -57,8 +70,15 @@ class LivenessAvatar extends StatelessWidget {
 
 class _AvatarContent extends StatelessWidget {
   final LivenessChallenge challenge;
+  final double size;
+  final double iconSize;
 
-  const _AvatarContent({super.key, required this.challenge});
+  const _AvatarContent({
+    super.key,
+    required this.challenge,
+    required this.size,
+    required this.iconSize,
+  });
 
   String get _gifAsset => switch (challenge) {
         LivenessChallenge.nod   => 'assets/liveness/Nod.gif',
@@ -73,8 +93,8 @@ class _AvatarContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 80,
-          height: 80,
+          width: size,
+          height: size,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: context.myazaColors.primary100,
@@ -88,8 +108,8 @@ class _AvatarContent extends StatelessWidget {
               package: 'myaza_kyc_sdk_flutter',
               fit: BoxFit.cover,
               errorBuilder: (_, __, ___) => Icon(
-                Icons.face_outlined,
-                size: 40,
+                LucideIcons.scanFace,
+                size: iconSize,
                 color: context.myazaColors.primary,
               ),
             ),

@@ -239,6 +239,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
             formatOk: formatOk,
             requireName: cfg.requireRegistrationName,
             country: country,
+            geoCountry: s.serverConfig.geoCountry,
             modes: modes,
             showCompanyInfo: showCompanyInfo,
             showContactEmail: showContactEmail,

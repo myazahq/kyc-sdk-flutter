@@ -26,12 +26,21 @@ class CountryField extends StatelessWidget {
 
   final String placeholder;
 
+  /// The visitor's inferred country, pinned on top of the sheet as
+  /// "Your location".
+  final String? geoCountry;
+
+  /// Region headers between the rows, the country-select step's way.
+  final bool grouped;
+
   const CountryField({
     super.key,
     required this.country,
     required this.onChanged,
     this.codes,
     this.placeholder = 'Select a country',
+    this.geoCountry,
+    this.grouped = false,
   });
 
   @override
@@ -49,6 +58,8 @@ class CountryField extends StatelessWidget {
             context,
             hasValue ? country : null,
             codes: codes,
+            pinned: geoCountry,
+            grouped: grouped,
           );
           if (picked != null) onChanged(picked);
         },

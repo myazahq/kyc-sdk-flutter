@@ -20,9 +20,11 @@ void main() {
     // It must NOT throw on a null selection alone — the slots are the run's
     // record of what was picked.
     expect(
-      source.contains('if (idTypeConfig == null && committedSlots.isEmpty)'),
+      source.contains(
+          'if (idTypeConfig == null && committedSlots.isEmpty && configScope(_config.scope) == null)'),
       isTrue,
-      reason: 'the guard must let a run with committed slots through',
+      reason: 'the guard must let a run with committed slots through '
+          '(and a scoped flow, which never picks an ID)',
     );
     expect(
       source.contains('if (idTypeConfig == null) {\n      throw'),
@@ -42,7 +44,7 @@ void main() {
     // The FIRST slot fills the single-ID columns so anything reading a
     // verification's own idType keeps one meaning.
     expect(
-      source.contains("idType: primary?.idType ?? idTypeConfig?.key ?? ''"),
+      source.contains("primary?.idType ?? idTypeConfig?.key ?? ''"),
       isTrue,
     );
   });

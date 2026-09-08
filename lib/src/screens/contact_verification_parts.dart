@@ -20,6 +20,9 @@ class ContactDestinationField extends StatelessWidget {
   final bool isPhone;
   final TextEditingController emailController;
   final String defaultCountry;
+
+  /// The visitor's IP country, pinned to the top of the dial-code picker.
+  final String? geoCountry;
   final bool enabled;
   final ValueChanged<String> onEmailChanged;
   final void Function(String e164, bool isValid) onPhoneChanged;
@@ -32,6 +35,7 @@ class ContactDestinationField extends StatelessWidget {
     required this.enabled,
     required this.onEmailChanged,
     required this.onPhoneChanged,
+    this.geoCountry,
   });
 
   @override
@@ -46,6 +50,7 @@ class ContactDestinationField extends StatelessWidget {
         if (isPhone)
           PhoneNumberInput(
             defaultCountry: defaultCountry,
+            geoCountry: geoCountry,
             onChanged: onPhoneChanged,
           )
         else

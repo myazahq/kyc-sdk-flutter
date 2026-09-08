@@ -396,6 +396,25 @@ void main() {
       expect(business.productsForCountry('KE'), [kDefaultBusinessProduct]);
     });
 
+    test('never offers a product it has never heard of', () {
+      // An unknown key cannot be narrowed by country, so offering it would
+      // show country-specific products everywhere and dead-end the pick at
+      // verify (product_unsupported). Hidden until the SDK learns it.
+      final business = businessFromJson({
+        'products': ['business', 'brand-new-product'],
+      });
+      expect(business.productsForCountry('NG'), ['business']);
+    });
+
+    test('country-specific products narrow to their own registries', () {
+      final business = businessFromJson({
+        'products': ['business', 'business-address', 'business-filings'],
+      });
+      expect(business.productsForCountry('ZA'), ['business', 'business-address']);
+      expect(business.productsForCountry('CI'), ['business', 'business-filings']);
+      expect(business.productsForCountry('NG'), ['business']);
+    });
+
     test('the TIN product asks for a TIN, not a registration number', () {
       expect(businessProduct('business-tin').inputLabel, contains('TIN'));
       expect(businessProduct('business').inputLabel, 'Registration number');

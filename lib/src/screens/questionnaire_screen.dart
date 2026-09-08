@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/questionnaire.dart';
 import '../config/currency_flags.dart';
@@ -9,6 +9,7 @@ import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/amount_input_formatter.dart';
+import '../widgets/check_card.dart';
 import '../widgets/country_flag.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
@@ -402,7 +403,7 @@ class _MultiSelectField extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final o in field.options) ...[
-          _CheckCard(
+          MyazaCheckCard(
             label: o.label,
             checked: values.contains(o.value),
             onTap: () {
@@ -418,79 +419,6 @@ class _MultiSelectField extends StatelessWidget {
           if (o != field.options.last) const SizedBox(height: MyazaSpacing.sm),
         ],
       ],
-    );
-  }
-}
-
-/// One multi-select choice — a bordered card with a square check, mirroring the
-/// web SDK's `rounded-xl border p-3` label + shadcn Checkbox.
-///
-/// A bare Material CheckboxListTile was borderless and full-bleed, so the
-/// options read as a dense list rather than the tappable cards every other
-/// choice in the flow uses.
-class _CheckCard extends StatelessWidget {
-  final String label;
-  final bool checked;
-  final VoidCallback onTap;
-
-  const _CheckCard({
-    required this.label,
-    required this.checked,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text = context.myazaText;
-
-    return Semantics(
-      checked: checked,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(MyazaRadius.sm),
-        child: Container(
-          padding: const EdgeInsets.all(MyazaSpacing.md - 4),
-          decoration: BoxDecoration(
-            color: checked ? colors.primary50 : null,
-            border: Border.all(
-              color: checked ? colors.primary : colors.border,
-            ),
-            borderRadius: BorderRadius.circular(MyazaRadius.sm),
-          ),
-          child: Row(
-            children: [
-              _CheckBox(checked: checked),
-              const SizedBox(width: 10),
-              Expanded(child: Text(label, style: text.bodyMedium)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 20×20 square check — the web SDK's `h-5 w-5 rounded-md` checkbox.
-class _CheckBox extends StatelessWidget {
-  final bool checked;
-  const _CheckBox({required this.checked});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    return Container(
-      width: 20,
-      height: 20,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: checked ? colors.primary : Colors.transparent,
-        border: Border.all(color: checked ? colors.primary : colors.border),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: checked
-          ? Icon(LucideIcons.check, size: 14, color: colors.onPrimary)
-          : null,
     );
   }
 }
@@ -583,7 +511,7 @@ class _DateField extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(Icons.calendar_today, size: 18, color: colors.textSecondary),
+            Icon(LucideIcons.calendar, size: 18, color: colors.textSecondary),
             const SizedBox(width: MyazaSpacing.sm),
             Text(
               value ?? (field.placeholder ?? 'Select a date'),

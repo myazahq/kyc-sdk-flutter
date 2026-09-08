@@ -1,0 +1,169 @@
+{
+  "$comment": "Canonical fold vectors for the background presence tier. THREE implementations consume these: RN presence/background-math.ts (foldVectors.test.ts), the Flutter plugin PresenceFold.kt (PresenceFoldTest.kt) and PresenceFold.swift (PresenceFoldTests.swift). Change the fold rule in one language and these vectors, and the other two, in the same commit. offsetMinutes is the device UTC offset, EAST-POSITIVE (Lagos +60, New York -300).",
+  "vectors": [
+    {
+      "name": "daytime dwell, WAT",
+      "enterMs": 1788166800000,
+      "exitMs": 1788175800000,
+      "offsetMinutes": 60,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 150,
+          "nightPresent": false
+        }
+      ]
+    },
+    {
+      "name": "overnight crossing midnight, WAT",
+      "enterMs": 1788210000000,
+      "exitMs": 1788242400000,
+      "offsetMinutes": 60,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 120,
+          "nightPresent": true
+        },
+        {
+          "day": "2026-09-01",
+          "dwellMinutes": 420,
+          "nightPresent": true
+        }
+      ]
+    },
+    {
+      "name": "ends exactly at 20:00, UTC",
+      "enterMs": 1788202800000,
+      "exitMs": 1788206400000,
+      "offsetMinutes": 0,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 60,
+          "nightPresent": false
+        }
+      ]
+    },
+    {
+      "name": "one minute into the night, UTC",
+      "enterMs": 1788202800000,
+      "exitMs": 1788206460000,
+      "offsetMinutes": 0,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 61,
+          "nightPresent": true
+        }
+      ]
+    },
+    {
+      "name": "pre-dawn, IST (+330)",
+      "enterMs": 1788132600000,
+      "exitMs": 1788134400000,
+      "offsetMinutes": 330,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 30,
+          "nightPresent": true
+        }
+      ]
+    },
+    {
+      "name": "starts exactly at 06:00, EST (-300)",
+      "enterMs": 1788174000000,
+      "exitMs": 1788181200000,
+      "offsetMinutes": -300,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 120,
+          "nightPresent": false
+        }
+      ]
+    },
+    {
+      "name": "missed exit capped at 24h, WAT",
+      "enterMs": 1788166800000,
+      "exitMs": 1788771600000,
+      "offsetMinutes": 60,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 840,
+          "nightPresent": true
+        },
+        {
+          "day": "2026-09-01",
+          "dwellMinutes": 600,
+          "nightPresent": true
+        }
+      ]
+    },
+    {
+      "name": "thirty seconds floors to one minute, UTC",
+      "enterMs": 1788184800000,
+      "exitMs": 1788184830000,
+      "offsetMinutes": 0,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 1,
+          "nightPresent": false
+        }
+      ]
+    },
+    {
+      "name": "midnight crossing, EST",
+      "enterMs": 1788235800000,
+      "exitMs": 1788244800000,
+      "offsetMinutes": -300,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 50,
+          "nightPresent": true
+        },
+        {
+          "day": "2026-09-01",
+          "dwellMinutes": 100,
+          "nightPresent": true
+        }
+      ]
+    },
+    {
+      "name": "inverted span yields nothing",
+      "enterMs": 1788166800000,
+      "exitMs": 1788163200000,
+      "offsetMinutes": 60,
+      "expected": []
+    },
+    {
+      "name": "zero-length span yields nothing",
+      "enterMs": 1788166800000,
+      "exitMs": 1788166800000,
+      "offsetMinutes": 0,
+      "expected": []
+    },
+    {
+      "name": "exactly 24 hours, WAT",
+      "enterMs": 1788166800000,
+      "exitMs": 1788253200000,
+      "offsetMinutes": 60,
+      "expected": [
+        {
+          "day": "2026-08-31",
+          "dwellMinutes": 840,
+          "nightPresent": true
+        },
+        {
+          "day": "2026-09-01",
+          "dwellMinutes": 600,
+          "nightPresent": true
+        }
+      ]
+    }
+  ]
+}

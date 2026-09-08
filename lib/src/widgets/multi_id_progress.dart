@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/id_types.dart';
@@ -121,7 +122,7 @@ class _Chip extends StatelessWidget {
                 ),
         ),
         child: committed
-            ? Icon(Icons.check, size: 12, color: colors.onPrimary)
+            ? Icon(LucideIcons.check, size: 12, color: colors.onPrimary)
             : Text(
                 '${index + 1}',
                 style: MyazaTypography.bodySmall.copyWith(

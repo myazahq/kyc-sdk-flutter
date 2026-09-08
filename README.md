@@ -46,6 +46,26 @@ permission — voice guidance is text-to-speech output only).
   ```
   Ensure `minSdkVersion` is **21** or higher in `android/app/build.gradle`.
 
+#### Location (only if your workflow uses Address Intelligence)
+
+Workflows with the **address-collection step** offer "Use my current location"
+and can take a one-shot GPS fix at Continue. Both are best-effort — a denied
+permission never blocks the flow — but iOS **crashes** on the permission
+request if the usage string is missing, so add it whenever your workflow
+enables the step:
+
+- **iOS** — `ios/Runner/Info.plist`:
+  ```xml
+  <key>NSLocationWhenInUseUsageDescription</key>
+  <string>Your location helps place the map pin on your address.</string>
+  ```
+- **Android** — `android/app/src/main/AndroidManifest.xml`:
+  ```xml
+  <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+  <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+  ```
+  Foreground ("while in use") only — the SDK never tracks in the background.
+
 ## Usage
 
 `MyazaKYC.show()` opens the full modal flow as a bottom sheet.
@@ -373,3 +393,147 @@ gallery-upload fallback on that screen as an escape hatch.
 ## Documentation
 
 Full documentation, configuration options, and webhook setup: **[trust.myaza.co/documentation/sdks](https://trust.myaza.co/documentation/sdks)**.
+
+## Presence reporting (Address Intelligence)
+
+When a workflow enables presence verification (`addressCollection.presence.enabled`),
+the SDK stores the confirmed pin on-device at capture. Call the reporter from your
+app on a natural moment (app open works well):
+
+```dart
+final result = await MyazaAddressPresence.report(
+  apiKey: 'pk_live_…',
+  externalUserId: 'user_42', // the same userId the KYC flow ran with
+);
+// result.reason: reported | noPin | servicesOff | noFix | outsideFence | networkError
+```
+
+It never throws and never blocks startup. The geofence is evaluated ON-DEVICE:
+only the derived record (calendar day + a night flag) is transmitted, never a
+coordinate. A fix outside the fence sends nothing (the server scores presence,
+never absence); a mock-location fix is reported flagged. `clearPresencePin`
+drops the stored pin (sign-out, or once the watch resolves).
+
+### Background monitoring (native geofencing)
+
+The stronger tier: the OS wakes the SDK on fence crossings around the stored
+pin, app closed or not, so dwell and nights accrue with nobody in the loop.
+Entries stamp a timestamp; exits fold the dwell span into per-day aggregates
+natively (Kotlin on Android, Swift on iOS) and flush them. As with the
+foreground tier, only the derived day records ever leave the phone.
+
+```dart
+final result = await MyazaBackgroundPresence.enable(
+  apiKey: 'pk_live_…',
+  externalUserId: 'user_42',
+);
+// result.reason: started | noPin | permissionDenied | backgroundDenied | unavailable
+```
+
+`enable()` walks the two-step permission escalation (while-in-use, then
+"allow all the time"); a refusal leaves the foreground tier working exactly
+as before. `MyazaBackgroundPresence.disable()` disarms and forgets the
+config. On Android the fence survives reboots (a boot receiver re-arms it);
+on iOS, region monitoring relaunches the app for crossings by itself.
+
+**Host declarations, required before enable() can succeed.** The SDK
+deliberately does not merge these in, because declaring background location
+changes an app's store review posture and that decision belongs to you:
+
+Android (`AndroidManifest.xml` — the example app carries a commented copy):
+
+```xml
+<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+<uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+```
+
+iOS (`Info.plist`):
+
+```xml
+<key>NSLocationWhenInUseUsageDescription</key>
+<string>Used to confirm your address for verification.</string>
+<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+<string>Lets your address stay confirmed automatically.</string>
+```
+
+### The Android foreground service (reliability on OEM-managed phones)
+
+A geofence alone is not reliable on Android once a manufacturer's battery
+manager decides your app is idle: transitions are dropped, nothing says so,
+and the watch quietly lapses to inconclusive. The phones on that list (Tecno,
+Infinix, itel, Xiaomi, Oppo, Vivo) are the ones the market carries. A
+foreground service, with its persistent notification, is the one thing those
+managers leave alone — and OkHi's own integration guidance for the same
+markets is exactly this.
+
+Opt-in and Android only (iOS region monitoring is reliable on its own). The
+plugin ships the service class; **you declare it**, with its two permissions,
+in your own manifest, for the same reason you declare background location
+yourself — a location foreground service changes your Play review posture:
+
+```xml
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+<uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+
+<application>
+  <service
+      android:name="co.myazahq.kyc.PresenceForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="location" />
+</application>
+```
+
+Then, after the flow stored a pin:
+
+```dart
+final result = await MyazaPresenceService.enable(
+  apiKey: 'pk_live_…',
+  externalUserId: 'user_42',
+  notification: const PresenceNotification(
+    title: 'Address verification in progress', // shown in the status bar
+    body: 'Open the app to see your progress',
+    color: 0xFF5645F5,
+  ),
+);
+// result.reason: started | unsupportedPlatform | noPin | permissionDenied
+//              | backgroundDenied | notDeclared | unavailable
+```
+
+`enable()` walks the same permission escalation as the geofence tier and arms
+the fence too. While it runs, a low-power fix every ten minutes (or hundred
+metres) is turned into the same enter/exit spans the geofence folds, natively,
+on the same stored state, so the two never double-count a stay; the queue
+flushes while the process is alive; a fence the OS dropped (a location toggle
+clears every registered fence) is re-armed; and a reboot restarts it. The
+notification uses its own channel, so yours are never touched. Word it
+honestly: it is on screen for days. `MyazaPresenceService.disable()` stops it.
+
+### Which tier is running?
+
+Permissions get revoked in Settings and nothing tells the app. Ask:
+
+```dart
+final status = await presenceStatus('user_42');
+// status.tier: background | foreground | none
+// status.locationServicesEnabled / foregroundPermission / backgroundPermission
+// status.geofenceArmed / foregroundServiceRunning / alwaysOn
+if (!status.locationServicesEnabled) {
+  // The phone's location toggle is off: permission granted or not, no fix
+  // can be taken. This opens the toggle's own screen.
+  await openLocationSettings(target: PresenceSettingsTarget.services);
+} else if (status.tier == PresenceTier.none && status.pinStored) {
+  // The road back runs through Settings — no OS allows re-prompting in-app.
+  await openLocationSettings();
+}
+```
+
+### Showing the person where the check stands
+
+Somebody kept from a feature until their address is verified should be able
+to see the progress in your app, without a webhook relayed through your
+backend. `GET /api/kyc/address/presence/:externalUserId` with the publishable
+key answers `{ status, progress, tier, … }` — `status` is one of
+`not_started | in_progress | verified | failed | inconclusive | expired |
+revoked`, `progress.score` is 0..1 on WEIGHTED evidence, and an unknown user
+answers the same `not_started` shape as a user with no watch.

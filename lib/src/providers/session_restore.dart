@@ -1,7 +1,10 @@
+import '../config/address_collection.dart';
+import '../config/address_flow.dart';
 import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../utils/step_log.dart';
+import 'address_step_order.dart';
 import 'kyc_state.dart';
 
 // ─── Restoring a resumed attempt session ─────────────────────────────────────
@@ -79,10 +82,17 @@ const _neverResume = {KYCStep.submitted};
 /// whose applicant never explicitly picked one stored no `selectedCountry`, the
 /// ID type therefore could not be resolved, and the resume dropped them on the
 /// ID-number screen with no ID type and a permanently disabled Continue.
+/// [offeredAddressSteps] is what this mount's address flow actually contains
+/// (`addressStepsFor`). A saved address step the flow no longer offers is
+/// clamped onto the nearest one it does — see [resumeAddressStep]. Defaults to
+/// empty, which leaves a saved address step alone: a caller that cannot say
+/// what is offered must not be taken to mean "nothing is".
 KYCState restoredState(
   KYCState s,
   Map<String, dynamic> progress, {
   String? fallbackCountry,
+  List<KYCStep> offeredAddressSteps = const [],
+  KYCStep? addressExit,
 }) {
   final data = (progress['data'] as Map?)?.cast<String, dynamic>() ?? const {};
   final mediaIds = (progress['mediaIds'] as Map?)?.cast<String, dynamic>() ?? const {};
@@ -111,7 +121,16 @@ KYCState restoredState(
   // act; the ID screen without an ID type is somewhere they can only sit.
   final restored = step ?? s.currentStep;
   final target = _neverResume.contains(restored) ? s.currentStep : restored;
-  final safeStep = idType == null && _needsIdType.contains(target) ? KYCStep.idType : target;
+  // Same principle one flow along: an address step this mount no longer offers
+  // is absent from the step order, so next and back are both no-ops and the
+  // applicant is stranded. When the flow offers NO address steps at all (the
+  // workflow was republished with address collection off), the applicant is
+  // routed past the region to [addressExit], the step they would have reached
+  // had they finished, never left on a screen the order cannot place.
+  final inFlow = kAddressFlowOrder.contains(target)
+      ? resumeAddressStep(target, offeredAddressSteps) ?? addressExit ?? target
+      : target;
+  final safeStep = idType == null && _needsIdType.contains(inFlow) ? KYCStep.idType : inFlow;
 
   return s.copyWith(
     currentStep: safeStep,
@@ -120,6 +139,7 @@ KYCState restoredState(
       documentBack: (mediaIds['documentBack'] as String?) ?? s.mediaIds.documentBack,
       selfie: (mediaIds['selfie'] as String?) ?? s.mediaIds.selfie,
       proofOfAddress: (mediaIds['proofOfAddress'] as String?) ?? s.mediaIds.proofOfAddress,
+      addressPhoto: (mediaIds['addressPhoto'] as String?) ?? s.mediaIds.addressPhoto,
     ),
     selectedCountry: country,
     selectedIdType: idType,
@@ -150,6 +170,10 @@ KYCState restoredState(
             ...(data['questionnaireAnswers'] as Map).cast<String, dynamic>(),
           }
         : s.questionnaireAnswers,
+    // The device fix is deliberately NOT restored: it is evidence of standing
+    // somewhere at a MOMENT, so it is taken fresh at confirm. See
+    // addressFromProgressJson, which coerces every other field on the way in.
+    address: addressFromProgressJson(data['address']) ?? s.address,
   );
 }
 

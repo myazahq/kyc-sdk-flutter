@@ -11,7 +11,10 @@ import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../widgets/media_source_sheet.dart';
 import '../widgets/myaza_button.dart';
+import '../config/upload_limits.dart';
 import 'business_document_slot.dart';
+
+part 'business_documents_pick.dart';
 
 // ─── Business documents screen ────────────────────────────────────────────────
 //
@@ -21,13 +24,8 @@ import 'business_document_slot.dart';
 // ride the business /verify submission as `business.documents`.
 //
 // Mirrors the web SDK's BusinessDocumentsStep. Files come from the photo
-// library, the camera, or Files (the only path that can supply a PDF).
-
-const _kAllowedExtensions = ['jpg', 'jpeg', 'png', 'webp', 'pdf'];
-
-/// Server cap is 25MB; stay under it so a rejected upload is caught locally
-/// with a clear message instead of a 413.
-const int kBusinessDocMaxBytes = 20 * 1024 * 1024;
+// library, the camera, or Files (the only path that can supply a PDF) — the
+// picking lives in business_documents_pick.dart.
 
 class BusinessDocumentsScreen extends ConsumerStatefulWidget {
   final void Function(Object error)? onError;
@@ -48,62 +46,7 @@ class _BusinessDocumentsScreenState
   final Map<String, Uint8List> _previews = {};
   final Set<String> _pdfKeys = {};
 
-  String _mimeFor(String? ext) => switch (ext?.toLowerCase()) {
-        'png' => 'image/png',
-        'webp' => 'image/webp',
-        'pdf' => 'application/pdf',
-        _ => 'image/jpeg',
-      };
-
-  Future<void> _pick(String key) async {
-    setState(() => _errors.remove(key));
-    final source = await showMediaSourceSheet(context);
-    if (source == null || !mounted) return;
-    switch (source) {
-      case MediaSource.photoLibrary:
-        await _pickImage(key, ImageSource.gallery);
-      case MediaSource.camera:
-        await _pickImage(key, ImageSource.camera);
-      case MediaSource.files:
-        await _pickFile(key);
-    }
-  }
-
-  Future<void> _pickImage(String key, ImageSource source) async {
-    try {
-      final picked =
-          await ImagePicker().pickImage(source: source, imageQuality: 90);
-      if (picked == null || !mounted) return;
-      final bytes = await picked.readAsBytes();
-      if (!mounted) return;
-      // A FRIENDLY name, not the picker's temp junk: iOS's image_picker names
-      // its copy `image_picker_<UUID>.png` (the photo library does not expose
-      // the original), which reads as noise on the uploaded card. The slot key
-      // says what the file IS — `incorporation_certificate.jpg`.
-      final ext = picked.name.split('.').lastOrNull ?? 'jpg';
-      await _upload(key, bytes, _mimeFor(ext), '$key.${ext.toLowerCase()}',
-          previewPath: picked.path);
-    } catch (_) {
-      _fail(key, 'Could not read that photo. Please try another.');
-    }
-  }
-
-  /// Files — the only source that can supply a PDF.
-  Future<void> _pickFile(String key) async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: _kAllowedExtensions,
-        withData: true,
-      );
-      final file = result?.files.firstOrNull;
-      final bytes = file?.bytes;
-      if (file == null || bytes == null || !mounted) return; // cancelled
-      await _upload(key, bytes, _mimeFor(file.extension), file.name);
-    } catch (_) {
-      _fail(key, 'Could not read that file. Please try another.');
-    }
-  }
+  void _rebuild(VoidCallback fn) => setState(fn);
 
   Future<void> _upload(
     String key,
@@ -112,8 +55,9 @@ class _BusinessDocumentsScreenState
     String name, {
     String? previewPath,
   }) async {
-    if (bytes.length > kBusinessDocMaxBytes) {
-      _fail(key, 'File is too large (max 20MB).');
+    final sizeError = uploadSizeError(mime, bytes.length);
+    if (sizeError != null) {
+      _fail(key, sizeError);
       return;
     }
     final isPdf = mime == 'application/pdf';

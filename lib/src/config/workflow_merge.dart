@@ -1,8 +1,10 @@
 import '../services/api_service.dart' show ApplicantWorkflow, WorkflowFlowConfig;
+import 'biometric_options.dart';
 import 'business.dart';
 import 'contact_verification.dart';
 import 'kyc_config.dart';
 import 'nfc_config.dart';
+import 'address_collection.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
 import '../providers/step_resubmit.dart';
@@ -53,6 +55,11 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
       ? ProofOfAddressConfig.fromJson(rawPoa.cast<String, dynamic>())
       : null;
 
+  final rawAddress = flow.raw['addressCollection'];
+  final addressCollection = rawAddress is Map
+      ? AddressCollectionConfig.fromJson(rawAddress.cast<String, dynamic>())
+      : null;
+
   final rawEmail = flow.raw['emailVerification'];
   final emailVerification = rawEmail is Map
       ? EmailVerificationConfig.fromJson(rawEmail.cast<String, dynamic>())
@@ -78,21 +85,34 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
       ? WorkflowBusinessConfig.fromJson(rawBusiness.cast<String, dynamic>())
       : null;
 
+  // Per-field like appearance: a flow that only switches the selfie review on
+  // must not wipe a host's `doneButton: false`.
+  final rawBiometric = flow.raw['biometric'];
+  final biometric = rawBiometric is Map
+      ? (base.biometric ?? const BiometricFlowConfig())
+          .merge(BiometricFlowConfig.fromJson(rawBiometric.cast<String, dynamic>()))
+      : null;
+
   return base.copyWith(
     country: country,
     countries: countries,
     questionnaire: questionnaire,
     proofOfAddress: proofOfAddress,
+    addressCollection: addressCollection,
     resubmit: resubmit,
     emailVerification: emailVerification,
     phoneVerification: phoneVerification,
     nfc: nfc,
     subjectType: flow.subjectType,
+    // Raw-read like livenessMode: the parsed flow payload predates the field.
+    scope: flow.raw['scope'] as String?,
     business: business,
     livenessMode: flow.raw['livenessMode'] as String?,
     flashSequenceLength: (flow.raw['flashSequenceLength'] as num?)?.toInt(),
     deviceIntelligence: flow.raw['deviceIntelligence'] as bool?,
     keyPeopleLinkRecovery: flow.raw['keyPeopleLinkRecovery'] as bool?,
+    consentStep: flow.raw['consentStep'] as bool?,
+    biometric: biometric,
     // Flow-defined idTypes win wholesale (an empty list means "all granted",
     // the same "unset = all" semantic the id-type picker applies). Null = the
     // flow didn't define it, so the consumer's prop is kept.

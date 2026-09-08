@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 
 import '../config/theme.dart';
@@ -7,6 +8,10 @@ import '../config/theme.dart';
 
 class MyazaInput extends StatefulWidget {
   final String? label;
+
+  /// Marks the label with an asterisk in the error colour: a field the flow
+  /// will not continue without.
+  final bool required;
   final String? hint;
   final String? errorText;
   final String? helperText;
@@ -42,6 +47,7 @@ class MyazaInput extends StatefulWidget {
   const MyazaInput({
     super.key,
     this.label,
+    this.required = false,
     this.hint,
     this.errorText,
     this.helperText,
@@ -110,7 +116,7 @@ class _MyazaInputState extends State<MyazaInput> {
       suffixIcon = GestureDetector(
         onTap: () => setState(() => _obscured = !_obscured),
         child: Icon(
-          _obscured ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+          _obscured ? LucideIcons.eyeOff : LucideIcons.eye,
           size: 20,
           color: colors.textMuted,
         ),
@@ -155,10 +161,15 @@ class _MyazaInputState extends State<MyazaInput> {
             : null,
         prefixIconConstraints:
             const BoxConstraints(minWidth: 40, minHeight: 0),
+        // Aligned to the field's right edge, and through an Align so the
+        // slot's minimum width reaches the child as LOOSE constraints: fed
+        // the 28px directly, a 16px spinner became a 28x16 oval, and centred
+        // it floated off the edge (user reports 2026-09-08).
         suffixIcon: suffixIcon != null
             ? Padding(
-                padding: const EdgeInsets.only(right: 12),
-                child: suffixIcon,
+                // RN's input holds its suffix `md` in from the edge.
+                padding: const EdgeInsets.only(right: MyazaSpacing.md),
+                child: Align(alignment: Alignment.centerRight, child: suffixIcon),
               )
             : null,
         suffixIconConstraints:
@@ -202,7 +213,17 @@ class _MyazaInputState extends State<MyazaInput> {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.label != null) ...[
-          Text(widget.label!, style: text.label),
+          Text.rich(TextSpan(
+            text: widget.label,
+            style: text.label,
+            children: [
+              if (widget.required)
+                TextSpan(
+                  text: ' *',
+                  style: text.label.copyWith(color: MyazaColors.error),
+                ),
+            ],
+          )),
           const SizedBox(height: MyazaSpacing.xs),
         ],
         field,
@@ -210,7 +231,7 @@ class _MyazaInputState extends State<MyazaInput> {
           const SizedBox(height: MyazaSpacing.xs),
           Row(
             children: [
-              const Icon(Icons.error_outline,
+              const Icon(LucideIcons.circleAlert,
                   size: 14, color: MyazaColors.error),
               const SizedBox(width: 4),
               Expanded(

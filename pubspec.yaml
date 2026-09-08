@@ -1,6 +1,6 @@
 name: myaza_kyc_sdk_flutter
 description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
-version: 2.6.0
+version: 2.7.0
 
 homepage: https://github.com/myazahq/kyc-sdk-flutter
 repository: https://github.com/myazahq/kyc-sdk-flutter
@@ -37,6 +37,14 @@ dependencies:
   # can actually be read, which is what justifies a native plugin here.
   url_launcher: ^6.3.0
   file_picker: ^8.1.0  # Proof-of-Address step: pick an image OR a PDF document
+  # Address Intelligence step: the one-shot GPS fix ("Use my current location"
+  # + the attest-presence device fix). Best-effort — a denied permission never
+  # blocks the flow. Host apps add the platform permission strings; see README.
+  geolocator: ^14.0.0
+  # Address Intelligence: the framed Google map picker — our hosted /embed/map
+  # page in a WebView, on Myaza's own key. Falls back to the built-in OSM
+  # picker when the platform serves no frame URL or the page never reports ready.
+  webview_flutter: ^4.10.0
   flutter_nfc_kit: ^3.6.0  # ISO-DEP transport for the eMRTD chip read
   # eMRTD chip crypto (BAC): 3DES + SHA-1 for key derivation and secure
   # messaging. Standard primitives only — the protocol itself is ours, in

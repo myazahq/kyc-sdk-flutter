@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../config/scope.dart';
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -6,10 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:uuid/uuid.dart';
 
+import '../config/address_collection.dart';
 import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
+import '../config/selfie_upload_wait.dart';
 import 'session_progress.dart';
 import 'session_restore.dart';
 import '../config/key_people_prefill.dart';
@@ -20,9 +23,11 @@ import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
 import '../services/retry.dart';
 import '../services/validators.dart';
+import '../utils/address_current_location.dart';
 import '../utils/resolve_url.dart';
 import '../utils/step_log.dart';
 import 'kyc_state.dart';
+import 'address_step_order.dart';
 import 'step_order.dart';
 import '../config/multi_id.dart';
 
@@ -102,7 +107,17 @@ class KYCNotifier extends _$KYCNotifier {
     // StepLog.record collapses consecutive duplicates. Rides the submission
     // as metadata.device.stepLog for the dashboard timeline.
     StepLog.reset();
-    StepLog.record(KYCStep.consent);
+    // The step the flow opens on: consent, or the first real step when the
+    // workflow switched the consent screen off (`consentStep: false`). Read
+    // WITH the preloaded server config when a workflow was resolved before
+    // mount: which steps exist depends on it (see openingStep).
+    final preloaded = ref.read(preloadedServerConfigProvider);
+    final opening = openingStep(_config, serverConfig: preloaded);
+    StepLog.record(opening);
+    // A second run of the SDK in one app process is a new attempt, possibly by
+    // a different person somewhere else, so the shared location fix starts
+    // empty rather than answering with the last applicant's coordinates.
+    resetCurrentFix();
     listenSelf((previous, next) {
       if (previous?.currentStep != next.currentStep) {
         StepLog.record(
@@ -127,9 +142,8 @@ class KYCNotifier extends _$KYCNotifier {
 
     // When the launcher resolved a workflow before mount, its idTypes/branding
     // are already known — use them directly and skip the /config fetch.
-    final preloaded = ref.read(preloadedServerConfigProvider);
     if (preloaded != null) {
-      return KYCState(serverConfig: preloaded);
+      return KYCState(currentStep: opening, serverConfig: preloaded);
     }
     // Otherwise kick off the /api/kyc/config fetch asynchronously. The state
     // starts in ServerConfigStatus.loading and the screens render placeholders
@@ -137,20 +151,32 @@ class KYCNotifier extends _$KYCNotifier {
     // falls back to the consumer's `idTypes` prop (server still 403s anything
     // actually disabled, so this is at worst as restrictive as the server).
     Future.microtask(_loadServerConfig);
-    return const KYCState();
+    return KYCState(currentStep: opening);
   }
 
   Future<void> _loadServerConfig() async {
     try {
       final response = await api.config();
+      final ready = ServerSdkConfig(
+        status: ServerConfigStatus.ready,
+        idTypes: response.idTypes,
+        environment: response.environment,
+        branding: response.branding,
+        geoCountry: response.geoCountry,
+        addressSearch: response.addressSearch,
+        addressSearchMode: response.addressSearchMode,
+        mapsFrameUrl: response.mapsFrameUrl,
+      );
+      // The facts that just landed can add a step AHEAD of the one the flow
+      // opened on (the address search step, on a consent-less address flow).
+      // Someone still standing on the placeholder's opening step, having
+      // done nothing, is moved to the real one; anyone who has moved is left
+      // alone. Same nudge as the RN store's loadServerConfig.
+      final before = openingStep(_config, serverConfig: state.serverConfig);
+      final after = openingStep(_config, serverConfig: ready);
       state = state.copyWith(
-        serverConfig: ServerSdkConfig(
-          status: ServerConfigStatus.ready,
-          idTypes: response.idTypes,
-          environment: response.environment,
-          branding: response.branding,
-          geoCountry: response.geoCountry,
-        ),
+        serverConfig: ready,
+        currentStep: state.currentStep == before && after != before ? after : null,
       );
     } catch (err) {
       final described = _describeConfigError(err);
@@ -414,10 +440,21 @@ class KYCNotifier extends _$KYCNotifier {
     if (country == state.selectedCountry) return;
     state = state.copyWith(
       selectedCountry: country,
+      countryAutoPicked: false,
       clearSelectedIdType: true,
       documentScanPhase: 'front',
       docReviewPhase: 'camera',
     );
+  }
+
+  /// Declare a GUESSED country (the address scope's IP default, a geocode
+  /// from the applicant's fix): the same reset as [setCountry], flagged so
+  /// later evidence may correct it. Mirrors the web SDK's SET_COUNTRY_AUTO.
+  void setCountryAuto(String country) {
+    setCountry(country);
+    if (!state.countryAutoPicked) {
+      state = state.copyWith(countryAutoPicked: true);
+    }
   }
 
   void setIdType(IdTypeConfig idType) {
@@ -479,6 +516,30 @@ class KYCNotifier extends _$KYCNotifier {
       _ => current,
     };
     state = state.copyWith(mediaIds: updated);
+  }
+
+  /// The captured selfie's base64 preview, kept centrally so the liveness
+  /// screen restores its review on return (its own state and the autoDispose
+  /// liveness provider die with it on step change).
+  void setSelfieImage(String selfieBase64) {
+    state = state.copyWith(selfieImage: selfieBase64);
+  }
+
+  /// Retake: drop the selfie preview and its uploaded media ids in one set
+  /// (the upload's record goes with them, see [setSelfieUpload]).
+  void clearSelfie() {
+    state = state.copyWith(
+      clearSelfieImage: true,
+      mediaIds: state.mediaIds.copyWith(clearSelfie: true),
+    );
+  }
+
+  /// The selfie upload's progress report. The liveness screen writes it; the
+  /// submitted screen waits on it when the review is hidden (the biometric
+  /// scopes hand over before the upload lands). See
+  /// config/selfie_upload_wait.dart.
+  void setSelfieUpload(SelfieUploadState upload) {
+    state = state.copyWith(selfieUpload: upload);
   }
 
   /// Convenience for DocumentCaptureScreen: also advances [documentScanPhase]
@@ -690,6 +751,64 @@ class KYCNotifier extends _$KYCNotifier {
     );
   }
 
+  /// Stores the smart address the address-collection step gathered (the pin,
+  /// directions, and — when attestPresence took one — the device fix).
+  /// Dev/sandbox only (the review step's Test-result tabs).
+  void setAddressSandboxOutcome(String? outcome) {
+    state = state.copyWith(addressSandboxOutcome: outcome);
+  }
+
+  void setAddress(AddressState address) {
+    state = state.copyWith(address: address);
+  }
+
+  /// Records the uploaded door photo's mediaId.
+  void setAddressPhoto(String mediaId) {
+    state = state.copyWith(
+      mediaIds: state.mediaIds.copyWith(addressPhoto: mediaId),
+    );
+  }
+
+  /// The local path of the uploaded entrance photo, so the review step can
+  /// show it. A display artefact — it never reaches the server or a snapshot.
+  void setAddressPhotoPreview(String? path) {
+    state = state.copyWith(
+      addressPhotoPreview: path,
+      clearAddressPhotoPreview: path == null,
+    );
+  }
+
+  /// The presence primer was acknowledged, so it is not shown again this
+  /// session.
+  void markAddressIntroSeen() {
+    state = state.copyWith(addressIntroSeen: true);
+  }
+
+  /// The entrance step is (or stops) showing the Street View framer: the
+  /// sheet header reads the mode off this.
+  void setAddressEntranceFraming(bool framing) {
+    if (state.addressEntranceFraming == framing) return;
+    state = state.copyWith(addressEntranceFraming: framing);
+  }
+
+  /// Starts the address over: the pin, the uploaded photo and its preview go
+  /// together, because a photo of an entrance is about the pin it was taken
+  /// for and keeping one without the other says something untrue.
+  void clearAddress() {
+    state = state.copyWith(
+      clearAddress: true,
+      clearAddressPhotoPreview: true,
+      mediaIds: state.mediaIds.copyWith(clearAddressPhoto: true),
+    );
+  }
+
+  /// Drops the door photo (the user tapped the row's X).
+  void clearAddressPhoto() {
+    state = state.copyWith(
+      mediaIds: state.mediaIds.copyWith(clearAddressPhoto: true),
+    );
+  }
+
   void clearError() {
     state = state.clearError();
   }
@@ -823,6 +942,11 @@ class KYCNotifier extends _$KYCNotifier {
         uboUnidentifiable: state.uboUnidentifiable,
         applicant: applicant,
       ),
+      // The premises pin, when the address step gathered one (a KYB flow's pin
+      // is the BUSINESS PREMISES, checked against the registry address).
+      address: state.address != null
+          ? addressPayload(state.address!, config: _config.addressCollection)
+          : null,
       questionnaire: state.questionnaireAnswers.isNotEmpty
           ? state.questionnaireAnswers
           : null,
@@ -986,7 +1110,8 @@ class KYCNotifier extends _$KYCNotifier {
     // rejected by the client before a request was ever made.
     final idTypeConfig = state.selectedIdType;
     final committedSlots = state.multiIdSlots;
-    if (idTypeConfig == null && committedSlots.isEmpty) {
+    // Scoped flows never pick an ID — the transport marker stands in.
+    if (idTypeConfig == null && committedSlots.isEmpty && configScope(_config.scope) == null) {
       throw const KYCApiException(
         statusCode: 0,
         error: 'invalid_state',
@@ -1028,7 +1153,13 @@ class KYCNotifier extends _$KYCNotifier {
     // The org's user reference is the typed top-level `userId` field (becomes
     // Entity.externalUserId at the KYC seam). `metadata` is free-form passthrough.
     final userId = _config.userId;
-    final extraMeta = _extraMetadata();
+    final extraMeta = <String, String>{
+      ...?_extraMetadata(),
+      // The address flow's Test-result pick (dev/sandbox tabs on the review
+      // step). Ignored by production, so it is safe to send whenever set.
+      if ((state.addressSandboxOutcome ?? '').isNotEmpty)
+        'sandboxOutcome': state.addressSandboxOutcome!,
+    };
     final deviceMetadata = await _collectDeviceMetadata();
 
     final mediaIds = state.mediaIds;
@@ -1042,7 +1173,11 @@ class KYCNotifier extends _$KYCNotifier {
     final request = VerifyRequest(
       sessionId: state.sessionId,
       country: effectiveCountry(_config, state),
-      idType: primary?.idType ?? idTypeConfig?.key ?? '',
+      // Scoped flows carry the scope's transport marker instead of a picked
+      // ID — the server requires a published workflow of the matching scope.
+      idType: configScope(_config.scope) != null
+          ? kScopeIdTypes[configScope(_config.scope)]!
+          : (primary?.idType ?? idTypeConfig?.key ?? ''),
       idNumber: primary?.idNumber ?? idNumber,
       // Each check carries its OWN chip read — a top-level payload could only
       // ever be attributed to the primary check.
@@ -1079,6 +1214,7 @@ class KYCNotifier extends _$KYCNotifier {
               documentBackVideo: mediaIds.documentBackVideo,
               livenessVideo: mediaIds.livenessVideo,
               proofOfAddress: mediaIds.proofOfAddress,
+              addressPhoto: mediaIds.addressPhoto,
             )
           : null,
       questionnaire: state.questionnaireAnswers.isNotEmpty
@@ -1086,6 +1222,11 @@ class KYCNotifier extends _$KYCNotifier {
           : null,
       proofOfAddressType:
           mediaIds.proofOfAddress != null ? state.poaDocumentType : null,
+      // The smart address, when the step gathered one — the server validates
+      // it against the workflow either way. Mirrors the RN buildVerifyRequest.
+      address: state.address != null
+          ? addressPayload(state.address!, config: _config.addressCollection)
+          : null,
       deviceIntelligence: _config.deviceIntelligence,
       contact: (state.emailToken != null || state.phoneToken != null)
           ? VerifyContact(
@@ -1131,10 +1272,14 @@ class KYCNotifier extends _$KYCNotifier {
       // userId the server has nothing else to find the previous attempt by,
       // and every relaunch minted a fresh session. Hashed server-side.
       final deviceRef = await FingerprintService.instance.persistentDeviceId();
+      // What this phone is, sent up front: the dashboard's in-progress row
+      // shows Device and Source from the moment the SDK loads.
+      final device = await DeviceMetadataService.instance.collect().catchError((_) => <String, dynamic>{});
       final res = await api.startSession(
         externalUserId: _config.userId ?? _config.metadata?['userId'],
         workflowId: _config.workflowId,
         deviceRef: deviceRef,
+        device: device,
       );
       state = state.copyWith(sessionId: res.sessionId, sessionUrl: res.url);
       // Resuming: put the user back where they were, exactly as web does.
@@ -1148,6 +1293,14 @@ class KYCNotifier extends _$KYCNotifier {
           // The country the flow would use anyway — without it a session whose
           // applicant never picked one cannot rebuild its ID type.
           fallbackCountry: effectiveCountry(_config, state),
+          // What the address flow offers THIS time. A workflow republished with
+          // its photo slot off, or a platform that stopped serving search, no
+          // longer has the screen the snapshot names.
+          offeredAddressSteps: addressStepsFor(_config, state),
+          // Where the applicant goes when the flow has no address region at
+          // all: the first step AFTER where the region would sit that the real
+          // order actually contains. Computed from the order, never guessed.
+          addressExit: _addressExitFor(state),
         );
       }
     } catch (_) {
@@ -1155,13 +1308,28 @@ class KYCNotifier extends _$KYCNotifier {
     }
   }
 
+  /// The step after the address region in the REAL order, for a resume whose
+  /// flow no longer offers any address step. Questionnaire sits immediately
+  /// after the region when present; submission is the floor.
+  KYCStep? _addressExitFor(KYCState state) {
+    final order = buildStepOrder(_config, state);
+    for (final step in order) {
+      if (step == KYCStep.questionnaire || step == KYCStep.submitted) return step;
+    }
+    return null;
+  }
+
   void reset() {
-    // Fresh step journey per session (mirrors the RN store's reset).
+    // Fresh step journey per session (mirrors the RN store's reset), opening
+    // on the same step a fresh provider would, with the server facts kept.
+    final serverConfig = state.serverConfig;
+    final opening = openingStep(_config, serverConfig: serverConfig);
     StepLog.reset();
-    StepLog.record(KYCStep.consent);
+    StepLog.record(opening);
+    resetCurrentFix();
     _progressTimer?.cancel();
     _lastSavedProgress = '';
-    state = const KYCState();
+    state = KYCState(currentStep: opening, serverConfig: serverConfig);
   }
 
   // ── Attempt-session progress ────────────────────────────────────────────
@@ -1185,7 +1353,12 @@ class KYCNotifier extends _$KYCNotifier {
         s,
         effectiveCountryValue: effectiveCountry(_config, s),
       );
-      if (isUntouchedProgress(payload)) return;
+      if (isUntouchedProgress(
+        payload,
+        openingStep: kStepWireNames[openingStep(_config, serverConfig: s.serverConfig)] ?? 'consent',
+      )) {
+        return;
+      }
       final fingerprint = jsonEncode(payload);
       if (fingerprint == _lastSavedProgress) return;
       _lastSavedProgress = fingerprint;

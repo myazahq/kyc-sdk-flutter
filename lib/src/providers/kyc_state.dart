@@ -1,7 +1,9 @@
+import '../config/address_collection.dart';
 import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
+import '../config/selfie_upload_wait.dart';
 import '../services/api_service.dart';
 import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
@@ -30,6 +32,14 @@ enum KYCStep {
   nfc,
   liveness,
   proofOfAddress,
+  // The address flow: find it → confirm it → show it → commit it.
+  // `addressCollection` is the PIN step and keeps its original wire name even
+  // though it is now the second screen, so progress saved by older builds
+  // restores cleanly. See config/address_flow.dart.
+  addressSearch,
+  addressCollection,
+  addressEntrance,
+  addressReview,
   questionnaire,
   // Business (KYB) application section. businessDetails is always present in a
   // business flow; the rest are added only when the workflow configures them.
@@ -52,6 +62,7 @@ class KYCMediaIds {
   final String? documentBackVideo;
   final String? livenessVideo;
   final String? proofOfAddress;
+  final String? addressPhoto;
 
   const KYCMediaIds({
     this.documentFront,
@@ -61,6 +72,7 @@ class KYCMediaIds {
     this.documentBackVideo,
     this.livenessVideo,
     this.proofOfAddress,
+    this.addressPhoto,
   });
 
   KYCMediaIds copyWith({
@@ -71,19 +83,25 @@ class KYCMediaIds {
     String? documentBackVideo,
     String? livenessVideo,
     String? proofOfAddress,
+    String? addressPhoto,
     // Removing an upload has to NULL the id, which `?? this` can't express —
     // same explicit-flag pattern as KYCState.clearSelectedIdType.
     bool clearProofOfAddress = false,
+    bool clearAddressPhoto = false,
+    // Retaking the selfie drops both its uploads (see KYCNotifier.clearSelfie).
+    bool clearSelfie = false,
   }) =>
       KYCMediaIds(
         documentFront: documentFront ?? this.documentFront,
         documentBack: documentBack ?? this.documentBack,
-        selfie: selfie ?? this.selfie,
+        selfie: clearSelfie ? null : (selfie ?? this.selfie),
         documentFrontVideo: documentFrontVideo ?? this.documentFrontVideo,
         documentBackVideo: documentBackVideo ?? this.documentBackVideo,
-        livenessVideo: livenessVideo ?? this.livenessVideo,
+        livenessVideo: clearSelfie ? null : (livenessVideo ?? this.livenessVideo),
         proofOfAddress:
             clearProofOfAddress ? null : (proofOfAddress ?? this.proofOfAddress),
+        addressPhoto:
+            clearAddressPhoto ? null : (addressPhoto ?? this.addressPhoto),
       );
 
   bool get hasAny =>
@@ -93,7 +111,8 @@ class KYCMediaIds {
       documentFrontVideo != null ||
       documentBackVideo != null ||
       livenessVideo != null ||
-      proofOfAddress != null;
+      proofOfAddress != null ||
+      addressPhoto != null;
 }
 
 // ─── Server-driven SDK config (fetched from /api/kyc/config) ─────────────────
@@ -121,6 +140,20 @@ class ServerSdkConfig {
   /// The visitor's country from their IP — a DEFAULT, never evidence.
   final String? geoCountry;
 
+  /// Whether the platform's forward address search is available. The address
+  /// flow offers its search step only when it is; without it the applicant
+  /// still places the pin by hand, which every failure path degrades to.
+  final bool addressSearch;
+
+  /// Which search backend answers: `autocomplete` or `basic`. Absent when
+  /// [addressSearch] is false.
+  final String? addressSearchMode;
+
+  /// The framed Google-map picker page for a WebView (webview_flutter): our
+  /// hosted /embed/map plus a signed APP grant. Null ⇒ the built-in OSM
+  /// picker, which is also the fallback when the page never reports ready.
+  final String? mapsFrameUrl;
+
   const ServerSdkConfig({
     required this.status,
     this.idTypes = const [],
@@ -130,6 +163,9 @@ class ServerSdkConfig {
     this.fatal = false,
     this.branding,
     this.geoCountry,
+    this.addressSearch = false,
+    this.addressSearchMode,
+    this.mapsFrameUrl,
   });
 
   static const ServerSdkConfig loading =
@@ -191,6 +227,12 @@ class KYCState {
   /// `config.country`. See `effectiveCountry` in step_order.dart.
   final String? selectedCountry;
 
+  /// The declared country was GUESSED (the address scope's IP default, or a
+  /// geocode adopted from the applicant's fix) rather than picked, so later
+  /// evidence may correct it; an explicit pick clears it. Mirrors the web
+  /// SDK's `countryAutoPicked`. See config/country_adoption.dart.
+  final bool countryAutoPicked;
+
   /// The resolved definition for the picked ID type (curated or synthesized from
   /// the server config). Null until the user selects one.
   final IdTypeConfig? selectedIdType;
@@ -203,6 +245,19 @@ class KYCState {
   final List<MultiIdSlot> multiIdSlots;
   final UserData? userData;
   final KYCMediaIds mediaIds;
+
+  /// The captured selfie's base64 preview, kept CENTRALLY (the liveness
+  /// screen's own state and the autoDispose liveness provider die on step
+  /// change) so leaving the step and returning restores the review screen
+  /// instead of re-running the whole gesture check. mediaIds.selfie beside it
+  /// is the durable record; a restored session may hold only the mediaId.
+  final String? selfieImage;
+
+  /// The selfie upload's progress report, written by the liveness screen. The
+  /// biometric scopes hand over before the upload lands (the review is off),
+  /// so the submitted screen waits on THIS rather than on the screen's own
+  /// state. See config/selfie_upload_wait.dart.
+  final SelfieUploadState selfieUpload;
   final KYCSubmissionResult? submissionResult;
 
   /// Per-person verification links the server minted for full-KYC key people
@@ -252,6 +307,25 @@ class KYCState {
   /// `utility_bill`). Submitted as `proofOfAddressType`.
   final String? poaDocumentType;
 
+  /// The smart address the address-collection step gathered (pin + directions
+  /// + optional device fix). On a KYB flow this is the business premises.
+  /// Submitted under `address` on /verify. Null until placed.
+  final AddressState? address;
+
+  /// Local file path of the uploaded entrance photo, so the review step can
+  /// show it. A display artefact: never serialised, and never restored (a
+  /// resumed session holds the uploaded mediaId but not the bytes, so the
+  /// entrance step renders its "photo added" placeholder instead).
+  final String? addressPhotoPreview;
+
+  /// The presence "how it works" primer was acknowledged this session.
+  /// Session-local: never saved, never restored.
+  final bool addressIntroSeen;
+
+  /// The entrance step is showing the Street View framer, so the sheet header
+  /// says so. Transient: never serialised, never restored.
+  final bool addressEntranceFraming;
+
   /// Contact-verification proofs (email/phone OTP). Tokens are submitted under
   /// `contact` on /verify; the addresses are kept so a returning user sees the
   /// verified state.
@@ -294,6 +368,10 @@ class KYCState {
   /// Dev/sandbox only: pins the canned outcome served instead of calling the
   /// register. Sent as `metadata.sandboxOutcome`; production ignores it.
   final String? businessSandboxOutcome;
+
+  /// Dev/sandbox only: the address flow's Test-result pick (the web SDK's
+  /// tabs). Sent as `metadata.sandboxOutcome`; production ignores it.
+  final String? addressSandboxOutcome;
 
   /// Contact email for key-people invites (collected when the workflow emails
   /// verification links to full-KYC directors/owners).
@@ -345,12 +423,15 @@ class KYCState {
     this.sessionUrl,
     this.businessCheck = const BusinessCheckState(),
     this.selectedCountry,
+    this.countryAutoPicked = false,
     this.selectedIdType,
     this.idNumber,
     this.multiIdSlotIndex = 0,
     this.multiIdSlots = const [],
     this.userData,
     this.mediaIds = const KYCMediaIds(),
+    this.selfieImage,
+    this.selfieUpload = kIdleSelfieUpload,
     this.submissionResult,
     this.keyPeopleInvites = const [],
     this.error,
@@ -365,6 +446,10 @@ class KYCState {
     this.questionnaireAnswers = const {},
     this.integrity = const {},
     this.poaDocumentType,
+    this.address,
+    this.addressPhotoPreview,
+    this.addressIntroSeen = false,
+    this.addressEntranceFraming = false,
     this.emailToken,
     this.emailAddress,
     this.phoneToken,
@@ -378,6 +463,7 @@ class KYCState {
     this.registrationName,
     this.businessSubdivisionCode,
     this.businessSandboxOutcome,
+    this.addressSandboxOutcome,
     this.businessContactEmail,
     this.businessAddress,
     this.businessEmail,
@@ -402,6 +488,7 @@ class KYCState {
     String? sessionUrl,
     BusinessCheckState? businessCheck,
     String? selectedCountry,
+    bool? countryAutoPicked,
     IdTypeConfig? selectedIdType,
     String? idNumber,
     int? multiIdSlotIndex,
@@ -422,6 +509,14 @@ class KYCState {
     Map<String, dynamic>? questionnaireAnswers,
     Map<String, dynamic>? integrity,
     String? poaDocumentType,
+    AddressState? address,
+    // Starting the address over must null the pin, which `?? this` cannot
+    // express — the same explicit-flag pattern as clearSelectedIdType.
+    bool clearAddress = false,
+    String? addressPhotoPreview,
+    bool clearAddressPhotoPreview = false,
+    bool? addressIntroSeen,
+    bool? addressEntranceFraming,
     String? emailToken,
     // Explicit flags: null tokens cannot be set via `?? this` (the
     // clearSelectedIdType pattern) — used by submit recovery.
@@ -438,6 +533,7 @@ class KYCState {
     String? registrationName,
     String? businessSubdivisionCode,
     String? businessSandboxOutcome,
+    String? addressSandboxOutcome,
     String? businessContactEmail,
     String? businessAddress,
     String? businessEmail,
@@ -463,6 +559,10 @@ class KYCState {
     bool clearNfcChipData = false,
     // Removing the PoA upload also clears the kind it was labelled with.
     bool clearPoaDocumentType = false,
+    String? selfieImage,
+    SelfieUploadState? selfieUpload,
+    // Retake: copyWith can't null a field via `?? this`.
+    bool clearSelfieImage = false,
     List<String>? expiredContact,
   }) =>
       KYCState(
@@ -471,6 +571,7 @@ class KYCState {
       sessionUrl: sessionUrl ?? this.sessionUrl,
         businessCheck: businessCheck ?? this.businessCheck,
         selectedCountry: selectedCountry ?? this.selectedCountry,
+        countryAutoPicked: countryAutoPicked ?? this.countryAutoPicked,
         selectedIdType:
             clearSelectedIdType ? null : (selectedIdType ?? this.selectedIdType),
         idNumber: clearSelectedIdType ? null : (idNumber ?? this.idNumber),
@@ -478,6 +579,9 @@ class KYCState {
         multiIdSlots: multiIdSlots ?? this.multiIdSlots,
         userData: userData ?? this.userData,
         mediaIds: mediaIds ?? this.mediaIds,
+        selfieImage: clearSelfieImage ? null : (selfieImage ?? this.selfieImage),
+        // A retake drops the old upload's record with the selfie.
+        selfieUpload: clearSelfieImage ? kIdleSelfieUpload : (selfieUpload ?? this.selfieUpload),
         submissionResult: submissionResult ?? this.submissionResult,
         keyPeopleInvites: keyPeopleInvites ?? this.keyPeopleInvites,
         error: error ?? this.error,
@@ -494,6 +598,13 @@ class KYCState {
         integrity: integrity ?? this.integrity,
         poaDocumentType:
             clearPoaDocumentType ? null : (poaDocumentType ?? this.poaDocumentType),
+        address: clearAddress ? null : (address ?? this.address),
+        addressPhotoPreview: clearAddressPhotoPreview
+            ? null
+            : (addressPhotoPreview ?? this.addressPhotoPreview),
+        addressIntroSeen: addressIntroSeen ?? this.addressIntroSeen,
+        addressEntranceFraming:
+            addressEntranceFraming ?? this.addressEntranceFraming,
         emailToken: clearEmailToken ? null : (emailToken ?? this.emailToken),
         emailAddress: emailAddress ?? this.emailAddress,
         phoneToken: clearPhoneToken ? null : (phoneToken ?? this.phoneToken),
@@ -509,6 +620,8 @@ class KYCState {
             businessSubdivisionCode ?? this.businessSubdivisionCode,
         businessSandboxOutcome:
             businessSandboxOutcome ?? this.businessSandboxOutcome,
+        addressSandboxOutcome:
+            addressSandboxOutcome ?? this.addressSandboxOutcome,
         businessContactEmail:
             businessContactEmail ?? this.businessContactEmail,
         businessAddress: businessAddress ?? this.businessAddress,

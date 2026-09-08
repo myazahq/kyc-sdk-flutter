@@ -42,11 +42,13 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
   /// JPEG 2000 chip portraits (DG2). Its own channel because the Dart side
   /// (dg2_image.dart) targets the same channel name iOS already registers.
   private lateinit var imageChannel: MethodChannel
+  private lateinit var presenceChannel: MethodChannel
   private lateinit var faceEventChannel: EventChannel
 
   private val faceDetector = FaceDetectorHandler()
   private val textRecognizer = TextRecognizerHandler()
   private val imageDecoder = ImageDecoderHandler()
+  private var presence: PresenceHandler? = null
   private var documentCamera: DocumentCameraHandler? = null
 
   private lateinit var appContext: Context
@@ -72,6 +74,10 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     imageChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/image_decode")
     imageChannel.setMethodCallHandler(this)
 
+    presence = PresenceHandler(appContext)
+    presenceChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/presence")
+    presenceChannel.setMethodCallHandler(this)
+
     faceEventChannel = EventChannel(binding.binaryMessenger, "kyc_sdk_flutter/liveness_recorder/faces")
     faceEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
       override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -90,6 +96,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     recorderChannel.setMethodCallHandler(null)
     textChannel.setMethodCallHandler(null)
     imageChannel.setMethodCallHandler(null)
+    presenceChannel.setMethodCallHandler(null)
+    presence = null
     imageDecoder.dispose()
     textRecognizer.close()
     faceEventChannel.setStreamHandler(null)
@@ -103,6 +111,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
   override fun onMethodCall(call: MethodCall, result: Result) {
     // Claims "decode" and nothing else; anything it declines falls through.
     if (imageDecoder.handle(call, result)) return
+    // Claims the three presence methods; anything else falls through.
+    if (presence?.handle(call, result) == true) return
     when (call.method) {
       "detect" -> faceDetector.detect(call, result)
       "recognize" -> textRecognizer.recognize(call, result)

@@ -1,5 +1,4 @@
-import 'dart:math' as math;
-
+import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -43,7 +42,7 @@ class PoweredBy extends StatelessWidget {
 
   /// Rendered height of the wordmark. The asset is 648×200, so it is downscaled
   /// with headroom on every density; `cacheHeight` bounds the decode.
-  static const double _markHeight = 28;
+  static const double _markHeight = 24;
 
   @override
   Widget build(BuildContext context) {
@@ -71,13 +70,19 @@ class PoweredBy extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: EdgeInsets.only(
-        top: MyazaSpacing.md,
-        // ABSORBS the safe-area inset rather than stacking on it. Adding the two
-        // gave iOS 24 + 34 = 58px under the mark against Android's 24 — the same
-        // widget looking wrong on one platform. The home-indicator band is empty
-        // space the user already reads as padding, so taking whichever is larger
-        // lands both platforms on the same optical gap.
-        bottom: math.max(MyazaSpacing.md, MediaQuery.paddingOf(context).bottom),
+        top: 10,
+        // The RN sheet's rule, measurement for measurement (user decision
+        // 2026-09-08: the two footers must sit the same distance off the
+        // bottom edge). RN pads 12 on the iOS page sheet, whose bottom edge
+        // already reaches the screen, and 12 plus the navigation-bar inset on
+        // Android's edge-to-edge modal. Here the Android page is wrapped in a
+        // SafeArea that has consumed that inset already, so the padding read
+        // back is 0 and the two land on the same gap; on iOS the inset is
+        // ignored exactly as RN ignores it, where `max(12, inset)` used to hold
+        // the mark 34px up and the footer read as a heavy band beside RN's.
+        bottom: 12 + (defaultTargetPlatform == TargetPlatform.iOS
+            ? 0
+            : MediaQuery.paddingOf(context).bottom),
       ),
       child: Opacity(
         opacity: 0.9,
@@ -136,7 +141,7 @@ class PoweredBy extends StatelessWidget {
                   const SizedBox(width: 8),
                   Container(
                       width: 1,
-                      height: 24,
+                      height: 20,
                       color: markColor.withValues(alpha: 0.35)),
                   const SizedBox(width: 8),
                   Text(
@@ -144,10 +149,10 @@ class PoweredBy extends StatelessWidget {
                     // ~half the wordmark's height — the ratio the dashboard's own
                     // lockup uses. Level with the logo, TRUST competes with it.
                     style: TextStyle(
-                      fontSize: 14,
+                      fontSize: 12,
                       height: 1.2,
                       fontWeight: FontWeight.w600,
-                      letterSpacing: 2,
+                      letterSpacing: 1.68,
                       color: markColor,
                     ),
                   ),

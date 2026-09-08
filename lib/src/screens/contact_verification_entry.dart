@@ -15,6 +15,7 @@ class ContactEntryPanel extends StatelessWidget {
   final bool isPhone;
   final TextEditingController emailController;
   final String defaultCountry;
+  final String? geoCountry;
   final bool enabled;
   final ValueChanged<String> onEmailChanged;
   final void Function(String e164, bool isValid) onPhoneChanged;
@@ -33,6 +34,7 @@ class ContactEntryPanel extends StatelessWidget {
     required this.offeredChannels,
     required this.pickedChannel,
     required this.onPickChannel,
+    this.geoCountry,
   });
 
   @override
@@ -44,6 +46,7 @@ class ContactEntryPanel extends StatelessWidget {
           isPhone: isPhone,
           emailController: emailController,
           defaultCountry: defaultCountry,
+          geoCountry: geoCountry,
           enabled: enabled,
           onEmailChanged: onEmailChanged,
           onPhoneChanged: onPhoneChanged,

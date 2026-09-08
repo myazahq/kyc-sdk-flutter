@@ -2,19 +2,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/biometric_copy.dart';
+import '../config/biometric_options.dart';
+import '../config/copy_tokens.dart';
 import '../config/kyc_config.dart';
+import '../config/kyc_result.dart';
+import '../config/result_copy.dart';
+import '../config/scope.dart';
+import '../config/selfie_upload_wait.dart';
 import '../config/theme.dart';
 import '../config/contact_recovery.dart';
+import '../providers/kyc_state.dart';
 import 'submitted_error_view.dart';
+import 'submitted_result_view.dart';
+import 'submitted_waiting_view.dart';
 import '../widgets/check_badge.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
 import '../services/kyc_error_mapper.dart';
 import '../widgets/keep_links_sheet.dart';
 import '../widgets/key_people_await_list.dart';
+import '../widgets/presence_blocks.dart';
 import '../providers/awaiting_people.dart';
 import '../widgets/myaza_button.dart';
-import '../widgets/myaza_pulse_loader.dart';
 
 // ─── Submission status (local UI state) ──────────────────────────────────────
 
@@ -23,20 +33,34 @@ enum _SubmitStatus { submitting, success, error }
 const String _kDefaultSuccessTitle = 'Verification Submitted!';
 /// The default description depends on WHAT was submitted. A KYB applicant told
 /// "your identity verification has been submitted" is being told about the
-/// wrong thing: they submitted a company. Mirrors the web SDK's
-/// successDescription.
-String _defaultSuccessDescription(bool isBusiness) => isBusiness
-    ? "Your business verification has been submitted for review. "
-        "You'll be notified of the result."
-    : "Your identity verification has been submitted for review. "
-        "You'll be notified of the result.";
+/// wrong thing: they submitted a company, and an address-only applicant
+/// submitted a pin. Mirrors the web SDK's successDescription (scope map
+/// included).
+const Map<String, String> _kScopeDescriptions = {
+  'address': "Your address verification has been submitted. "
+      "You'll be notified of the result.",
+  'biometric-authentication': "Your face check has been submitted. "
+      "You'll be notified of the result.",
+  'biometric-enrollment': "Your face enrolment has been submitted. "
+      "You'll be notified of the result.",
+  'questionnaire': "Your answers have been submitted. "
+      "You'll be notified of the result.",
+  'contact': "Your contact verification has been submitted. "
+      "You'll be notified of the result.",
+};
 
-/// Replaces `{firstName}` / `{lastName}` tokens with the user's data (or '').
+String _defaultSuccessDescription(bool isBusiness, String? scope) {
+  final scoped = scope == null ? null : _kScopeDescriptions[scope];
+  if (scoped != null) return scoped;
+  return isBusiness
+      ? "Your business verification has been submitted for review. "
+          "You'll be notified of the result."
+      : "Your identity verification has been submitted for review. "
+          "You'll be notified of the result.";
+}
+
 String _fillTokens(String template, String firstName, String lastName) =>
-    template
-        .replaceAll('{firstName}', firstName)
-        .replaceAll('{lastName}', lastName)
-        .trim();
+    fillCopyTokens(template, firstName: firstName, lastName: lastName);
 
 // ─── Submitted screen ─────────────────────────────────────────────────────────
 //
@@ -57,11 +81,17 @@ class SubmittedScreen extends ConsumerStatefulWidget {
   /// taps "Close" on the error screen. Closes the modal/sheet.
   final VoidCallback? onDone;
 
+  /// The verdict, on a flow that WAITS for it in the app (a biometric
+  /// re-authentication on the default delivery). Fires once, never on a wait
+  /// that timed out. See [KYCResult].
+  final void Function(KYCResult result)? onResult;
+
   const SubmittedScreen({
     super.key,
     this.onSubmitted,
     this.onError,
     this.onDone,
+    this.onResult,
   });
 
   @override
@@ -94,6 +124,31 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       _error = null;
       _retryInfo = null;
     });
+
+    // The biometric scopes hand over BEFORE the selfie upload lands (the
+    // review is off, so nothing on the liveness screen gated on it): wait for
+    // the upload's own record here, under the same loading screen. A failed
+    // upload was already reported to onError by the screen that ran it.
+    if (!ref.read(kycConfigProvider).showsSelfieReviewOption) {
+      final upload = await awaitSelfieUpload(
+        read: () {
+          final s = ref.read(kYCNotifierProvider);
+          return SelfieUploadSnapshot(selfieUpload: s.selfieUpload, selfieMediaId: s.mediaIds.selfie);
+        },
+        subscribe: (listener) {
+          final sub = ref.listenManual<KYCState>(kYCNotifierProvider, (_, __) => listener());
+          return sub.close;
+        },
+      );
+      if (!mounted) return;
+      if (upload is SelfieUploadFailed) {
+        setState(() {
+          _status = _SubmitStatus.error;
+          _error = KYCError(code: 'upload_failed', message: upload.message);
+        });
+        return;
+      }
+    }
 
     try {
       final notifier = ref.read(kYCNotifierProvider.notifier);
@@ -161,6 +216,16 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
     _submit();
   }
 
+  /// Try Again after a failed selfie upload re-enters the liveness screen,
+  /// whose mount resumes the interrupted upload and hands straight back here.
+  /// The record is reset first so this screen waits for the NEW attempt rather
+  /// than reading the old failure a second time.
+  void _retryUpload() {
+    final notifier = ref.read(kYCNotifierProvider.notifier);
+    notifier.setSelfieUpload(kIdleSelfieUpload);
+    notifier.goToStep(KYCStep.liveness);
+  }
+
   void _close() {
     widget.onDone?.call();
   }
@@ -195,72 +260,70 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
         : _kDefaultSuccessTitle;
     final successDescription = config.success?.description != null
         ? _fillTokens(config.success!.description!, firstName, lastName)
-        : _defaultSuccessDescription(config.subjectType == 'business');
+        : _defaultSuccessDescription(
+            config.subjectType == 'business', configScope(config.scope));
+
+    final scope = configScope(config.scope);
+    final showDone = config.showsDoneButtonOption;
 
     return LayoutBuilder(
       builder: (context, constraints) {
         final minHeight =
             constraints.maxHeight.isFinite ? constraints.maxHeight : 480.0;
+        // A flow that waits for its verdict (a biometric re-authentication, by
+        // default) renders the result view from the FIRST build: it shows the
+        // one loading screen through the upload wait, the submission and the
+        // poll, then the verdict. onSubmitted has already fired by then.
+        final Widget child = _status == _SubmitStatus.error
+            ? ErrorView(
+                error: _error!,
+                onRetry: switch (_error!.code) {
+                  'upload_failed' => _retryUpload,
+                  'network_error' => _retry,
+                  _ => null,
+                },
+                onClose: _close,
+              )
+            : config.waitsForResultOption
+                ? SubmittedResultView(
+                    verificationId: _status == _SubmitStatus.success
+                        ? _submission!.verificationId
+                        : null,
+                    retryInfo: _retryInfo,
+                    showDone: showDone,
+                    onResult: widget.onResult,
+                    onDone: _close,
+                  )
+                : _status == _SubmitStatus.submitting
+                    ? Builder(builder: (_) {
+                        final copy = describeWaiting(
+                          scope: scope,
+                          waitsForResult: false,
+                          retry: _retryInfo,
+                          override: config.biometricCopy.waiting,
+                        );
+                        return SubmittedWaitingView(
+                          title: copy.title,
+                          description: copy.description,
+                          retrying: _retryInfo != null,
+                        );
+                      })
+                    : _SuccessView(
+                        submission: _submission!,
+                        title: successTitle,
+                        description: successDescription,
+                        // KYB: per-person verification links for full-KYC key
+                        // people, rendered so the applicant can send each one
+                        // immediately.
+                        invites: ref.watch(kYCNotifierProvider).keyPeopleInvites,
+                        showDone: showDone,
+                        onDone: _handleDone,
+                      );
         return ConstrainedBox(
           constraints: BoxConstraints(minHeight: minHeight),
-          child: switch (_status) {
-            _SubmitStatus.submitting => _SubmittingView(retryInfo: _retryInfo),
-            _SubmitStatus.success => _SuccessView(
-                submission: _submission!,
-                title: successTitle,
-                description: successDescription,
-                // KYB: per-person verification links for full-KYC key people
-                // — rendered so the applicant can send each one immediately.
-                invites: ref.watch(kYCNotifierProvider).keyPeopleInvites,
-                onDone: _handleDone,
-              ),
-            _SubmitStatus.error => ErrorView(
-                error: _error!,
-                onRetry: _error!.code == 'network_error' ? _retry : null,
-                onClose: _close,
-              ),
-          },
+          child: child,
         );
       },
-    );
-  }
-}
-
-// ─── Submitting view ──────────────────────────────────────────────────────────
-
-class _SubmittingView extends StatelessWidget {
-  /// Non-null while a transient failure is being retried.
-  final ({int attempt, int total})? retryInfo;
-
-  const _SubmittingView({this.retryInfo});
-
-  @override
-  Widget build(BuildContext context) {
-    final text = context.myazaText;
-    final retrying = retryInfo != null;
-
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        const SizedBox(height: MyazaSpacing.xl),
-        const MyazaPulseLoader(),
-        const SizedBox(height: MyazaSpacing.lg),
-        Text(
-          retrying ? 'Reconnecting…' : 'Submitting your verification…',
-          style: text.heading3,
-          textAlign: TextAlign.center,
-        ).animate().fadeIn(duration: 400.ms),
-        const SizedBox(height: MyazaSpacing.sm),
-        Text(
-          retrying
-              ? 'Connection issue — retrying (${retryInfo!.attempt}/${retryInfo!.total})…'
-              : 'Please wait a moment.',
-          style: text.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: MyazaSpacing.xl),
-      ],
     );
   }
 }
@@ -272,6 +335,9 @@ class _SuccessView extends ConsumerStatefulWidget {
   final String title;
   final String description;
   final List<KeyPersonInvite> invites;
+
+  /// The `doneButton` option: off for a host that dismisses the flow itself.
+  final bool showDone;
   final void Function(bool hasOutstanding) onDone;
 
   const _SuccessView({
@@ -279,6 +345,7 @@ class _SuccessView extends ConsumerStatefulWidget {
     required this.title,
     required this.description,
     this.invites = const [],
+    this.showDone = true,
     required this.onDone,
   });
 
@@ -360,6 +427,9 @@ class _SuccessViewState extends ConsumerState<_SuccessView> {
             // say so — a blank where a list is about to appear reads as
             // "nobody needs to verify", which for a KYB application is the
             // opposite of true.
+            if (ref.read(kycConfigProvider).addressCollection?.presenceEnabled == true &&
+                ref.read(kYCNotifierProvider).address != null)
+              const PresenceExpectations().animate(delay: 400.ms).fadeIn(duration: 350.ms),
             if (awaiting != null)
               KeyPeopleAwaitList(people: awaiting)
                   .animate(delay: 450.ms)
@@ -369,17 +439,20 @@ class _SuccessViewState extends ConsumerState<_SuccessView> {
             const SizedBox(height: MyazaSpacing.xl),
           ],
         ),
-        MyazaButton(
-          label: 'Done',
-          onPressed: () => widget.onDone(
-            awaiting != null
-                ? awaiting.any((p) => p.stillOwes)
-                : invites.isNotEmpty,
-          ),
-        )
-            .animate(delay: 600.ms)
-            .fadeIn(duration: 300.ms)
-            .moveY(begin: 8, end: 0, duration: 300.ms),
+        if (widget.showDone)
+          MyazaButton(
+            label: 'Done',
+            onPressed: () => widget.onDone(
+              awaiting != null
+                  ? awaiting.any((p) => p.stillOwes)
+                  : invites.isNotEmpty,
+            ),
+          )
+              .animate(delay: 600.ms)
+              .fadeIn(duration: 300.ms)
+              .moveY(begin: 8, end: 0, duration: 300.ms)
+        else
+          const SizedBox.shrink(),
       ],
     );
   }

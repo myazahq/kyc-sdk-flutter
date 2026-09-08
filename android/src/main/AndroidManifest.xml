@@ -1,8 +1,30 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Lets the boot receiver re-arm the presence geofence after a restart.
+         A normal (auto-granted) permission with no store-review posture; the
+         receiver is inert unless the host explicitly enabled the background
+         presence tier. The LOCATION permissions are deliberately NOT declared
+         here — background location changes an app's review posture, so that
+         declaration belongs to the HOST's manifest, made knowingly (see the
+         package README's background presence section). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
     <!-- ML Kit Face Detection model is bundled via the Gradle dependency. -->
     <application>
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
             android:value="face" />
+
+        <!-- Background presence tier: fence transitions + reboot re-arm.
+             Both unexported; both no-ops until the host enables the tier. -->
+        <receiver
+            android:name="co.myazahq.kyc.PresenceGeofenceReceiver"
+            android:exported="false" />
+        <receiver
+            android:name="co.myazahq.kyc.PresenceBootReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

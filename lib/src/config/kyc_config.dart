@@ -3,10 +3,12 @@ import '../liveness/liveness_types.dart';
 import 'business.dart';
 import 'contact_verification.dart';
 import 'nfc_config.dart';
+import 'address_collection.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
 import '../providers/step_resubmit.dart';
 import 'multi_id.dart';
+import 'biometric_options.dart';
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
@@ -545,6 +547,26 @@ class MyazaKYCConfig {
   /// workflow opt-out `keyPeopleLinkRecovery: false`.
   final bool keyPeopleLinkRecovery;
 
+  /// Show the consent (welcome) screen as the flow's first step. Default true.
+  /// `false` is for a host app that has already collected the person's
+  /// consent: the flow then opens straight on its first real step (the
+  /// contact codes, the country picker, the ID list, the business form, or a
+  /// scoped flow's own check). Normally set by a workflow (`consentStep`). It
+  /// does not change what the organisation attests to the provider.
+  final bool consentStep;
+
+  /// The biometric scopes' flow options (workflow-driven, or passed here on a
+  /// prop-configured mount): `selfieReview` shows the captured selfie with
+  /// Retake and Continue before submitting (off by default on both biometric
+  /// scopes); `resultDelivery` says where a re-authentication's verdict lands,
+  /// 'both' (the default: the SDK holds the person on one loading screen until
+  /// the check settles, and the org's webhook receives it too), 'app' (the
+  /// same wait, but the server sends no webhook for the check) or 'webhook'
+  /// (fire-and-forget); `doneButton` (default true) hides the final screen's
+  /// Done when the host app closes the flow itself from `onResult`. A flow key
+  /// wins per field. See config/biometric_options.dart.
+  final BiometricFlowConfig? biometric;
+
   /// Extra-info / compliance questionnaire asked after capture, before
   /// submission. Null or empty = no questionnaire step. Normally set by a
   /// resolved workflow.
@@ -553,6 +575,11 @@ class MyazaKYCConfig {
   /// Proof-of-address document collection (after capture). Null or disabled =
   /// no PoA step. Normally set by a resolved workflow.
   final ProofOfAddressConfig? proofOfAddress;
+
+  /// Address Intelligence — smart-address capture (map pin + optional door
+  /// photo and directions). Null or disabled = no step. On a KYB flow the pin
+  /// is the business premises. Normally set by a resolved workflow.
+  final AddressCollectionConfig? addressCollection;
 
   /// A reviewer sent this attempt back to redo specific steps.
   ///
@@ -579,6 +606,10 @@ class MyazaKYCConfig {
   /// config and the flow is consent → business-details → (questionnaire) →
   /// submitted (no capture/liveness).
   final String subjectType;
+
+  /// Workflow scope — what this flow verifies (null = the full verification).
+  /// Only ever set by a resolved workflow config / hosted session snapshot.
+  final String? scope;
 
   /// KYB registry config — present when [subjectType] is `'business'`.
   final WorkflowBusinessConfig? business;
@@ -611,13 +642,17 @@ class MyazaKYCConfig {
     this.userData,
     this.deviceIntelligence = true,
     this.keyPeopleLinkRecovery = true,
+    this.consentStep = true,
+    this.biometric,
     this.questionnaire,
     this.resubmit,
     this.proofOfAddress,
+    this.addressCollection,
     this.emailVerification,
     this.phoneVerification,
     this.nfc,
     this.subjectType = 'individual',
+    this.scope,
     this.business,
   });
 
@@ -645,13 +680,17 @@ class MyazaKYCConfig {
     VoiceGuidanceConfig? voiceGuidance,
     bool? deviceIntelligence,
     bool? keyPeopleLinkRecovery,
+    bool? consentStep,
+    BiometricFlowConfig? biometric,
     QuestionnaireConfig? questionnaire,
     ResubmitConfig? resubmit,
     ProofOfAddressConfig? proofOfAddress,
+    AddressCollectionConfig? addressCollection,
     EmailVerificationConfig? emailVerification,
     PhoneVerificationConfig? phoneVerification,
     NfcConfig? nfc,
     String? subjectType,
+    String? scope,
     WorkflowBusinessConfig? business,
     String? applicantWorkflowId,
   }) =>
@@ -684,13 +723,17 @@ class MyazaKYCConfig {
         userData: userData,
         deviceIntelligence: deviceIntelligence ?? this.deviceIntelligence,
         keyPeopleLinkRecovery: keyPeopleLinkRecovery ?? this.keyPeopleLinkRecovery,
+        consentStep: consentStep ?? this.consentStep,
+        biometric: biometric ?? this.biometric,
         questionnaire: questionnaire ?? this.questionnaire,
         resubmit: resubmit ?? this.resubmit,
         proofOfAddress: proofOfAddress ?? this.proofOfAddress,
+        addressCollection: addressCollection ?? this.addressCollection,
         emailVerification: emailVerification ?? this.emailVerification,
         phoneVerification: phoneVerification ?? this.phoneVerification,
         nfc: nfc ?? this.nfc,
         subjectType: subjectType ?? this.subjectType,
+        scope: scope ?? this.scope,
         business: business ?? this.business,
       );
 }

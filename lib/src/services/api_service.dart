@@ -4,10 +4,17 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 
 import '../nfc/emrtd_active_auth.dart';
+import '../utils/map_tiles.dart' show MapLatLng;
 import 'api_business.dart';
 
 // Re-exported so callers keep a single view of the HTTP contract.
 export 'api_business.dart';
+
+// The Address Intelligence surface. Parts rather than sibling libraries
+// because the calls need the private Dio client and error mapper.
+part 'api_address.dart';
+part 'api_address_calls.dart';
+part 'api_biometric.dart';
 
 // ─── SDK version ─────────────────────────────────────────────────────────────
 //
@@ -15,7 +22,7 @@ export 'api_business.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.6.0';
+const String kSdkVersion = '2.7.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -49,6 +56,7 @@ class MediaType {
   static const documentBackVideo = 'document_back_video';
   static const livenessVideo = 'liveness_video';
   static const proofOfAddress = 'proof_of_address';
+  static const addressPhoto = 'address_photo';
   static const businessDocument = 'business_document';
 }
 
@@ -87,6 +95,7 @@ class VerifyMediaIds {
   final String? documentBackVideo;
   final String? livenessVideo;
   final String? proofOfAddress;
+  final String? addressPhoto;
 
   const VerifyMediaIds({
     this.documentFront,
@@ -96,6 +105,7 @@ class VerifyMediaIds {
     this.documentBackVideo,
     this.livenessVideo,
     this.proofOfAddress,
+    this.addressPhoto,
   });
 
   Map<String, dynamic> toJson() => {
@@ -106,6 +116,7 @@ class VerifyMediaIds {
         if (documentBackVideo != null) 'documentBackVideo': documentBackVideo,
         if (livenessVideo != null) 'livenessVideo': livenessVideo,
         if (proofOfAddress != null) 'proofOfAddress': proofOfAddress,
+        if (addressPhoto != null) 'addressPhoto': addressPhoto,
       };
 
   bool get isEmpty =>
@@ -115,7 +126,8 @@ class VerifyMediaIds {
       documentFrontVideo == null &&
       documentBackVideo == null &&
       livenessVideo == null &&
-      proofOfAddress == null;
+      proofOfAddress == null &&
+      addressPhoto == null;
 }
 
 /// Business (KYB) submission block — the registry lookup inputs. Sent instead of
@@ -329,8 +341,14 @@ class VerifyRequest {
   final Map<String, dynamic>? questionnaire;
 
   /// The proof-of-address document type (`utility_bill` / `bank_statement` /
-  /// `tenancy_agreement` / `other`), sent alongside `mediaIds.proofOfAddress`.
+  /// `tenancy_agreement` / `government_document` / `other`), sent alongside
+  /// `mediaIds.proofOfAddress`.
   final String? proofOfAddressType;
+
+  /// Address Intelligence — the smart-address block (pin + optional directions
+  /// + device fix), when the address-collection step gathered one. On a KYB
+  /// submission the pin is the business premises. Built by `addressPayload`.
+  final Map<String, dynamic>? address;
 
   /// Device Intelligence toggle — when false the server skips analysis + charge.
   final bool? deviceIntelligence;
@@ -363,6 +381,7 @@ class VerifyRequest {
     this.mediaIds,
     this.questionnaire,
     this.proofOfAddressType,
+    this.address,
     this.deviceIntelligence,
     this.contact,
     this.nfc,
@@ -387,6 +406,7 @@ class VerifyRequest {
           'questionnaire': questionnaire,
         if (proofOfAddressType != null)
           'proofOfAddressType': proofOfAddressType,
+        if (address != null && address!.isNotEmpty) 'address': address,
         if (deviceIntelligence != null)
           'deviceIntelligence': deviceIntelligence,
         if (contact != null && !contact!.isEmpty) 'contact': contact!.toJson(),
@@ -689,6 +709,10 @@ class StatusResponse {
   /// 'error'. Never moves once they finish, whatever anybody decides after.
   final String? checkStatus;
   final String? reason;
+
+  /// The stable machine token beside [reason] (e.g. `biometric_auth_failed`),
+  /// null on success.
+  final String? reasonCode;
   final StatusResult? result;
   final DateTime createdAt;
   final DateTime? completedAt;
@@ -698,6 +722,7 @@ class StatusResponse {
     required this.status,
     this.checkStatus,
     this.reason,
+    this.reasonCode,
     this.result,
     required this.createdAt,
     this.completedAt,
@@ -721,6 +746,7 @@ class StatusResponse {
         status: json['status'] as String,
         checkStatus: json['checkStatus'] as String?,
         reason: json['reason'] as String?,
+        reasonCode: json['reasonCode'] as String?,
         result: json['result'] != null
             ? StatusResult.fromJson(json['result'] as Map<String, dynamic>)
             : null,
@@ -833,11 +859,30 @@ class SdkConfigResponse {
   /// carries the same lookup as a RISK signal, and the two must not be confused.
   final String? geoCountry;
 
+  /// Whether the platform's forward address search is available at all. The
+  /// address flow offers its search step only when it is.
+  final bool addressSearch;
+
+  /// Which search backend answers: `autocomplete` (Places, as-you-type) or
+  /// `basic` (explicit submit). Absent when [addressSearch] is false. The two
+  /// are chosen by this flag, never by trying one and falling back.
+  final String? addressSearchMode;
+
+  /// The framed Google-map picker page (our hosted /embed/map plus a signed
+  /// APP grant), for a WebView. Null when the platform holds no Maps key —
+  /// the built-in OSM picker is the fallback every map failure degrades to.
+  /// `googleMapsBrowserKey` is deliberately still NOT parsed: the key is the
+  /// hosted page's alone, and Street View entrance framing does not exist here.
+  final String? mapsFrameUrl;
+
   const SdkConfigResponse({
     required this.environment,
     required this.idTypes,
     this.branding,
     this.geoCountry,
+    this.addressSearch = false,
+    this.addressSearchMode,
+    this.mapsFrameUrl,
   });
 
   factory SdkConfigResponse.fromJson(Map<String, dynamic> json) =>
@@ -852,6 +897,9 @@ class SdkConfigResponse {
                 (json['branding'] as Map).cast<String, dynamic>())
             : null,
         geoCountry: json['geoCountry'] as String?,
+        addressSearch: json['addressSearch'] == true,
+        addressSearchMode: json['addressSearchMode'] as String?,
+        mapsFrameUrl: json['mapsFrameUrl'] as String?,
       );
 }
 
@@ -937,6 +985,18 @@ class WorkflowResolution {
   /// resolved server-side. Null when absent or dangling.
   final ApplicantWorkflow? applicantWorkflow;
 
+  /// The same address-capability facts `/api/kyc/config` serves, mirrored on
+  /// the workflow resolution BECAUSE a workflow mount skips `/config`: without
+  /// them a workflow embed silently lost the search step, the framed Google
+  /// map, the Street View framer and the geo default while a prop-configured
+  /// mount kept all four (the React Native gate had them; this one did not,
+  /// user report 2026-09-08). A field added to `/config` that a mount needs
+  /// must be added here too.
+  final String? geoCountry;
+  final bool addressSearch;
+  final String? addressSearchMode;
+  final String? mapsFrameUrl;
+
   const WorkflowResolution({
     required this.flowId,
     required this.flowName,
@@ -946,6 +1006,10 @@ class WorkflowResolution {
     required this.idTypes,
     this.branding,
     this.applicantWorkflow,
+    this.geoCountry,
+    this.addressSearch = false,
+    this.addressSearchMode,
+    this.mapsFrameUrl,
   });
 
   factory WorkflowResolution.fromJson(Map<String, dynamic> json) {
@@ -970,6 +1034,10 @@ class WorkflowResolution {
           ? ApplicantWorkflow.fromJson(
               (json['applicantWorkflow'] as Map).cast<String, dynamic>())
           : null,
+      geoCountry: json['geoCountry'] as String?,
+      addressSearch: json['addressSearch'] == true,
+      addressSearchMode: json['addressSearchMode'] as String?,
+      mapsFrameUrl: json['mapsFrameUrl'] as String?,
     );
   }
 }
@@ -1111,6 +1179,10 @@ class KYCApiService {
     String? externalUserId,
     String? workflowId,
     String? deviceRef,
+    /// The same device block the submission sends, so the dashboard's
+    /// in-progress row shows the device and SDK from the moment the SDK loads
+    /// rather than after the applicant finishes (2026-09-08).
+    Map<String, dynamic>? device,
   }) async {
     try {
       final response = await _dio.post<Map<String, dynamic>>(
@@ -1119,6 +1191,7 @@ class KYCApiService {
           if (externalUserId != null) 'externalUserId': externalUserId,
           if (deviceRef != null) 'deviceRef': deviceRef,
           if (workflowId != null) 'workflowId': workflowId,
+          if (device != null) 'device': device,
         },
         options: Options(contentType: 'application/json'),
       );

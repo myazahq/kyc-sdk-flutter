@@ -32,6 +32,9 @@ class ContactChannelSettings {
   /// Seed country for the phone field; falls back to the flow's country.
   final String defaultCountry;
 
+  /// The visitor's IP country, pinned to the top of the dial-code picker.
+  final String? geoCountry;
+
   const ContactChannelSettings({
     required this.isPhone,
     required this.codeLength,
@@ -40,6 +43,7 @@ class ContactChannelSettings {
     required this.offeredChannels,
     required this.maxAttempts,
     required this.defaultCountry,
+    this.geoCountry,
   });
 
   /// The channel used until the user picks otherwise. Null for email.
@@ -83,6 +87,7 @@ class ContactChannelSettings {
       maxAttempts: isPhone ? phone?.maxAttempts : email?.maxAttempts,
       defaultCountry:
           phone?.defaultCountry ?? config.country ?? geoCountry ?? '',
+      geoCountry: geoCountry,
     );
   }
 }

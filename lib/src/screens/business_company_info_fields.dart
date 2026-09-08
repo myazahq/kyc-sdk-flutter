@@ -5,7 +5,7 @@ import '../config/theme.dart';
 import '../config/website.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/phone_number_input.dart';
-import '../widgets/themed_sheet.dart';
+import 'business_company_date_field.dart';
 import 'business_details_parts.dart';
 
 // ─── The company profile a KYB workflow asks for ─────────────────────────────
@@ -25,6 +25,10 @@ class BusinessCompanyInfoFields extends StatelessWidget {
   /// Seeds the phone dial code: the company's country of registration.
   final String country;
 
+  /// The visitor's IP country: the dial-code seed of last resort, and the
+  /// row pinned to the top of the picker.
+  final String? geoCountry;
+
   /// The current E.164 business phone — the phone control keeps its own text,
   /// so the register's number reaches it through this rather than the
   /// controller map.
@@ -38,6 +42,7 @@ class BusinessCompanyInfoFields extends StatelessWidget {
     required this.country,
     required this.phoneValue,
     required this.onChanged,
+    this.geoCountry,
   });
 
   @override
@@ -84,7 +89,8 @@ class BusinessCompanyInfoFields extends StatelessWidget {
             label,
             const SizedBox(height: MyazaSpacing.xs),
             PhoneNumberInput(
-              defaultCountry: country,
+              defaultCountry: country.isNotEmpty ? country : (geoCountry ?? 'NG'),
+              geoCountry: geoCountry,
               value: phoneValue,
               autofocus: false,
               onChanged: (e164, _) => onChanged(field, e164),
@@ -99,7 +105,7 @@ class BusinessCompanyInfoFields extends StatelessWidget {
           children: [
             label,
             const SizedBox(height: MyazaSpacing.xs),
-            _DateField(
+            BusinessDateField(
               value: ctrl.text.trim().isEmpty ? null : ctrl.text.trim(),
               placeholder: field.placeholder,
               onChanged: (iso) {
@@ -144,60 +150,5 @@ class BusinessCompanyInfoFields extends StatelessWidget {
           ],
         );
     }
-  }
-}
-
-class _DateField extends StatelessWidget {
-  final String? value;
-  final String placeholder;
-  final void Function(String iso) onChanged;
-
-  const _DateField({
-    required this.value,
-    required this.placeholder,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text = context.myazaText;
-    return InkWell(
-      onTap: () async {
-        final now = DateTime.now();
-        final initial = DateTime.tryParse(value ?? '') ?? now;
-        final picked = await showMyazaDatePicker(
-          context,
-          initialDate: initial,
-          firstDate: DateTime(1800),
-          lastDate: now,
-        );
-        if (picked != null) {
-          onChanged(picked.toIso8601String().split('T').first);
-        }
-      },
-      borderRadius: BorderRadius.circular(MyazaRadius.sm),
-      child: Container(
-        height: MyazaSizing.inputHeight,
-        padding: const EdgeInsets.symmetric(horizontal: MyazaSpacing.md),
-        decoration: BoxDecoration(
-          color: colors.backgroundSecondary,
-          border: Border.all(color: colors.border),
-          borderRadius: BorderRadius.circular(MyazaRadius.sm),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.calendar_today, size: 18, color: colors.textSecondary),
-            const SizedBox(width: MyazaSpacing.sm),
-            Text(
-              value ?? placeholder,
-              style: text.body.copyWith(
-                color: value == null ? colors.textMuted : colors.textDark,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

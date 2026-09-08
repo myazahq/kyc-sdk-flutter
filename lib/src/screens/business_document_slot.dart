@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import '../config/upload_limits.dart';
 import '../widgets/dashed_border.dart';
 
 // ─── One business-document upload slot ────────────────────────────────────────
@@ -59,7 +60,7 @@ class BusinessDocumentSlot extends StatelessWidget {
 
     // Mirrors the web SDK's BusinessDocumentSlot exactly: EMPTY is a 2px
     // DASHED rounded-xl tap target (upload glyph · label with a red * ·
-    // "Photo or PDF, up to 20MB"); FILLED is a solid muted card with the
+    // the shared upload hint); FILLED is a solid muted card with the
     // file's preview/name, the slot label beneath, Replace, and remove.
     final Widget inner;
     if (done) {
@@ -172,7 +173,7 @@ class BusinessDocumentSlot extends StatelessWidget {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      uploading ? 'Uploading…' : 'Photo or PDF, up to 20MB',
+                      uploading ? 'Uploading…' : kUploadHint,
                       style: text.bodySmall
                           .copyWith(color: colors.textSecondary),
                       maxLines: 1,

@@ -1,4 +1,5 @@
 import 'package:flutter/gestures.dart';
+import '../config/scope.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +34,27 @@ const String _kDefaultConsentDescription =
 const String _kDefaultBusinessConsentDescription =
     'We need to verify your business to comply with regulatory '
     'requirements. This process is quick and secure.';
+
+const Map<String, String> _kScopeTitles = {
+  'address': 'Address Verification',
+  'biometric-authentication': 'Face Check',
+  'biometric-enrollment': 'Face Enrolment',
+  'questionnaire': 'A Few Questions',
+  'contact': 'Confirm Your Contact Details',
+};
+
+const Map<String, String> _kScopeDescriptions = {
+  'address':
+      'We need to confirm your home address to comply with regulatory requirements. This process is quick and secure.',
+  'biometric-authentication':
+      'A quick face check confirms it is really you. This takes a few seconds and is secure.',
+  'biometric-enrollment':
+      'A quick selfie sets up face checks for next time, so you will not have to prove your identity again. This takes a few seconds and is secure.',
+  'questionnaire':
+      'A few questions keep your account details up to date and help us comply with regulatory requirements.',
+  'contact':
+      'We need to re-confirm the email address and phone number on your account. This takes a minute and is secure.',
+};
 
 /// Replaces `{firstName}` / `{lastName}` / `{businessName}` tokens with the
 /// user's data (or ''). `{businessName}` is the KYB consent-copy token —
@@ -91,13 +113,15 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     final lastName = config.userData?.lastName ?? '';
     final businessName = config.userData?.businessName ?? '';
     final isBusiness = config.subjectType == 'business';
+    final scope = isBusiness ? null : configScope(config.scope);
+    final faceScope = isFaceScope(scope);
     final business = config.business;
 
     final defaultTitle = firstName.isNotEmpty
         ? 'Welcome, $firstName'
         : isBusiness
             ? 'Business Verification'
-            : 'Identity Verification';
+            : _kScopeTitles[scope] ?? 'Identity Verification';
     final title = config.consent?.title != null
         ? _fillTokens(config.consent!.title!, firstName, lastName, businessName)
         : defaultTitle;
@@ -106,7 +130,7 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
             config.consent!.description!, firstName, lastName, businessName)
         : isBusiness
             ? _kDefaultBusinessConsentDescription
-            : _kDefaultConsentDescription;
+            : _kScopeDescriptions[scope] ?? _kDefaultConsentDescription;
 
     // Reflect the actually-enabled features so the list matches the real flow.
     // Same lucide icons as the web SDK's ConsentStep.
@@ -115,13 +139,20 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     // video without saying so, which is the one that carries risk). A business
     // flow captures a face only when the applicant verifies their own identity
     // in-flow; a pure registry lookup captures nothing.
-    final capturesFace =
-        isBusiness ? hasApplicantVerification(business) : config.enableSelfie;
-    final recordsVideo =
-        capturesFace || (!isBusiness && config.enableDocumentCapture);
+    final capturesFace = isBusiness
+        ? hasApplicantVerification(business)
+        : faceScope || (scope == null && config.enableSelfie);
+    final recordsVideo = capturesFace ||
+        (!isBusiness && scope == null && config.enableDocumentCapture);
 
-    final hasContactStep = (config.emailVerification?.enabled ?? false) ||
-        (config.phoneVerification?.enabled ?? false);
+    final hasEmail = config.emailVerification?.enabled ?? false;
+    final hasPhone = config.phoneVerification?.enabled ?? false;
+    final hasContactStep = hasEmail || hasPhone;
+    final contactWhat = hasEmail && hasPhone
+        ? 'email and phone number'
+        : hasEmail
+            ? 'email'
+            : 'phone number';
 
     // A KYB flow lists its application steps — never the identity rows, which
     // would claim steps a registry-lookup flow does not run.
@@ -135,6 +166,36 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
           LucideIcons.badgeCheck,
           'Verify your business against the official registry',
         ),
+      ] else if (scope == 'address') ...[
+        const _ProcessStep(
+          LucideIcons.mapPinHouse,
+          'Pin your home address on a map',
+        ),
+        const _ProcessStep(
+          LucideIcons.badgeCheck,
+          'Confirm the details only you can know',
+        ),
+      ] else if (faceScope) ...[
+        const _ProcessStep(
+          LucideIcons.scanFace,
+          'Take a quick selfie with liveness checks',
+        ),
+        _ProcessStep(
+          LucideIcons.badgeCheck,
+          scope == 'biometric-authentication'
+              ? 'We match it against your enrolled face'
+              : 'It becomes your face check for next time',
+        ),
+      ] else if (scope == 'questionnaire') ...[
+        const _ProcessStep(
+          LucideIcons.badgeCheck,
+          'Answer a few short questions',
+        ),
+      ] else if (scope == 'contact') ...[
+        const _ProcessStep(
+          LucideIcons.lock,
+          'Confirm your contact details with a one-time code',
+        ),
       ] else ...[
         const _ProcessStep(
           LucideIcons.badgeCheck,
@@ -145,12 +206,15 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
           'Collect basic personal information',
         ),
       ],
-      if (hasContactStep)
-        const _ProcessStep(
+      // On the CONTACT scope the catalogue bullet already says this —
+      // appending the generic line showed "confirm your contact details"
+      // twice the moment both channels were on.
+      if (scope != 'contact' && hasContactStep)
+        _ProcessStep(
           LucideIcons.lock,
-          'Confirm your contact details with a one-time code',
+          'Confirm your $contactWhat with a one-time code',
         ),
-      if (!isBusiness && config.enableDocumentCapture)
+      if (!isBusiness && scope == null && config.enableDocumentCapture)
         const _ProcessStep(
           LucideIcons.scanLine,
           'Capture a photo of your ID document',
@@ -159,15 +223,35 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
       // document's NFC chip. Shown when the flow enables NFC so the user knows
       // to have the physical document to hand — same "what may happen" spirit as
       // the document/selfie rows (a non-chip ID simply skips it).
-      if (!isBusiness && (config.nfc?.enabled ?? false))
+      if (!isBusiness && scope == null && (config.nfc?.enabled ?? false))
         const _ProcessStep(
           LucideIcons.nfc,
           'Scan your document’s security chip (NFC)',
         ),
-      if (!isBusiness && config.enableSelfie)
+      if (!isBusiness && scope == null && config.enableSelfie)
         const _ProcessStep(
           LucideIcons.scanFace,
           'Take a selfie for facial verification',
+        ),
+      // Post-capture features, in the order the flow runs them. Each is gated
+      // on the flow that actually asks for it, and skipped where a scope's own
+      // catalogue bullet already covers the same step.
+      if (!isBusiness && (config.proofOfAddress?.enabled ?? false))
+        const _ProcessStep(
+          LucideIcons.fileText,
+          'Upload a proof of address document',
+        ),
+      if (scope != 'address' && (config.addressCollection?.enabled ?? false))
+        const _ProcessStep(
+          LucideIcons.mapPinHouse,
+          'Pin your address on a map',
+        ),
+      // The step-order predicate, not a raw fields check: a questionnaire with
+      // questions but enabled: false never runs, so it must not be promised.
+      if (scope != 'questionnaire' && (config.questionnaire?.isActive ?? false))
+        const _ProcessStep(
+          LucideIcons.badgeCheck,
+          'Answer a few short questions',
         ),
       if (isBusiness && hasKeyPeopleCollection(business))
         const _ProcessStep(
@@ -265,11 +349,12 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
               const TextSpan(text: 'By tapping Continue, you agree to the '),
               TextSpan(
                 text: 'End User Terms',
+                // Web: `font-medium text-foreground underline`, as RN draws.
                 style: TextStyle(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
+                  color: colors.textDark,
+                  fontWeight: FontWeight.w500,
                   decoration: TextDecoration.underline,
-                  decorationColor: colors.primary,
+                  decorationColor: colors.textDark,
                 ),
                 recognizer: _termsTap,
               ),
@@ -277,10 +362,10 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
               TextSpan(
                 text: 'Privacy Policy',
                 style: TextStyle(
-                  color: colors.primary,
-                  fontWeight: FontWeight.w600,
+                  color: colors.textDark,
+                  fontWeight: FontWeight.w500,
                   decoration: TextDecoration.underline,
-                  decorationColor: colors.primary,
+                  decorationColor: colors.textDark,
                 ),
                 recognizer: _privacyTap,
               ),
@@ -313,7 +398,7 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.lock_outline, size: 13, color: colors.textMuted),
+            Icon(LucideIcons.lock, size: 13, color: colors.textMuted),
             const SizedBox(width: 6),
             Text(
               'Your data is encrypted and securely processed',
@@ -328,8 +413,9 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
 
 // ─── Shield hero ──────────────────────────────────────────────────────────────
 //
-// Concentric tinted rings around a gradient primary badge — mirrors the web
-// SDK's consent hero. Recolors with the active primary color.
+// Concentric tinted rings around a SOLID primary badge — mirrors the web
+// SDK's consent hero (no gradients in the flow, house rule 2026-08-29).
+// Recolors with the active primary color.
 
 class _ShieldHero extends StatelessWidget {
   final MyazaColorScheme colors;
@@ -365,17 +451,7 @@ class _ShieldHero extends StatelessWidget {
             height: 56,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  colors.primary,
-                  Color.alphaBlend(
-                    colors.primary.withValues(alpha: 0.7),
-                    colors.background,
-                  ),
-                ],
-              ),
+              color: colors.primary,
               boxShadow: [
                 BoxShadow(
                   color: colors.primary.withValues(alpha: 0.3),

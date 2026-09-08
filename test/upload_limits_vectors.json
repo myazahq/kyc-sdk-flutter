@@ -1,0 +1,17 @@
+{
+  "note": "The upload size rule, shared by web lib/upload-limits.ts, RN config/uploadLimits.ts and Flutter config/upload_limits.dart. Bytes are the picked file's size; a mime is read by its base type; an unknown mime is judged as an image; an unknown size passes (the server judges it at its own cap).",
+  "hint": "PDF, JPG, PNG · PDF max 15 MB, images max 5 MB",
+  "imageMaxBytes": 5242880,
+  "pdfMaxBytes": 15728640,
+  "cases": [
+    { "name": "an image at the cap passes", "mime": "image/jpeg", "bytes": 5242880, "error": null },
+    { "name": "an image one byte over is refused", "mime": "image/png", "bytes": 5242881, "error": "Image is too large (max 5 MB)." },
+    { "name": "a PDF at the cap passes", "mime": "application/pdf", "bytes": 15728640, "error": null },
+    { "name": "a PDF one byte over is refused", "mime": "application/pdf", "bytes": 15728641, "error": "PDF is too large (max 15 MB)." },
+    { "name": "a PDF over the image cap still passes: the image cap does not apply to it", "mime": "application/pdf", "bytes": 8000000, "error": null },
+    { "name": "a mime with parameters is read by its base type", "mime": "application/pdf; charset=binary", "bytes": 8000000, "error": null },
+    { "name": "mime case is ignored", "mime": "Application/PDF", "bytes": 8000000, "error": null },
+    { "name": "an unknown mime is judged as an image", "mime": null, "bytes": 5242881, "error": "Image is too large (max 5 MB)." },
+    { "name": "an unknown size passes", "mime": "image/jpeg", "bytes": null, "error": null }
+  ]
+}

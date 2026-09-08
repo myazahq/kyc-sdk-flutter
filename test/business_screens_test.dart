@@ -32,6 +32,7 @@ class _StubApi extends KYCApiService {
     String? externalUserId,
     String? workflowId,
     String? deviceRef,
+    Map<String, dynamic>? device,
   }) async =>
       const SessionStartResponse(sessionId: 'hs_test', resumed: false);
 

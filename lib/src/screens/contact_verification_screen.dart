@@ -195,6 +195,7 @@ class _ContactVerificationScreenState
             isPhone: _isPhone,
             emailController: _emailCtrl,
             defaultCountry: settings.defaultCountry,
+            geoCountry: settings.geoCountry,
             enabled: !_busy,
             onEmailChanged: (v) => setState(() => _destination = v.trim()),
             onPhoneChanged: (e164, valid) => setState(() {

@@ -41,6 +41,10 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
 
     // Screen brightness + AWB/AE lock for flash liveness (see CaptureTuning).
     CaptureTuning.register(with: registrar)
+
+    // Background presence tier: region monitoring + killed-app flush
+    // (see PresenceChannel / PresenceMonitor).
+    PresenceChannel.register(with: registrar)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {

@@ -43,11 +43,19 @@ Future<WorkflowGateResult> resolveWorkflowResult(MyazaKYCConfig config) async {
         mergeWorkflowIntoConfig(config, res.config),
         res.applicantWorkflow,
       ),
+      // Every capability fact the /config path carries rides here too: a
+      // workflow mount never calls /config, so what is left out of this list
+      // is silently OFF for every workflow embed (the search step, the framed
+      // Google map, Street View and the geo default all were).
       serverConfig: ServerSdkConfig(
         status: ServerConfigStatus.ready,
         idTypes: res.idTypes,
         environment: res.environment,
         branding: res.branding,
+        geoCountry: res.geoCountry,
+        addressSearch: res.addressSearch,
+        addressSearchMode: res.addressSearchMode,
+        mapsFrameUrl: res.mapsFrameUrl,
       ),
     );
   } on KYCApiException catch (e) {

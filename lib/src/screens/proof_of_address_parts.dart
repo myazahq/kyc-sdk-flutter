@@ -1,17 +1,19 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import '../config/upload_limits.dart';
+import '../widgets/country_flag.dart';
+
+export 'proof_of_address_uploaded_row.dart';
 
 // ─── Proof of Address — upload states ─────────────────────────────────────────
 //
 // Two states, mirroring the web SDK's ProofOfAddressStep:
 //
 //   empty    a DASHED drop zone that NAMES the document being asked for
-//            ("Upload your utility bill") plus what's accepted ("Photo or PDF,
-//            up to 20MB"). A generic "tap to upload" hid which of the offered
+//            ("Upload your utility bill") plus what's accepted (the shared
+//            upload hint). A generic "tap to upload" hid which of the offered
 //            document kinds the user was actually supposed to supply.
 //   uploaded a solid row: thumbnail of the picked file, its name, the document
 //            kind underneath, and an X to remove it.
@@ -27,12 +29,18 @@ class PoaDropzone extends StatelessWidget {
   /// the call to action so it reads "Upload your utility bill".
   final String typeLabel;
 
+  /// The country the document is for — the flag before the call to action
+  /// (user decision 2026-09-05). Null when the flow does not know it yet (the
+  /// address scope before a pick): nothing is invented.
+  final String? country;
+
   final VoidCallback? onTap;
 
   const PoaDropzone({
     super.key,
     required this.uploading,
     required this.typeLabel,
+    this.country,
     this.onTap,
   });
 
@@ -71,132 +79,33 @@ class PoaDropzone extends StatelessWidget {
               else
                 Icon(LucideIcons.upload, size: 30, color: colors.textSecondary),
               const SizedBox(height: MyazaSpacing.sm),
-              Text(
-                uploading
-                    ? 'Uploading…'
-                    : 'Upload your ${typeLabel.toLowerCase()}',
-                style: text.label,
-                textAlign: TextAlign.center,
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (country != null) ...[
+                    MyazaCountryFlag(country: country, size: 18),
+                    const SizedBox(width: MyazaSpacing.xs),
+                  ],
+                  Flexible(
+                    child: Text(
+                      uploading
+                          ? 'Uploading…'
+                          : 'Upload your ${typeLabel.toLowerCase()}',
+                      style: text.label,
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 2),
               Text(
-                'Photo or PDF, up to 20MB',
+                kUploadHint,
                 style: text.bodySmall.copyWith(color: colors.textSecondary),
                 textAlign: TextAlign.center,
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-/// The uploaded state — thumbnail, file name, document kind, and a remove (X).
-class PoaUploadedRow extends StatelessWidget {
-  final String fileName;
-  final String typeLabel;
-  final Uint8List? previewBytes;
-  final bool isPdf;
-  final VoidCallback? onRemove;
-
-  const PoaUploadedRow({
-    super.key,
-    required this.fileName,
-    required this.typeLabel,
-    required this.previewBytes,
-    required this.isPdf,
-    this.onRemove,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final text = context.myazaText;
-
-    return Container(
-      padding: const EdgeInsets.all(MyazaSpacing.md),
-      decoration: BoxDecoration(
-        color: colors.backgroundSecondary,
-        border: Border.all(color: colors.border),
-        borderRadius: BorderRadius.circular(MyazaRadius.md),
-      ),
-      child: Row(
-        children: [
-          PoaThumb(bytes: previewBytes, isPdf: isPdf),
-          const SizedBox(width: MyazaSpacing.md),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  fileName,
-                  style: text.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  typeLabel,
-                  style: text.bodySmall.copyWith(color: colors.textSecondary),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
-            ),
-          ),
-          if (onRemove != null)
-            IconButton(
-              onPressed: onRemove,
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Remove document',
-              icon: Icon(LucideIcons.x, size: 18, color: colors.textSecondary),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 48×48 preview of the picked file — the image itself, or a document tile for
-/// a PDF (and for an image that fails to decode, so a corrupt pick still
-/// renders a row rather than a broken box).
-class PoaThumb extends StatelessWidget {
-  final Uint8List? bytes;
-  final bool isPdf;
-
-  const PoaThumb({super.key, required this.bytes, required this.isPdf});
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final data = bytes;
-
-    if (isPdf || data == null) {
-      return Container(
-        width: 48,
-        height: 48,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: colors.background,
-          border: Border.all(color: colors.border),
-          borderRadius: BorderRadius.circular(MyazaRadius.xs),
-        ),
-        child: Icon(LucideIcons.fileText, size: 22, color: colors.primary),
-      );
-    }
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(MyazaRadius.xs),
-      child: Image.memory(
-        data,
-        width: 48,
-        height: 48,
-        fit: BoxFit.cover,
-        gaplessPlayback: true,
-        errorBuilder: (context, _, __) =>
-            const PoaThumb(bytes: null, isPdf: true),
       ),
     );
   }

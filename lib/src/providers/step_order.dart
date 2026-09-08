@@ -1,5 +1,8 @@
+import '../config/address_collection.dart';
 import '../config/business_application.dart';
+import 'address_step_order.dart';
 import '../config/kyc_config.dart';
+import '../config/scope.dart';
 import 'kyc_state.dart';
 import 'step_resubmit.dart';
 
@@ -106,7 +109,25 @@ List<KYCStep> buildStepOrder(MyazaKYCConfig config, KYCState state) {
   return applyResubmitSteps(_fullStepOrder(config, state), config.resubmit);
 }
 
-/// The flow as configured, before any reviewer narrowing.
+/// The step the flow OPENS on: consent, unless the workflow switched that
+/// screen off (`consentStep: false`), in which case the first real step. Built
+/// from an otherwise empty state on purpose (nothing chosen yet is exactly the
+/// moment the question is asked), but WITH the server facts the caller holds:
+/// the address search step exists only when the server serves a search
+/// backend, so an opening step computed off the loading placeholder put an
+/// address-scope flow with consent off straight onto the pin step, the search
+/// screen appearing in the order a moment later behind it (user report
+/// 2026-09-08). RN reads the store, which already carries the preloaded
+/// config; this is the same read.
+KYCStep openingStep(MyazaKYCConfig config, {ServerSdkConfig? serverConfig}) =>
+    buildStepOrder(
+      config,
+      KYCState(serverConfig: serverConfig ?? ServerSdkConfig.loading),
+    ).first;
+
+/// The flow as configured, before any reviewer narrowing. Every branch builds
+/// its head from `config.consentStep`: the consent screen is the opening
+/// screen only while the workflow keeps it.
 List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
   final requiresCapture = requiresCaptureFor(config, state);
   final hasLiveness = livenessEnabledFor(config, state);
@@ -118,13 +139,25 @@ List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
   // sections the workflow configures — no capture/liveness of its own. When the
   // workflow requires applicant verification, the ordinary individual capture
   // leg runs afterwards for the SUBMITTER's identity.
+  final hasAddressCollection =
+      hasAddressCollectionStep(config.addressCollection);
+
   if (config.subjectType == 'business') {
     final business = config.business;
     return [
-      KYCStep.consent,
+      if (config.consentStep) KYCStep.consent,
       if (hasEmailVerify) KYCStep.contactEmail,
       if (hasPhoneVerify) KYCStep.contactPhone,
       KYCStep.businessDetails,
+      // The premises pin right after the details: it is about the place the
+      // applicant has just identified, before the application moves on to
+      // documents and people. Mirrors the web and RN SDKs.
+      //
+      // Spliced through `addressStepsFor` like the individual branch below,
+      // rather than naming the pin step here: that function is what collapses
+      // KYB to the single premises screen, and stating the collapse twice
+      // would be two places to keep agreeing.
+      if (hasAddressCollection) ...addressStepsFor(config, state),
       // Documents BEFORE key people: they are about the company the applicant
       // has just identified, so they follow that thread, and the register's
       // officer list — which the key-people step is a confirmation of — is what
@@ -156,12 +189,53 @@ List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
     ];
   }
 
+  // Scoped flows: the scope's headline section IS the flow.
+  final scope = configScope(config.scope);
+  if (scope == 'address') {
+    return [
+      if (config.consentStep) KYCStep.consent,
+      if (hasEmailVerify) KYCStep.contactEmail,
+      if (hasPhoneVerify) KYCStep.contactPhone,
+      if (config.proofOfAddress?.enabled ?? false) KYCStep.proofOfAddress,
+      if (hasAddressCollection) ...addressStepsFor(config, state),
+      if (hasQuestionnaire) KYCStep.questionnaire,
+      KYCStep.submitted,
+    ];
+  }
+  if (isFaceScope(scope)) {
+    return [
+      if (config.consentStep) KYCStep.consent,
+      if (hasEmailVerify) KYCStep.contactEmail,
+      if (hasPhoneVerify) KYCStep.contactPhone,
+      KYCStep.liveness,
+      if (hasQuestionnaire) KYCStep.questionnaire,
+      KYCStep.submitted,
+    ];
+  }
+  if (scope == 'questionnaire') {
+    return [
+      if (config.consentStep) KYCStep.consent,
+      if (hasEmailVerify) KYCStep.contactEmail,
+      if (hasPhoneVerify) KYCStep.contactPhone,
+      KYCStep.questionnaire,
+      KYCStep.submitted,
+    ];
+  }
+  if (scope == 'contact') {
+    return [
+      if (config.consentStep) KYCStep.consent,
+      if (hasEmailVerify) KYCStep.contactEmail,
+      if (hasPhoneVerify) KYCStep.contactPhone,
+      KYCStep.submitted,
+    ];
+  }
+
   final hasCountrySelect = hasCountrySelectStep(config);
   final hasProofOfAddress = config.proofOfAddress?.enabled ?? false;
   final hasNfc = hasNfcStep(config, state);
 
   return [
-    KYCStep.consent,
+    if (config.consentStep) KYCStep.consent,
     if (hasEmailVerify) KYCStep.contactEmail,
     if (hasPhoneVerify) KYCStep.contactPhone,
     if (hasCountrySelect) KYCStep.countrySelect,
@@ -170,6 +244,12 @@ List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
     if (hasNfc) KYCStep.nfc,
     if (hasLiveness) KYCStep.liveness,
     if (hasProofOfAddress) KYCStep.proofOfAddress,
+    // The address capture is REAL steps — find it, confirm it, show it, commit
+    // it — so the progress bar advances through them and back/forward is
+    // ordinary step navigation rather than a state machine inside one screen.
+    // Which of the four apply is `addressStepsFor` (address_step_order.dart),
+    // read here and by the flow itself so the two cannot disagree.
+    if (hasAddressCollection) ...addressStepsFor(config, state),
     if (hasQuestionnaire) KYCStep.questionnaire,
     KYCStep.submitted,
   ];

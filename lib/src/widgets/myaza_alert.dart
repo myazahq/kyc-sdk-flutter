@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 
@@ -22,10 +23,10 @@ extension _MyazaAlertVariantStyle on MyazaAlertVariant {
       };
 
   IconData get icon => switch (this) {
-        MyazaAlertVariant.error   => Icons.error_outline_rounded,
-        MyazaAlertVariant.success => Icons.check_circle_outline_rounded,
-        MyazaAlertVariant.warning => Icons.warning_amber_rounded,
-        MyazaAlertVariant.info    => Icons.info_outline_rounded,
+        MyazaAlertVariant.error   => LucideIcons.circleAlert,
+        MyazaAlertVariant.success => LucideIcons.circleCheck,
+        MyazaAlertVariant.warning => LucideIcons.triangleAlert,
+        MyazaAlertVariant.info    => LucideIcons.info,
       };
 }
 
@@ -124,7 +125,7 @@ class MyazaAlert extends StatelessWidget {
                       const SizedBox(width: MyazaSpacing.sm),
                       GestureDetector(
                         onTap: onDismiss,
-                        child: Icon(Icons.close, size: 16, color: accent),
+                        child: Icon(LucideIcons.x, size: 16, color: accent),
                       ),
                     ],
                   ],

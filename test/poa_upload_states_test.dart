@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
 import 'package:myaza_kyc_sdk_flutter/src/config/theme.dart';
+import 'package:myaza_kyc_sdk_flutter/src/config/upload_limits.dart';
 import 'package:myaza_kyc_sdk_flutter/src/screens/proof_of_address_parts.dart';
 
 // The proof-of-address step used to say "Tap to upload an image or PDF" — which
@@ -23,7 +24,7 @@ void main() {
       )));
 
       expect(find.text('Upload your utility bill'), findsOneWidget);
-      expect(find.text('Photo or PDF, up to 20MB'), findsOneWidget);
+      expect(find.text(kUploadHint), findsOneWidget);
     });
 
     testWidgets('a renamed "other" kind flows through to the call to action',

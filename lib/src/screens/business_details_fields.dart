@@ -21,6 +21,7 @@ class BusinessDetailsFields extends StatelessWidget {
   final bool formatOk;
   final bool requireName;
   final String country;
+  final String? geoCountry;
   final Map<CompanyInfoField, CompanyInfoMode> modes;
   final bool showCompanyInfo;
   final bool showContactEmail;
@@ -50,6 +51,7 @@ class BusinessDetailsFields extends StatelessWidget {
     required this.phoneValue,
     required this.contactEmailValid,
     required this.onChanged,
+    this.geoCountry,
   });
 
   @override
@@ -94,6 +96,7 @@ class BusinessDetailsFields extends StatelessWidget {
             modes: modes,
             controllers: infoCtrls,
             country: country,
+            geoCountry: geoCountry,
             phoneValue: phoneValue,
             onChanged: (field, value) => onChanged(field.key, value),
           ),

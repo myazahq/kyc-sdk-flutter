@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'country_flag.dart';
+import 'geo_badge.dart';
 
 // ─── Country option tile ──────────────────────────────────────────────────────
 //
@@ -24,6 +26,10 @@ class CountryOptionTile extends StatelessWidget {
   /// Highlights the row (primary border + tinted fill).
   final bool isSelected;
 
+  /// Tags the pinned geo row ("Your location"): the same tile in a second
+  /// position, differing only by the tag.
+  final String? badge;
+
   final VoidCallback onTap;
 
   const CountryOptionTile({
@@ -32,6 +38,7 @@ class CountryOptionTile extends StatelessWidget {
     required this.label,
     required this.isSelected,
     required this.onTap,
+    this.badge,
   });
 
   @override
@@ -67,8 +74,12 @@ class CountryOptionTile extends StatelessWidget {
                     style: text.label.copyWith(fontWeight: FontWeight.w500),
                   ),
                 ),
+                if (badge != null) ...[
+                  GeoBadge(label: badge!),
+                  const SizedBox(width: MyazaSpacing.sm),
+                ],
                 Icon(
-                  Icons.chevron_right,
+                  LucideIcons.chevronRight,
                   size: 18,
                   color: isSelected ? colors.primary : colors.textSecondary,
                 ),

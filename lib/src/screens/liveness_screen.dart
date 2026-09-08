@@ -3,15 +3,22 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
-import 'package:flutter/foundation.dart' show Uint8List, kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart'
+    show Uint8List, ValueListenable, ValueNotifier, kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../liveness/capture_ring.dart';
+import '../liveness/liveness_layout.dart';
+import '../config/biometric_options.dart';
 import '../config/capture_config.dart';
 import '../config/kyc_config.dart';
+import '../config/selfie_upload_wait.dart';
+import 'liveness_handover.dart';
 import '../config/theme.dart';
 import '../liveness/face_detection.dart';
 import '../liveness/capture_tuning.dart';
@@ -52,7 +59,88 @@ class LivenessScreen extends ConsumerStatefulWidget {
 }
 
 class _LivenessScreenState extends ConsumerState<LivenessScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
+  // ── The progress ring ──────────────────────────────────────────────────────
+  // Driven by a ticker OUTSIDE the widget tree: the painter listens to these
+  // notifiers and repaints itself; nothing here rebuilds the screen per frame.
+  late final Ticker _ringTicker;
+  final _ringShown = ValueNotifier<double>(0);
+  final _ringColor = ValueNotifier<Color>(MyazaColors.primary);
+  // The THEMED primary, the workflow's brand: the ring used to build in the
+  // static Myaza purple whatever the flow's appearance said (user report
+  // 2026-09-08). Read where the theme arrives (didChangeDependencies); the
+  // ticker paints outside the tree and cannot read the context itself.
+  Color _ringPrimary = MyazaColors.primary;
+  double _ringTarget = 0;
+  Duration _ringLast = Duration.zero;
+  final _phaseClock = Stopwatch();
+  String _phaseKey = '';
+  int? _greenSinceMs;
+  LivenessPhase? _lastRingPhase;
+  bool _reviewReady = false;
+
+  void _ringTick(Duration elapsed) {
+    final dt = math.min((elapsed - _ringLast).inMicroseconds / 1e6, 0.1);
+    _ringLast = elapsed;
+    final l = ref.read(livenessNotifierProvider);
+    // A retry restarts the machine at positioning from a later phase; the ring
+    // restarts with it. (Loading → positioning is the ordinary start, and the
+    // ring is already empty then.)
+    if (l.phase == LivenessPhase.positioning &&
+        _lastRingPhase != null &&
+        _lastRingPhase != LivenessPhase.loading &&
+        _lastRingPhase != LivenessPhase.positioning) {
+      _ringTarget = 0;
+      _ringShown.value = 0;
+      _greenSinceMs = null;
+      _ringColor.value = _ringPrimary;
+      _reviewReady = false;
+    }
+    _lastRingPhase = l.phase;
+    final key = '${l.phase}:${l.completedCount}';
+    if (key != _phaseKey) {
+      _phaseKey = key;
+      _phaseClock
+        ..reset()
+        ..start();
+    }
+    final timeout =
+        (ref.read(kycConfigProvider).livenessConfig?.timeoutPerChallenge ?? 8)
+            .toDouble();
+    _ringTarget = advanceTarget(
+      _ringTarget,
+      livenessProgress(
+        phase: l.phase,
+        completedCount: l.completedCount,
+        totalCount: l.totalCount,
+        elapsedInPhase: _phaseClock.elapsedMilliseconds / 1000,
+        challengeTimeout: timeout,
+        flashReadyProgress: l.flashReadyProgress,
+      ),
+    );
+    _ringShown.value = easeToward(_ringShown.value, _ringTarget, dt);
+    // Green only as it closes, on the same frame as the shutter.
+    if (l.phase == LivenessPhase.complete) {
+      _greenSinceMs ??= elapsed.inMilliseconds;
+      final t = ((elapsed.inMilliseconds - _greenSinceMs!) / 300).clamp(0.0, 1.0);
+      _ringColor.value = Color.lerp(_ringPrimary, MyazaColors.success, t)!;
+      // The one rebuild this ticker ever asks for: hand over to the review once
+      // the close has been SEEN (ring settled, green landed, shutter faded).
+      if (t >= 1 && !_reviewReady && elapsed.inMilliseconds - _greenSinceMs! >= 600) {
+        setState(() => _reviewReady = true);
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // The brand's primary, once the theme is in scope (and again if it
+    // changes): the ring builds in it, and only the closing green is fixed.
+    _ringPrimary = context.myazaColors.primary;
+    if (_greenSinceMs == null) _ringColor.value = _ringPrimary;
+  }
+
   final FaceDetectorService _detector = createFaceDetectorService();
   final _TtsService _tts = _TtsService();
   final _BrightnessSampler _brightnessSampler = _BrightnessSampler();
@@ -158,10 +246,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   @override
   void initState() {
     super.initState();
+    _ringTicker = createTicker(_ringTick)..start();
     WidgetsBinding.instance.addObserver(this);
     final voice = ref.read(kycConfigProvider).voiceGuidance;
     _tts.initialize(enabled: voice.enabled, language: voice.resolvedLanguage);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrime());
+    // A stored selfie with no uploaded mediaId is an interrupted upload
+    // (failed, or the user left mid-flight): resume it once. Idempotent.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final kyc = ref.read(kYCNotifierProvider);
+      if (kyc.selfieImage != null && kyc.mediaIds.selfie == null) {
+        _uploadSelfieAndVideo();
+      }
+    });
   }
 
   /// Show the "Allow camera access" primer before requesting permission, unless
@@ -170,6 +268,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   /// camera stays shut, which is the whole point of that screen.
   Future<void> _maybePrime() async {
     if (!_ready) return;
+    // A selfie already exists (this visit or restored): the review shows and
+    // no camera may start behind it. Retake clears it and re-enters here.
+    final kyc = ref.read(kYCNotifierProvider);
+    if (kyc.selfieImage != null || kyc.mediaIds.selfie != null) return;
     if (await hasCameraPermission()) {
       if (!mounted) return;
       _init();
@@ -181,6 +283,9 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
   @override
   void dispose() {
+    _ringTicker.dispose();
+    _ringShown.dispose();
+    _ringColor.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _detector.dispose();
     _tts.dispose();
@@ -221,6 +326,9 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     if (ref.read(livenessNotifierProvider).phase == LivenessPhase.complete) {
       return;
     }
+    // Restored review (central selfie, machine never started): no camera runs.
+    final kyc = ref.read(kYCNotifierProvider);
+    if (kyc.selfieImage != null || kyc.mediaIds.selfie != null) return;
     _resumeAfterBackground();
   }
 
@@ -828,6 +936,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
             flash: _flashResult,
           ),
         );
+    // Keep the preview CENTRALLY too: this screen's state and the autoDispose
+    // liveness provider die on step change, and the central copy is what lets
+    // a return land on this review instead of a fresh gesture run.
+    ref.read(kYCNotifierProvider.notifier).setSelfieImage(selfieBase64);
     // Eagerly upload the selfie (and best-effort liveness video) the moment it's
     // shown, so the network round-trip overlaps the user's review instead of
     // blocking after they tap Continue. Both review buttons are disabled while
@@ -840,9 +952,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   /// best-effort liveness video) and store the returned mediaIds in state.
   /// Runs eagerly when the selfie is first shown ([_handleComplete]); does NOT
   /// advance the flow — [_onSelfieAccepted] does that once the user confirms.
+  ///
+  /// The continuation OUTLIVES this screen on purpose: with the review hidden
+  /// the flow hands over while the upload is still in flight, and the
+  /// submitted screen waits on the provider's record (`selfieUpload`), so the
+  /// media ids and the record are written whether or not the screen is still
+  /// mounted. Only the local UI state is guarded on [mounted].
   Future<void> _uploadSelfieAndVideo() async {
     if (_isUploadingSelfie) return;
-    final selfieBase64 = ref.read(livenessNotifierProvider).selfieBase64;
+    final selfieBase64 = ref.read(livenessNotifierProvider).selfieBase64 ??
+        ref.read(kYCNotifierProvider).selfieImage;
     if (selfieBase64 == null) return;
 
     setState(() {
@@ -850,9 +969,23 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       _selfieUploadError = null;
       _selfieRetryInfo = null;
     });
+    // Captured before the first await: `ref` is unusable once disposed, and a
+    // closed flow's notifier refuses writes, which is what the guard swallows.
+    final notifier = ref.read(kYCNotifierProvider.notifier);
+    void report(void Function() write) {
+      try {
+        write();
+      } catch (_) {
+        /* the flow was closed under the upload; nothing left to tell */
+      }
+    }
+
+    // The provider-side progress report: the biometric scopes hand over
+    // before this lands, and the submitted screen waits on THIS
+    // (config/selfie_upload_wait.dart).
+    report(() => notifier.setSelfieUpload(SelfieUploadState.uploading));
 
     try {
-      final notifier = ref.read(kYCNotifierProvider.notifier);
       final api = notifier.api;
 
       // The selfie was already encoded under CaptureConfig.selfieMaxBytes
@@ -864,7 +997,6 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
           'KYC selfie upload size: ${(bytes.length / 1024).toStringAsFixed(0)} KB',
         );
       }
-      if (!mounted) return;
 
       // Retried on transient failures (network / timeout / 5xx).
       final selfieMediaId = await withRetry(
@@ -873,10 +1005,8 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
           if (mounted) setState(() => _selfieRetryInfo = (attempt: attempt, total: total));
         },
       );
-      if (!mounted) return;
-
-      setState(() => _selfieRetryInfo = null);
-      notifier.setMediaId('selfie', selfieMediaId);
+      if (mounted) setState(() => _selfieRetryInfo = null);
+      report(() => notifier.setMediaId('selfie', selfieMediaId));
 
       // The gesture recording finalizes in the background after the selfie is
       // shown; wait for that (bounded) so its path is set before we read it. A
@@ -884,7 +1014,6 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       if (_pendingRecordingStop != null) {
         await _pendingRecordingStop!
             .timeout(const Duration(seconds: 3), onTimeout: () {});
-        if (!mounted) return;
       }
 
       // Upload the recorded liveness video (best-effort — proceed if the
@@ -895,38 +1024,52 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
             _livenessVideoPath!,
             label: 'liveness video',
           );
-          if (!mounted) return;
           final videoMediaId = await withRetry(
             () => api.upload(videoBytes, 'video/mp4', MediaType.livenessVideo),
           );
-          if (!mounted) return;
-          notifier.setMediaId('livenessVideo', videoMediaId);
+          report(() => notifier.setMediaId('livenessVideo', videoMediaId));
         } catch (_) {
           // Best-effort — the verification proceeds without the liveness video.
         }
       }
 
-      setState(() => _isUploadingSelfie = false);
-    } on KYCApiException catch (e) {
-      if (!mounted) return;
+      if (mounted) setState(() => _isUploadingSelfie = false);
+      report(() => notifier.setSelfieUpload(SelfieUploadState.done));
+    } catch (e) {
       // Retries exhausted — show the inline error AND report a typed error.
       final kycError = mapToKycError(e, context: ErrorContext.upload);
-      setState(() {
-        _isUploadingSelfie = false;
-        _selfieRetryInfo = null;
-        _selfieUploadError = kycError.message;
-      });
-      widget.onError?.call(kycError);
-    } catch (e) {
-      if (!mounted) return;
-      final kycError = mapToKycError(e, context: ErrorContext.upload);
-      setState(() {
-        _isUploadingSelfie = false;
-        _selfieRetryInfo = null;
-        _selfieUploadError = kycError.message;
-      });
+      if (mounted) {
+        setState(() {
+          _isUploadingSelfie = false;
+          _selfieRetryInfo = null;
+          _selfieUploadError = kycError.message;
+        });
+      }
+      report(() => notifier.setSelfieUpload(SelfieUploadState.failed(kycError.message)));
       widget.onError?.call(kycError);
     }
+  }
+
+  // ── Handing over without the review ─────────────────────────────────────
+  // The biometric scopes skip the review by default: hand over the moment the
+  // ring has closed, WITHOUT waiting for the upload (see liveness_handover).
+  // The upload reports to the provider and the submitted screen waits on it,
+  // so the person sees one loading screen rather than one per step. A
+  // restored selfie (media id, no local bytes) is ready at once; an upload
+  // that already failed keeps the review, whose Try Again is the recovery.
+  bool _handedOver = false;
+
+  bool get _selfieReviewShown => ref.read(kycConfigProvider).showsSelfieReviewOption;
+
+  /// Advance exactly once, on the first build on which the selfie is ready.
+  Widget _handOver() {
+    if (!_handedOver) {
+      _handedOver = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) ref.read(kYCNotifierProvider.notifier).nextStep();
+      });
+    }
+    return const LivenessHandover();
   }
 
   /// Continue button. The upload was kicked off eagerly when the selfie was
@@ -946,6 +1089,9 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   }
 
   void _retryLiveness() {
+    // Without this, the central copy set at completion would immediately
+    // re-open the review the retake is trying to leave.
+    ref.read(kYCNotifierProvider.notifier).clearSelfie();
     setState(() {
       _capturingHandled = false;
       _completionHandled = false;
@@ -1041,6 +1187,31 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       }
     });
 
+    // ── Review (selfie already exists) ────────────────────────────────────
+    // A selfie captured on an earlier visit — or a restored session where only
+    // the uploaded mediaId survived — means there is nothing to capture: open
+    // on review (no primers, no camera), exactly as the document steps reopen
+    // on theirs. The ACTIVE flow's own review (phase == complete) renders via
+    // _ActiveView below with its live upload wiring.
+    final kycForReview = ref.watch(kYCNotifierProvider);
+    if ((kycForReview.selfieImage != null || kycForReview.mediaIds.selfie != null) &&
+        livenessState.phase != LivenessPhase.complete) {
+      if (!_selfieReviewShown && _selfieUploadError == null) return _handOver();
+      return _SelfieReviewView(
+        selfieBase64: kycForReview.selfieImage,
+        onRetake: () {
+          ref.read(kYCNotifierProvider.notifier).clearSelfie();
+          // Fall back into the normal start chain (ready primer onwards).
+          setState(() {});
+        },
+        onContinue: _onSelfieAccepted,
+        isUploading: _isUploadingSelfie,
+        uploadError: _selfieUploadError,
+        retryInfo: _selfieRetryInfo,
+        onDismissError: () => setState(() => _selfieUploadError = null),
+      );
+    }
+
     // "Here's what happens next" — shown before the permission primer, so the
     // selfie camera never opens unannounced.
     if (!_ready) {
@@ -1090,7 +1261,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       return _LoadingView(error: cameraState.error);
     }
 
+    // The ACTIVE flow's own review, once the close has been SEEN: with the
+    // review hidden, this is the hand-over frame instead.
+    if (livenessState.phase == LivenessPhase.complete &&
+        livenessState.selfieBase64 != null &&
+        _reviewReady &&
+        !_selfieReviewShown &&
+        _selfieUploadError == null) {
+      return _handOver();
+    }
+
     return _ActiveView(
+      ring: _ringShown,
+      ringColor: _ringColor,
+      reviewReady: _reviewReady,
       previewKey: _previewKey,
       livenessState: livenessState,
       controller: controller,
@@ -1159,6 +1343,8 @@ class _LoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Window-derived so a short phone keeps the avatar on screen.
+    final circleSize = livenessLayout(MediaQuery.sizeOf(context)).circle;
     final colors = context.myazaColors;
     final text   = context.myazaText;
 
@@ -1191,8 +1377,8 @@ class _LoadingView extends StatelessWidget {
 
         Center(
           child: Container(
-            width: MyazaSizing.cameraCircleSize,
-            height: MyazaSizing.cameraCircleSize,
+            width: circleSize,
+            height: circleSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: colors.primary50,
@@ -1293,7 +1479,20 @@ class _ActiveView extends StatelessWidget {
   final ({int attempt, int total})? selfieRetryInfo;
   final VoidCallback onDismissUploadError;
 
+  /// The whole-test progress ring and its colour, owned by the screen's ticker
+  /// and handed down to the camera circle's painter.
+  final ValueListenable<double> ring;
+  final ValueListenable<Color> ringColor;
+
+  /// `complete` arrives with the selfie in the SAME state write, so switching
+  /// to the review on it would unmount the camera circle on the very frame the
+  /// ring reaches the end — the close and the shutter would never be seen. The
+  /// screen flips this once the closing beat has played.
+  final bool reviewReady;
+
   const _ActiveView({
+    required this.ring,
+    required this.ringColor,
     required this.previewKey,
     required this.livenessState,
     required this.controller,
@@ -1309,15 +1508,19 @@ class _ActiveView extends StatelessWidget {
     required this.selfieRetryInfo,
     required this.onDismissUploadError,
     this.onRetry,
+    this.reviewReady = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final layout = livenessLayout(MediaQuery.sizeOf(context));
     final phase = livenessState.phase;
     final isFailed = phase == LivenessPhase.failed;
 
     // ── Selfie review ─────────────────────────────────────────────────────────
-    if (phase == LivenessPhase.complete && livenessState.selfieBase64 != null) {
+    if (phase == LivenessPhase.complete &&
+        livenessState.selfieBase64 != null &&
+        reviewReady) {
       return _SelfieReviewView(
         selfieBase64: livenessState.selfieBase64!,
         onRetake: onRetakeSelfie,
@@ -1363,6 +1566,8 @@ class _ActiveView extends StatelessWidget {
             phase: phase,
             faceDetected: livenessState.faceDetected,
             flashReadyProgress: livenessState.flashReadyProgress,
+              ring: ring,
+              ringColor: ringColor,
             hasWarning: livenessState.wrongGesture ||
                 livenessState.positionGuidance != null ||
                 livenessState.multipleFaces ||
@@ -1401,6 +1606,8 @@ class _ActiveView extends StatelessWidget {
             child: LivenessAvatar(
               activeChallenge: livenessState.activeChallenge,
               phase: phase,
+              size: layout.avatar,
+              iconSize: layout.avatarIcon,
             ),
           ),
         ],
@@ -1414,7 +1621,8 @@ class _ActiveView extends StatelessWidget {
 // Shows the captured selfie in a circle so the user can retake or continue.
 
 class _SelfieReviewView extends StatelessWidget {
-  final String selfieBase64;
+  /// Null on a restored session: the mediaId survived, the preview did not.
+  final String? selfieBase64;
   final VoidCallback onRetake;
   final VoidCallback onContinue;
   final bool isUploading;
@@ -1434,7 +1642,9 @@ class _SelfieReviewView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final imageBytes = base64Decode(selfieBase64);
+    // Window-derived so a short phone keeps the avatar on screen.
+    final circleSize = livenessLayout(MediaQuery.sizeOf(context)).circle;
+    final imageBytes = selfieBase64 != null ? base64Decode(selfieBase64!) : null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1443,8 +1653,8 @@ class _SelfieReviewView extends StatelessWidget {
         Center(
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            width: MyazaSizing.cameraCircleSize,
-            height: MyazaSizing.cameraCircleSize,
+            width: circleSize,
+            height: circleSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               border: Border.all(color: context.myazaColors.primary200, width: 3),
@@ -1457,7 +1667,21 @@ class _SelfieReviewView extends StatelessWidget {
                   // selfie-mirrored (iOS via processSelfieFrame(mirror:true),
                   // Android via the native still's postScale flip) — and that's
                   // exactly the bytes we upload, so display them as-is to match.
-                  Image.memory(imageBytes, fit: BoxFit.cover),
+                  if (imageBytes != null)
+                    Image.memory(imageBytes, fit: BoxFit.cover)
+                  else
+                    // Restored session: the bytes are gone by design (only the
+                    // mediaId travels) — a completed state, not a broken image.
+                    Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(MyazaSpacing.lg),
+                        child: Text(
+                          'Selfie already captured',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ),
+                    ),
                   // Uploading loader rendered INSIDE the selfie preview frame
                   // (replaces the old standalone "Uploading…" pill). Mirrors the
                   // submitting screen's pulse-ring + spinner loader.
@@ -1578,6 +1802,7 @@ class _InstructionBanner extends StatelessWidget {
     final hasPositionWarning = positionGuidance != null && faceDetected;
     final isChallenge        = phase == LivenessPhase.challenge;
     final isChallengePassed  = phase == LivenessPhase.challengePassed;
+    final isComplete = phase == LivenessPhase.complete;
     final hasWrongGesture    = wrongGesture && isChallenge && faceDetected;
 
     final colors = context.myazaColors;
@@ -1606,7 +1831,9 @@ class _InstructionBanner extends StatelessWidget {
     } else if (hasWrongGesture) {
       displayText = 'Wrong gesture';
       textColor   = MyazaColors.error;
-    } else if (isChallengePassed) {
+    } else if (isChallengePassed || isComplete) {
+      // Green on completion too: the ring, the border and the shutter all land
+      // there, and the text must not stay a colour that says "still going".
       displayText = instruction;
       textColor   = MyazaColors.success;
     } else if (isChallenge) {
@@ -1658,9 +1885,14 @@ class _CameraCircle extends StatelessWidget {
   /// Wrong gesture or wrong distance — turns the ring red (mirrors the web SDK).
   final bool hasWarning;
 
-  /// Flash-only pre-flash dwell, 0..1. Draws a filling ring so the "hold still"
-  /// moment before the screen flashes is visible, not a silent pause.
+  /// Flash-only pre-flash dwell, 0..1. Feeds the progress ring's positioning
+  /// and capture segments (see liveness/capture_ring.dart).
   final double flashReadyProgress;
+
+  /// The whole-test progress ring, 0..1, and its colour. Listenables, so the
+  /// painter repaints itself each frame without rebuilding this widget.
+  final ValueListenable<double> ring;
+  final ValueListenable<Color> ringColor;
 
   const _CameraCircle({
     super.key,
@@ -1672,6 +1904,8 @@ class _CameraCircle extends StatelessWidget {
     this.nativePreviewW = 0,
     this.nativePreviewH = 0,
     this.hasWarning = false,
+    required this.ring,
+    required this.ringColor,
   });
 
   bool get _showOval =>
@@ -1692,137 +1926,138 @@ class _CameraCircle extends StatelessWidget {
             phase == LivenessPhase.positioning)) {
       return MyazaColors.error;
     }
+    // The ring is on the frame from positioning to the shutter, so for that
+    // whole stretch the border is its TRACK. Phase colour stays on the
+    // instruction text and the passed flash; a warning still turns the track
+    // red under the arc (above).
     return switch (phase) {
-      LivenessPhase.loading                                  => colors.gray300,
-      LivenessPhase.failed                                   => MyazaColors.error,
-      LivenessPhase.challengePassed ||
-      LivenessPhase.capturing      ||
-      LivenessPhase.complete                                 => MyazaColors.success,
-      _                                                      => colors.primary,
+      LivenessPhase.loading => colors.gray300,
+      LivenessPhase.failed  => MyazaColors.error,
+      _                     => colors.primary200,
     };
   }
 
   @override
   Widget build(BuildContext context) {
+    // Window-derived so a short phone keeps the avatar on screen.
+    final circleSize = livenessLayout(MediaQuery.sizeOf(context)).circle;
     final colors      = context.myazaColors;
     final borderColor = _borderColor(colors);
     final hasNative   = nativeTextureId != null && nativeTextureId! >= 0;
     final isReady     = hasNative ||
         (controller != null && controller!.value.isInitialized);
 
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOutCubic,
-      width: MyazaSizing.cameraCircleSize + 6,
-      height: MyazaSizing.cameraCircleSize + 6,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: borderColor, width: 3),
-        boxShadow: [
-          BoxShadow(
-            color: borderColor.withValues(alpha: 0.25),
-            blurRadius: 12,
-            spreadRadius: 2,
+    // Two layers: the container CLIPS the preview to a circle behind its
+    // border; the ring is painted over that border, outside the clip, so the
+    // arc and the border are the same line.
+    return SizedBox.square(
+      dimension: circleSize + 6,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 350),
+            curve: Curves.easeOutCubic,
+            width: circleSize + 6,
+            height: circleSize + 6,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(color: borderColor, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: borderColor.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                  spreadRadius: 2,
+                ),
+              ],
+            ),
+            child: ClipOval(
+              child: SizedBox.square(
+                dimension: circleSize,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (hasNative)
+                      NativeCameraPreview(
+                        textureId: nativeTextureId!,
+                        bufferWidth: nativePreviewW,
+                        bufferHeight: nativePreviewH,
+                      )
+                    else if (isReady)
+                      _CameraPreviewFill(controller: controller!)
+                    else
+                      _CameraPlaceholder(phase: phase),
+
+                    // Dashed oval face guide
+                    if (isReady && _showOval)
+                      CustomPaint(
+                        painter: _DashedOvalPainter(
+                          color: faceDetected
+                              ? MyazaColors.success
+                              : colors.gray300,
+                        ),
+                      ),
+
+
+                    // Soft green wash over the whole circle when a challenge passes
+                    // (mirrors the web SDK's bg-success/20 flash). Sits behind the
+                    // checkmark badge below.
+                    if (phase == LivenessPhase.challengePassed)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: MyazaColors.success.withValues(alpha: 0.20),
+                        ),
+                      )
+                          .animate()
+                          .fadeIn(duration: 200.ms, curve: Curves.easeOut),
+
+                    // The shutter: a white flash as the still is taken. It used
+                    // to sit on `capturing` reading "Got it!", announcing a photo
+                    // not yet taken and leaving the real wait looking finished.
+                    if (phase == LivenessPhase.complete)
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ).animate().fadeOut(duration: 600.ms, curve: Curves.easeOut),
+
+                    // Animated checkmark badge when challenge passes
+                    if (phase == LivenessPhase.challengePassed)
+                      Center(
+                        child: Container(
+                          width: 72,
+                          height: 72,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: MyazaColors.success,
+                          ),
+                          child: const Icon(
+                            LucideIcons.check,
+                            color: Colors.white,
+                            size: 42,
+                          ),
+                        ),
+                      )
+                          .animate()
+                          .scale(
+                            begin: const Offset(0.4, 0.4),
+                            end: const Offset(1.0, 1.0),
+                            duration: 450.ms,
+                            curve: Curves.easeOutBack,
+                          )
+                          .fadeIn(duration: 200.ms, curve: Curves.easeOut),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          // Only the painter repaints as the ring moves.
+          IgnorePointer(
+            child: CustomPaint(painter: _CaptureRingPainter(ring, ringColor)),
           ),
         ],
-      ),
-      child: ClipOval(
-        child: SizedBox.square(
-          dimension: MyazaSizing.cameraCircleSize,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hasNative)
-                NativeCameraPreview(
-                  textureId: nativeTextureId!,
-                  bufferWidth: nativePreviewW,
-                  bufferHeight: nativePreviewH,
-                )
-              else if (isReady)
-                _CameraPreviewFill(controller: controller!)
-              else
-                _CameraPlaceholder(phase: phase),
-
-              // Dashed oval face guide
-              if (isReady && _showOval)
-                CustomPaint(
-                  painter: _DashedOvalPainter(
-                    color: faceDetected
-                        ? MyazaColors.success
-                        : colors.gray300,
-                  ),
-                ),
-
-              // Flash-only "getting ready" ring — a solid arc that sweeps as the
-              // pre-flash dwell completes, so the hold reads as progress toward
-              // the flash rather than a stall.
-              if (isReady && flashReadyProgress > 0)
-                CustomPaint(
-                  painter: _ReadyRingPainter(
-                    progress: flashReadyProgress,
-                    color: MyazaColors.success,
-                  ),
-                ),
-
-              // Soft green wash over the whole circle when a challenge passes
-              // (mirrors the web SDK's bg-success/20 flash). Sits behind the
-              // checkmark badge below.
-              if (phase == LivenessPhase.challengePassed)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: MyazaColors.success.withValues(alpha: 0.20),
-                  ),
-                )
-                    .animate()
-                    .fadeIn(duration: 200.ms, curve: Curves.easeOut),
-
-              // "Got it!" white wash during auto-capture.
-              if (phase == LivenessPhase.capturing)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.30),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'Got it!',
-                      style: context.myazaText.label.copyWith(
-                        color: Colors.white,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ).animate().fadeIn(duration: 200.ms, curve: Curves.easeOut),
-
-              // Animated checkmark badge when challenge passes
-              if (phase == LivenessPhase.challengePassed)
-                Center(
-                  child: Container(
-                    width: 72,
-                    height: 72,
-                    decoration: const BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: MyazaColors.success,
-                    ),
-                    child: const Icon(
-                      LucideIcons.check,
-                      color: Colors.white,
-                      size: 42,
-                    ),
-                  ),
-                )
-                    .animate()
-                    .scale(
-                      begin: const Offset(0.4, 0.4),
-                      end: const Offset(1.0, 1.0),
-                      duration: 450.ms,
-                      curve: Curves.easeOutBack,
-                    )
-                    .fadeIn(duration: 200.ms, curve: Curves.easeOut),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1945,35 +2180,40 @@ class _FlashHolePainter extends CustomPainter {
 
 /// A solid arc sweeping clockwise from the top as the pre-flash dwell fills.
 /// Sits just inside the circle's edge so it reads as the ring "charging".
-class _ReadyRingPainter extends CustomPainter {
-  final double progress; // 0..1
-  final Color color;
+class _CaptureRingPainter extends CustomPainter {
+  final ValueListenable<double> progress;
+  final ValueListenable<Color> color;
 
-  const _ReadyRingPainter({required this.progress, required this.color});
+  // `repaint` is what lets the ring move without a single widget rebuild: the
+  // painter re-paints itself when either notifier changes.
+  _CaptureRingPainter(this.progress, this.color)
+      : super(repaint: Listenable.merge([progress, color]));
+
+  /// The frame's own border width; the arc IS the border filling in.
+  static const double stroke = 3.0;
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (progress <= 0) return;
+    final p = progress.value.clamp(0.0, 1.0);
+    if (p <= 0) return;
     final paint = Paint()
-      ..color = color
+      ..color = color.value
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.0
-      ..strokeCap = StrokeCap.round;
-
-    // Inset by the stroke so the arc sits fully inside the clip.
-    final rect = Rect.fromLTWH(2, 2, size.width - 4, size.height - 4);
-    canvas.drawArc(
-      rect,
-      -math.pi / 2, // 12 o'clock
-      2 * math.pi * progress.clamp(0.0, 1.0),
-      false,
-      paint,
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.butt; // flat ends: a border has no rounded tips
+    // Centred on the border ring, which sits in the outermost `stroke` px.
+    final rect = Rect.fromLTWH(
+      stroke / 2,
+      stroke / 2,
+      size.width - stroke,
+      size.height - stroke,
     );
+    canvas.drawArc(rect, -math.pi / 2, 2 * math.pi * p, false, paint); // 12 o'clock
   }
 
   @override
-  bool shouldRepaint(_ReadyRingPainter oldDelegate) =>
-      oldDelegate.progress != progress || oldDelegate.color != color;
+  bool shouldRepaint(_CaptureRingPainter old) =>
+      old.progress != progress || old.color != color;
 }
 
 // ─── Dashed oval face guide ───────────────────────────────────────────────────

@@ -5,7 +5,8 @@ import '../config/country_names.g.dart';
 import '../config/dial_codes.g.dart';
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
-import 'country_flag.dart';
+import 'dial_code_row.dart';
+import 'dial_code_rows.dart';
 import 'myaza_input.dart';
 import 'themed_sheet.dart';
 
@@ -22,22 +23,38 @@ import 'themed_sheet.dart';
 // taps into search, sizing against the full screen (as this used to) made the
 // sheet effectively full-screen the moment the keys appeared — with the
 // filtered results hidden underneath them.
+//
+// The list itself (the pinned geo row, the optional region headers) is built
+// by dial_code_rows.dart; this file only renders it.
 
 /// Opens the picker; resolves to the chosen ISO-2 code, or null if dismissed.
-Future<String?> showDialCodePicker(BuildContext context, String selected) =>
+///
+/// [pinned] is the visitor's IP country, lifted out of the alphabet to the top
+/// of the list and tagged, so a guess we made on their behalf is visible AS a
+/// guess and one tap away rather than buried among two hundred others.
+Future<String?> showDialCodePicker(
+  BuildContext context,
+  String selected, {
+  String? pinned,
+}) =>
     showMyazaSheet<String>(
       context,
       isScrollControlled: true,
-      builder: (_) => _DialCodeSheet(selected: selected),
+      builder: (_) => _DialCodeSheet(selected: selected, pinned: pinned),
     );
 
 /// Opens a plain country picker (no dial codes) — the SAME sheet as the phone
 /// field's. Over every ISO country we can name, or a restricted [codes] subset
-/// (a workflow's registry countries).
+/// (a workflow's registry countries). [pinned] lifts the visitor's inferred
+/// country to the top as "Your location"; [grouped] lists the rest under
+/// region headers, the country-select step's way (the address-scope country
+/// control asks for both).
 Future<String?> showCountryPicker(
   BuildContext context,
   String? selected, {
   Iterable<String>? codes,
+  String? pinned,
+  bool grouped = false,
 }) =>
     showMyazaSheet<String>(
       context,
@@ -46,6 +63,8 @@ Future<String?> showCountryPicker(
         selected: selected ?? '',
         showDial: false,
         codes: codes,
+        pinned: pinned,
+        grouped: grouped,
       ),
     );
 
@@ -58,10 +77,18 @@ class _DialCodeSheet extends StatefulWidget {
   /// Restricts the country list (plain picker only). Null ⇒ all named ISO.
   final Iterable<String>? codes;
 
+  /// The visitor's IP country, pinned to the top (still subject to search).
+  final String? pinned;
+
+  /// Region headers between the rows (the pinned row stays on top).
+  final bool grouped;
+
   const _DialCodeSheet({
     required this.selected,
     this.showDial = true,
     this.codes,
+    this.pinned,
+    this.grouped = false,
   });
 
   @override
@@ -82,7 +109,7 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
         ? kDialCodes.keys
         : (widget.codes ?? kCountryNames.keys);
     final entries = codes
-        .map((iso) => (
+        .map<DialCodeEntry>((iso) => (
               iso: iso,
               name: countryLabel(iso),
               dial: widget.showDial ? kDialCodes[iso]! : '',
@@ -94,6 +121,8 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
             e.iso.toLowerCase().contains(q))
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    final items =
+        buildDialCodeItems(entries, widget.pinned, grouped: widget.grouped);
 
     // Space actually available above the keyboard, then capped so the sheet
     // stays a sheet rather than swallowing the screen.
@@ -127,7 +156,7 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                 ),
               ),
               Flexible(
-                child: entries.isEmpty
+                child: items.isEmpty
                     ? Padding(
                         padding: const EdgeInsets.all(MyazaSpacing.lg),
                         child: Text('No countries match your search.',
@@ -135,42 +164,12 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                       )
                     : ListView.builder(
                         padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
-                        itemCount: entries.length,
-                        itemBuilder: (_, i) {
-                          final e = entries[i];
-                          final isSelected = e.iso == widget.selected;
-                          return Material(
-                            color: isSelected
-                                ? colors.primary50
-                                : Colors.transparent,
-                            child: InkWell(
-                              onTap: () => Navigator.of(context).pop(e.iso),
-                              child: Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: MyazaSpacing.md,
-                                  vertical: 12,
-                                ),
-                                child: Row(
-                                  children: [
-                                    MyazaCountryFlag(country: e.iso, size: 28),
-                                    const SizedBox(width: MyazaSpacing.md),
-                                    Expanded(
-                                      // Full body size in the foreground
-                                      // colour: the name IS the row, not its
-                                      // caption.
-                                      child: Text(e.name,
-                                          style: text.body
-                                              .copyWith(color: colors.textDark)),
-                                    ),
-                                    if (widget.showDial)
-                                      Text('+${e.dial}',
-                                          style: text.bodyMedium.copyWith(
-                                              color: colors.textSecondary)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
+                        itemCount: items.length,
+                        itemBuilder: (_, i) => switch (items[i]) {
+                          DialCodeHeaderItem(:final region) =>
+                            DialCodeRegionHeader(region: region),
+                          DialCodeRowItem(:final entry, :final pinned) =>
+                            _row(entry, pinned, items.length),
                         },
                       ),
               ),
@@ -178,6 +177,24 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
           ),
         ),
       ),
+    );
+  }
+
+  Widget _row(DialCodeEntry e, bool isPinned, int count) {
+    final row = DialCodeRow(
+      iso: e.iso,
+      name: e.name,
+      dial: e.dial,
+      isSelected: e.iso == widget.selected,
+      badge: isPinned ? 'Your location' : null,
+      onTap: () => Navigator.of(context).pop(e.iso),
+    );
+    // A hairline under the pinned row only: the list below it is one list,
+    // and a rule between every row is noise.
+    if (!isPinned || count == 1) return row;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [row, const DialCodeDivider()],
     );
   }
 }

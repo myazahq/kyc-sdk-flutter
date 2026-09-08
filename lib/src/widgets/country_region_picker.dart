@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../config/id_types.dart' show countryLabel;
 import '../config/regions.dart';
 import '../config/theme.dart';
 import 'country_option_tile.dart';
@@ -28,11 +30,17 @@ class CountryRegionPicker extends StatefulWidget {
   /// Called with the picked ISO-2 code.
   final void Function(String code) onSelect;
 
+  /// The visitor's IP country. Lifted out of its continent to the very top
+  /// and tagged, so the one country most likely to be theirs is the first
+  /// thing they see rather than something to scroll for.
+  final String? geoCountry;
+
   const CountryRegionPicker({
     super.key,
     required this.codes,
     required this.selected,
     required this.onSelect,
+    this.geoCountry,
   });
 
   @override
@@ -42,8 +50,9 @@ class CountryRegionPicker extends StatefulWidget {
 class _CountryRegionPickerState extends State<CountryRegionPicker> {
   String _query = '';
 
-  bool _matches(CountryOption c, String q) =>
-      c.name.toLowerCase().contains(q) || c.code.toLowerCase().contains(q);
+  bool _matches(String code, String q) =>
+      countryLabel(code).toLowerCase().contains(q) ||
+      code.toLowerCase().contains(q);
 
   @override
   Widget build(BuildContext context) {
@@ -51,26 +60,29 @@ class _CountryRegionPickerState extends State<CountryRegionPicker> {
     final text = context.myazaText;
     final q = _query.trim().toLowerCase();
 
-    final groups = <RegionGroup>[];
-    for (final g in groupCountriesByRegion(widget.codes)) {
-      final matched =
-          q.isEmpty ? g.countries : g.countries.where((c) => _matches(c, q));
-      if (matched.isNotEmpty) {
-        groups.add(RegionGroup(g.region, matched.toList()));
-      }
-    }
+    // Filter first, THEN pin: the geo row stays subject to the search, so
+    // typing narrows to what was asked for rather than keeping a row that
+    // does not match it.
+    final visible = [
+      for (final code in widget.codes)
+        if (q.isEmpty || _matches(code, q)) code.toUpperCase(),
+    ];
+    final split = pinGeoRow(visible, widget.geoCountry, (c) => c);
+    final pinned = split.pinned;
+    final groups = groupCountriesByRegion(split.rest);
+    final empty = groups.isEmpty && pinned == null;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MyazaInput(
           hint: 'Search countries…',
-          prefix: Icon(Icons.search, size: 18, color: colors.textSecondary),
+          prefix: Icon(LucideIcons.search, size: 18, color: colors.textSecondary),
           onChanged: (v) => setState(() => _query = v),
         ),
         const SizedBox(height: MyazaSpacing.md),
         Expanded(
-          child: groups.isEmpty
+          child: empty
               ? Center(
                   child: Text('No countries match your search.',
                       style: text.bodyMedium),
@@ -81,6 +93,19 @@ class _CountryRegionPickerState extends State<CountryRegionPicker> {
                   // visual gap is needed here.
                   padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
                   children: [
+                    if (pinned != null)
+                      Padding(
+                        padding:
+                            const EdgeInsets.only(bottom: MyazaSpacing.sm),
+                        child: CountryOptionTile(
+                          code: pinned,
+                          label: countryLabel(pinned),
+                          isSelected:
+                              widget.selected?.toUpperCase() == pinned,
+                          badge: 'Your location',
+                          onTap: () => widget.onSelect(pinned),
+                        ),
+                      ),
                     for (final g in groups) ...[
                       Padding(
                         padding: const EdgeInsets.fromLTRB(

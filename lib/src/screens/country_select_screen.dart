@@ -39,6 +39,7 @@ class CountrySelectScreen extends ConsumerWidget {
       return CountryRegionPicker(
         codes: codes,
         selected: selected,
+        geoCountry: state.serverConfig.geoCountry,
         onSelect: pick,
       );
     }

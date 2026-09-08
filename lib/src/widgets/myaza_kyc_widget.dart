@@ -1,12 +1,14 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart'
     show SystemUiOverlayStyle, SystemChrome, DeviceOrientation;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/kyc_config.dart';
+import '../config/proof_of_address.dart';
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
 import '../providers/camera_provider.dart';
@@ -27,6 +29,12 @@ import '../screens/document_capture_screen.dart';
 import '../screens/id_input_screen.dart';
 import '../screens/id_type_screen.dart';
 import '../screens/nfc_screen.dart';
+import '../config/address_flow.dart';
+import '../providers/address_step_order.dart';
+import '../screens/address/address_entrance_step.dart';
+import '../screens/address/address_pin_step.dart';
+import '../screens/address/address_review_step.dart';
+import '../screens/address/address_search_step.dart';
 import '../screens/proof_of_address_screen.dart';
 import '../screens/questionnaire_screen.dart';
 import 'multi_id_progress.dart';
@@ -38,6 +46,7 @@ import '../utils/resolve_url.dart';
 import 'kyc_bottom_sheet.dart';
 import 'sandbox_banner.dart';
 import 'myaza_button.dart';
+import '../config/kyc_result.dart';
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 
@@ -89,6 +98,25 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   ),
   // proofOfAddress description is computed dynamically from maxAgeDays.
   KYCStep.proofOfAddress: _StepMeta('Proof of address'),
+  // The pin and review steps re-title themselves for a KYB premises, and the
+  // flow's first step drops its title entirely while the presence primer is
+  // showing — see the build overrides below.
+  KYCStep.addressSearch: _StepMeta(
+    'Find your address',
+    'Search it, use your current location, or place a pin on the map.',
+  ),
+  KYCStep.addressCollection: _StepMeta(
+    'Is the pin on your building?',
+    'Drag the map until the pin sits exactly on it. You can add details for whoever needs to find it.',
+  ),
+  KYCStep.addressEntrance: _StepMeta(
+    'Show the entrance',
+    'A picture of the gate or front door makes the address findable.',
+  ),
+  KYCStep.addressReview: _StepMeta(
+    'Confirm your address',
+    'Check everything is right before you continue.',
+  ),
   KYCStep.questionnaire: _StepMeta(
     'A Few More Questions',
     'Please answer the following to complete your verification.',
@@ -179,6 +207,9 @@ class MyazaKYC {
     void Function(KYCSubmission)? onSubmit,
     void Function(KYCError)? onError,
     VoidCallback? onClose,
+    /// The verdict, on a flow that waits for it in the app (a biometric
+    /// re-authentication on the default delivery). See [KYCResult].
+    void Function(KYCResult)? onResult,
   }) async {
     // Fail loud on an invalid key prefix before presenting anything (throws
     // ArgumentError with a clear message).
@@ -241,6 +272,7 @@ class MyazaKYC {
                   onSubmit: onSubmit,
                   onError: onError,
                   onClose: onClose,
+                  onResult: onResult,
                 ),
               ),
             ),
@@ -265,6 +297,7 @@ class MyazaKYC {
           onSubmit: onSubmit,
           onError: onError,
           onClose: onClose,
+          onResult: onResult,
         ),
       ),
     ).then((_) => onClose?.call());
@@ -292,12 +325,23 @@ class MyazaKYC {
       ];
 }
 
+/// The ProviderScope overrides a flow mounts with — exposed for the other
+/// entry points that host a step of the flow inside their own scope (face
+/// re-authentication hosts the liveness step). One list, so a notifier added
+/// here reaches every host.
+List<Override> kycFlowOverrides(
+  MyazaKYCConfig config,
+  ServerSdkConfig? preloaded,
+) =>
+    MyazaKYC._overridesFor(config, preloaded);
+
 /// Embeddable widget version. Wrap in your own layout.
 class MyazaKYCWidget extends StatelessWidget {
   final MyazaKYCConfig config;
   final void Function(KYCSubmission)? onSubmit;
   final void Function(KYCError)? onError;
   final VoidCallback? onClose;
+  final void Function(KYCResult)? onResult;
 
   const MyazaKYCWidget({
     super.key,
@@ -305,6 +349,7 @@ class MyazaKYCWidget extends StatelessWidget {
     this.onSubmit,
     this.onError,
     this.onClose,
+    this.onResult,
   });
 
   @override
@@ -319,6 +364,7 @@ class MyazaKYCWidget extends StatelessWidget {
         onSubmit: onSubmit,
         onError: onError,
         onClose: onClose,
+        onResult: onResult,
       );
     }
 
@@ -328,6 +374,7 @@ class MyazaKYCWidget extends StatelessWidget {
         onSubmit: onSubmit,
         onError: onError,
         onClose: onClose,
+        onResult: onResult,
       ),
     );
   }
@@ -345,12 +392,14 @@ class _EmbeddedWorkflowGate extends StatefulWidget {
   final void Function(KYCSubmission)? onSubmit;
   final void Function(KYCError)? onError;
   final VoidCallback? onClose;
+  final void Function(KYCResult)? onResult;
 
   const _EmbeddedWorkflowGate({
     required this.config,
     this.onSubmit,
     this.onError,
     this.onClose,
+    this.onResult,
   });
 
   @override
@@ -408,6 +457,7 @@ class _EmbeddedWorkflowGateState extends State<_EmbeddedWorkflowGate> {
             onSubmit: widget.onSubmit,
             onError: widget.onError,
             onClose: widget.onClose,
+            onResult: widget.onResult,
           ),
         );
       },
@@ -422,12 +472,14 @@ class _KycFlowWidget extends ConsumerStatefulWidget {
   final void Function(KYCSubmission)? onSubmit;
   final void Function(KYCError)? onError;
   final VoidCallback? onClose;
+  final void Function(KYCResult)? onResult;
 
   const _KycFlowWidget({
     this.isFullScreen = false,
     this.onSubmit,
     this.onError,
     this.onClose,
+    this.onResult,
   });
 
   @override
@@ -478,6 +530,16 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     final step = state.currentStep;
     var meta = _kStepMeta[step]!;
 
+    // The entrance step framing street imagery describes THAT, not a camera.
+    if (step == KYCStep.addressEntrance &&
+        ref.watch(
+            kYCNotifierProvider.select((s) => s.addressEntranceFraming))) {
+      meta = const _StepMeta(
+        'Show the entrance',
+        'Frame your entrance in the street imagery. No camera needed.',
+      );
+    }
+
     // The ID input step names the ID it wants. The step asks for the number and
     // nothing else: the applicant's name comes from the integrator, through the
     // config or the session, never typed here.
@@ -488,13 +550,43 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       );
     }
 
+    // A KYB flow's pin is the BUSINESS PREMISES, so the step introduces itself
+    // as that rather than as the applicant's home address.
+    if (config.subjectType == 'business') {
+      if (step == KYCStep.addressCollection) {
+        meta = _StepMeta('Is the pin on the premises?', meta.description);
+      } else if (step == KYCStep.addressReview) {
+        meta = _StepMeta('Confirm the premises', meta.description);
+      }
+    }
+
+    // The presence primer carries its own heading, so the step's title would
+    // sit above it saying something else. Blanked the way the consent step's
+    // is, which is the same situation: a screen that introduces itself.
+    if (kAddressFlowOrder.contains(step) &&
+        addressIntroGateShowing(config, state, step)) {
+      meta = const _StepMeta('');
+    }
+
     // Proof of address states its own recency window, so the description has to
     // carry the workflow's maxAgeDays rather than say "recent".
     if (step == KYCStep.proofOfAddress) {
-      final days = config.proofOfAddress?.maxAgeDays ?? 90;
+      final poa = config.proofOfAddress;
+      final days = poa?.maxAgeDays ?? 90;
+      // Ask for what the server will check: where the workflow's name rule is
+      // off for the picked kind in this country (a Nigerian utility bill names
+      // the meter, not the tenant), asking for "your name" sends people hunting
+      // for a document they do not have. Mirrors the web and RN headers.
+      final kind = state.poaDocumentType == null
+          ? null
+          : PoaDocumentType.tryFromKey(state.poaDocumentType!);
+      final nameNeeded = poa == null ||
+          poa.namePolicyFor(state.selectedCountry ?? config.country, kind) !=
+              PoaNameRule.off;
       meta = _StepMeta(
         meta.title,
-        'Upload a document that shows your name and home address, issued '
+        'Upload a document that shows your '
+        '${nameNeeded ? 'name and home address' : 'home address'}, issued '
         'within the last $days days.',
       );
     }
@@ -619,9 +711,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     final progress = stepInfo?.progress;
 
     // ── Back callback (null = hide back button) ────────────────────────────
+    // Hidden on the flow's OPENING step (consent, or the first real step when
+    // the workflow switched the consent screen off), not on consent by name.
+    // A multi-ID run returns to the ID picker for its next check, where Back
+    // means "redo the previous one", so a committed slot keeps the arrow.
+    final opening = openingStep(config, serverConfig: state.serverConfig);
     final VoidCallback? onBack = switch (step) {
-      KYCStep.consent => null, // first step
       KYCStep.submitted => null, // terminal
+      _ when step == opening && state.multiIdSlots.isEmpty => null,
       _ => notifier.previousStep,
     };
 
@@ -710,8 +807,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       // before that flag flips it would otherwise render inside the sheet's
       // scroll view with unbounded height — which the camera cannot lay out
       // against.
+      // The address pin step fills it too: its map owns every touch, so its
+      // Continue rides StickyActions at the bottom of a BOUNDED body rather
+      // than sitting under a surface a short phone cannot scroll past.
       fillsViewport: configError == null &&
-          (step == KYCStep.countrySelect || step == KYCStep.documentCapture),
+          (step == KYCStep.countrySelect ||
+              step == KYCStep.documentCapture ||
+              step == KYCStep.addressCollection ||
+              step == KYCStep.addressEntrance),
       child: keyedScreen,
     );
 
@@ -857,6 +960,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         KYCStep.submitted => SubmittedScreen(
             onSubmitted: widget.onSubmit,
             onError: widget.onError,
+            onResult: widget.onResult,
             onDone: () {
               widget.onClose?.call();
               if (Navigator.of(context).canPop()) {
@@ -889,6 +993,13 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
                           code: 'upload_failed',
                           message: 'Proof of address upload failed.'),
                 )),
+        // The address flow: find it, confirm it, show it, commit it. Each is a
+        // real step in the order (see step_order.dart), so the progress bar
+        // and the header's back arrow need nothing special here.
+        KYCStep.addressSearch => const AddressSearchStep(),
+        KYCStep.addressCollection => const AddressPinStep(),
+        KYCStep.addressEntrance => const AddressEntranceStep(),
+        KYCStep.addressReview => const AddressReviewStep(),
         // Both contact steps mount the SAME widget type, so without distinct
         // keys Flutter matches them by (runtimeType, key) and REUSES the State
         // across email → phone: the phone step would inherit the email step's
@@ -943,7 +1054,7 @@ class _ConfigErrorScreen extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
-                  Icons.error_outline_rounded,
+                  LucideIcons.circleAlert,
                   size: 40,
                   color: MyazaColors.error,
                 ),

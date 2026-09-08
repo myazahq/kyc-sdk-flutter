@@ -24,11 +24,16 @@ class BusinessProduct {
   /// Countries offering this product; empty = every supported country.
   final List<String> countries;
 
+  /// Product-specific placeholder (registry number formats differ by country);
+  /// absent falls back to the input-type default.
+  final String? placeholderOverride;
+
   const BusinessProduct(
     this.key,
     this.label,
     this.input, {
     this.countries = const [],
+    this.placeholderOverride,
   });
 
   /// What the user types — drives the input label + placeholder.
@@ -37,7 +42,8 @@ class BusinessProduct {
       : 'Registration number';
 
   String get placeholder =>
-      input == BusinessProductInput.tin ? 'e.g. 01234567-0001' : 'e.g. RC0000000';
+      placeholderOverride ??
+      (input == BusinessProductInput.tin ? 'e.g. 01234567-0001' : 'e.g. RC0000000');
 
   bool availableIn(String country) =>
       countries.isEmpty || countries.contains(country.toUpperCase());
@@ -49,6 +55,12 @@ class BusinessProduct {
 const Map<String, BusinessProduct> kBusinessProducts = {
   'business':
       BusinessProduct('business', 'Business', BusinessProductInput.registration),
+  'business-address': BusinessProduct(
+      'business-address', 'Business Address', BusinessProductInput.registration,
+      countries: ['ZA'], placeholderOverride: 'e.g. 201133333323'),
+  'business-filings': BusinessProduct(
+      'business-filings', 'Company Filings', BusinessProductInput.registration,
+      countries: ['CI'], placeholderOverride: 'e.g. CI-ABJ-03-2023-B17-00120'),
   'business-tax': BusinessProduct(
       'business-tax', 'Business + Tax ID', BusinessProductInput.registration,
       countries: ['NG']),
@@ -464,8 +476,14 @@ class WorkflowBusinessConfig {
   /// by each product's country availability, with the default product as the
   /// backstop. Mirrors the server's `businessProductsForCountry`.
   List<String> productsForCountry(String pickedCountry) {
+    // A key this build does not know is HIDDEN, never offered everywhere: the
+    // server rejects a wrong-country pick at verify (product_unsupported), so
+    // over-offering dead-ends the applicant, while hiding degrades to the
+    // standard lookup until the SDK updates.
     final offered = offeredProducts
-        .where((key) => businessProduct(key).availableIn(pickedCountry))
+        .where((key) =>
+            kBusinessProducts.containsKey(key) &&
+            businessProduct(key).availableIn(pickedCountry))
         .toList(growable: false);
     return offered.isEmpty ? const [kDefaultBusinessProduct] : offered;
   }

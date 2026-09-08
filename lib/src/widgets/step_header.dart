@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'country_flag.dart';
@@ -91,9 +92,10 @@ class StepHeader extends StatelessWidget {
 
 class _BackButton extends StatelessWidget {
   /// Footprint reserved in the header row (used for description alignment).
-  /// Smaller than the old filled circle so the borderless icon sits closer to
-  /// the title; a larger invisible tap target is kept inside.
-  static const double size = 28;
+  /// The same 40pt footprint as the theme and close controls above it, and
+  /// as RN's back button: a smaller glyph here read as a different class of
+  /// control, and 28 was under the 44pt minimum touch target.
+  static const double size = 40;
 
   final VoidCallback onTap;
   final MyazaColorScheme colors;
@@ -107,13 +109,13 @@ class _BackButton extends StatelessWidget {
       // Transparent, generous tap target around a fine borderless icon.
       child: SizedBox(
         width: size,
-        height: 40,
+        height: size,
         child: Center(
           child: Icon(
-            // Elongated left arrow (longer shaft than arrow_back_rounded).
-            Icons.keyboard_backspace_rounded,
-            size: 24,
-            color: colors.textDark.withValues(alpha: 0.85),
+            // The long-shaft Lucide arrow RN and the web draw.
+            LucideIcons.moveLeft,
+            size: 22,
+            color: colors.textDark.withValues(alpha: 0.8),
           ),
         ),
       ),

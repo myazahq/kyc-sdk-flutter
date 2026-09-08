@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -563,7 +564,7 @@ class _StepDot extends StatelessWidget {
                   border: Border.all(color: Colors.white, width: 1),
                 ),
                 child: Icon(
-                  Icons.check_rounded,
+                  LucideIcons.check,
                   size: (badgeSize * 0.6).roundToDouble(),
                   color: Colors.white,
                 ),
@@ -743,7 +744,7 @@ class _CloseButton extends StatelessWidget {
         height: 40,
         child: Center(
           child: Icon(
-            Icons.close_rounded,
+            LucideIcons.x,
             size: 20,
             color: enabled
                 ? colors.textDark.withValues(alpha: 0.8)
