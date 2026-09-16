@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
@@ -17,9 +18,12 @@ import '../liveness/liveness_layout.dart';
 import '../config/biometric_options.dart';
 import '../config/capture_config.dart';
 import '../config/kyc_config.dart';
+import '../config/liveness_avatar_url.dart';
+import '../services/model_readiness.dart';
 import '../config/selfie_upload_wait.dart';
 import 'liveness_handover.dart';
 import '../config/theme.dart';
+import '../widgets/selfie_soft_notice.dart';
 import '../liveness/face_detection.dart';
 import '../liveness/capture_tuning.dart';
 import '../liveness/face_rgb_sampler.dart';
@@ -139,7 +143,36 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // changes): the ring builds in it, and only the closing green is fixed.
     _ringPrimary = context.myazaColors.primary;
     if (_greenSinceMs == null) _ringColor.value = _ringPrimary;
+
+    // The gesture animations are served, not bundled. Warmed here — the first
+    // point in this screen's life where a BuildContext exists — so the badge
+    // is in the image cache before the first challenge names a gesture. All
+    // four, because the session randomises which ones it asks for. Failures
+    // are ignored: the avatar falls back to its icon.
+    // Follow the face model from the first frame this screen exists, so the
+    // wait overlaps the ready screen instead of starting after it.
+    if (!_faceModelListening) {
+      _faceModelListening = true;
+      _faceModel.state.addListener(_onFaceModelChanged);
+      unawaited(_faceModel.start());
+    }
+
+    if (!_avatarsPrecached) {
+      _avatarsPrecached = true;
+      final config = ref.read(kycConfigProvider);
+      for (final url in livenessAvatarUrls(config.apiKey, devUrl: config.devUrl)) {
+        precacheImage(NetworkImage(url), context, onError: (_, __) {});
+      }
+    }
   }
+
+  bool _avatarsPrecached = false;
+
+  /// On Android the face model is fetched rather than bundled, so the camera
+  /// does not open until it can run (see model_readiness.dart). Ready from the
+  /// start on iOS, so nothing here ever shows there.
+  final ModelReadyGate _faceModel = ModelReadyGate.forModel(OnDeviceModel.face);
+  bool _faceModelListening = false;
 
   final FaceDetectorService _detector = createFaceDetectorService();
   final _TtsService _tts = _TtsService();
@@ -272,6 +305,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // no camera may start behind it. Retake clears it and re-enters here.
     final kyc = ref.read(kYCNotifierProvider);
     if (kyc.selfieImage != null || kyc.mediaIds.selfie != null) return;
+    // No camera until the face model can run. Without it the detector reports
+    // no face on every frame and the step would never leave positioning.
+    // _onFaceModelChanged comes back here once it is ready.
+    if (_faceModel.state.value != ModelReadyState.ready) return;
     if (await hasCameraPermission()) {
       if (!mounted) return;
       _init();
@@ -281,8 +318,18 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     }
   }
 
+  void _onFaceModelChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_faceModel.state.value == ModelReadyState.ready) _maybePrime();
+  }
+
   @override
   void dispose() {
+    if (_faceModelListening) {
+      _faceModel.state.removeListener(_onFaceModelChanged);
+    }
+    _faceModel.dispose();
     _ringTicker.dispose();
     _ringShown.dispose();
     _ringColor.dispose();
@@ -797,9 +844,11 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       if (!mounted) return;
 
       if (selfie != null) {
-        // The native still is already a rotated, mirrored JPEG. Run the standard
-        // selfie pipeline (decode → enhance → size-bound under 1 MB), then show.
-        final processed = await processSelfieImage(selfie);
+        // The native still is already a rotated, mirrored JPEG of a PREVIEW
+        // frame, so it is only size-bounded (under 1 MB), never exposure-lifted:
+        // the lift is tuned for takePicture stills and brightened this frame
+        // past what the user saw on screen.
+        final processed = await processSelfieStreamStill(selfie);
         if (!mounted) return;
         ref
             .read(livenessNotifierProvider.notifier)
@@ -1224,6 +1273,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       );
     }
 
+    // The face model, checked after the ready screen (which is about what the
+    // step will ask) and before the camera (which is useless without it).
+    final faceModel = _faceModel.state.value;
+    if (faceModel == ModelReadyState.unavailable) {
+      return const _LoadingView(
+        title: 'Face check unavailable',
+        error: "Face verification couldn't start on this device. Check your "
+            'connection and try again, or use a different device.',
+      );
+    }
+    if (faceModel == ModelReadyState.preparing) {
+      return const _LoadingView();
+    }
+
     // Camera-access primer — shown before the OS prompt (camera not yet started).
     if (_showPrimer) {
       return CameraPermissionPrimingView(
@@ -1272,6 +1335,13 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     }
 
     return _ActiveView(
+      avatarUrl: livenessState.activeChallenge == null
+          ? null
+          : livenessAvatarUrl(
+              livenessState.activeChallenge!,
+              ref.read(kycConfigProvider).apiKey,
+              devUrl: ref.read(kycConfigProvider).devUrl,
+            ),
       ring: _ringShown,
       ringColor: _ringColor,
       reviewReady: _reviewReady,
@@ -1339,7 +1409,11 @@ class _TtsService {
 class _LoadingView extends StatelessWidget {
   final String? error;
 
-  const _LoadingView({this.error});
+  /// Heading above [error]. The camera is the usual reason; the face model
+  /// is the other.
+  final String title;
+
+  const _LoadingView({this.error, this.title = 'Camera unavailable'});
 
   @override
   Widget build(BuildContext context) {
@@ -1356,7 +1430,7 @@ class _LoadingView extends StatelessWidget {
             const Icon(LucideIcons.videoOff,
                 size: 48, color: MyazaColors.error),
             const SizedBox(height: MyazaSpacing.md),
-            Text('Camera unavailable',
+            Text(title,
                 style: text.heading3, textAlign: TextAlign.center),
             const SizedBox(height: MyazaSpacing.sm),
             Text(error!, style: text.bodyMedium, textAlign: TextAlign.center),
@@ -1490,7 +1564,12 @@ class _ActiveView extends StatelessWidget {
   /// screen flips this once the closing beat has played.
   final bool reviewReady;
 
+  /// The served animation for the active gesture (null outside a challenge, or
+  /// when the key is malformed). Resolved here because the screen holds config.
+  final String? avatarUrl;
+
   const _ActiveView({
+    this.avatarUrl,
     required this.ring,
     required this.ringColor,
     required this.previewKey,
@@ -1608,6 +1687,7 @@ class _ActiveView extends StatelessWidget {
               phase: phase,
               size: layout.avatar,
               iconSize: layout.avatarIcon,
+              avatarUrl: avatarUrl,
             ),
           ),
         ],
@@ -1711,13 +1791,17 @@ class _SelfieReviewView extends StatelessWidget {
         if (retryInfo != null && isUploading) ...[
           const SizedBox(height: MyazaSpacing.md),
           Text(
-            'Upload failed — retrying (${retryInfo!.attempt}/${retryInfo!.total})…',
+            'Upload failed. Retrying (${retryInfo!.attempt}/${retryInfo!.total})…',
             style: context.myazaText.bodySmall.copyWith(
               color: const Color(0xFF92400E), // amber-800
             ),
             textAlign: TextAlign.center,
           ),
         ],
+
+        // Out of focus? Said here, where a retake costs two seconds. A notice,
+        // never a gate: Continue is unaffected (utils/selfie_sharpness.dart).
+        SelfieSoftNotice(selfieBase64: selfieBase64),
 
         if (uploadError != null) ...[
           const SizedBox(height: MyazaSpacing.lg),

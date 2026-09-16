@@ -1,3 +1,90 @@
+## 3.0.0
+
+Two changes in this release need action from some apps, which is what makes it
+a major:
+
+- **iOS dependency floor.** `device_info_plus` now needs 11.2.1 or later. An app
+  that pins it to 10.x must move to 11. See "Swift Package Manager on iOS".
+- **Android ML Kit models are fetched, not bundled.** This takes about 18.5 MB
+  per device out of the APK, but the models now arrive through Google Play
+  Services, so a build shipping to devices without it (Huawei, bare AOSP) must
+  set `myazaKycBundledMlKit=true` to keep the offline models. See "A smaller
+  Android app".
+
+Everything else is additive. The version also matches the React Native SDK's
+3.0.0, so the two platforms carry the same number for the same release.
+
+### Opting out of the NFC permission
+
+The SDK depends on `flutter_nfc_kit` for the eMRTD chip read, and that plugin's
+own manifest declares `android.permission.NFC`. Android merges a plugin's
+manifest into the host app's, so the permission appears in every build whether
+or not the workflows in use touch the chip step, and there was nothing in the
+README telling anyone how to remove it.
+
+The platform-setup section now documents the removal:
+
+```xml
+<uses-permission android:name="android.permission.NFC" tools:node="remove" />
+```
+
+Nothing else changes. The chip step already checks for a radio at runtime and
+skips itself when there is none, so a build without the permission behaves
+exactly like a phone with no NFC hardware.
+
+Documentation only — no code change, and no effect on apps that do read chips.
+Unlike the React Native SDK, Dart has no conditional dependencies, so
+`flutter_nfc_kit` still ships either way; the plugin carries no native library,
+so what it costs is the permission rather than the download size.
+
+### Swift Package Manager on iOS
+
+The iOS plugin now ships a Swift package beside its podspec. Flutter no longer
+warns that `myaza_kyc_sdk_flutter` does not support Swift Package Manager, and
+an app that uses Swift Package Manager (the default from Flutter 3.44) builds
+the plugin as a package instead of falling back to CocoaPods for it. Apps that
+still use CocoaPods need no change.
+
+`device_info_plus` now needs 11.2.1 or later (it was 10.1.0), the first release
+that builds as a Swift package, so it drops off that warning too. An app that
+pins `device_info_plus` to 10.x needs to move to 11. `flutter_tts` and
+`video_compress` have no Swift Package Manager release yet, so Flutter still
+lists them and builds them through CocoaPods.
+
+### Document capture without the camera
+
+A workflow can now set `allowDocumentScan: false` (also a `MyazaKYCConfig`
+field). The document step then never opens the camera or asks for camera
+permission: the person picks a photo of each side from their device, and the
+usual preview, review and upload follow. At least one of `allowDocumentScan`
+and `allowDocumentUpload` stays on, so a config with both off uses the camera.
+
+### A smaller Android app
+
+On Android the SDK now fetches its two ML Kit models, face detection and text
+recognition, through Google Play Services instead of shipping them inside the
+host app. Measured on the example app, an arm64 phone now downloads 32.00 MB
+instead of 55.75 MB. Both are
+requested the moment the flow opens, and the manifest names them, so a Play
+Store install usually fetches them before the app first runs.
+
+A model that has not arrived yet can no longer fail silently. The liveness step
+waits for the face model and says so if it cannot be set up. The passport
+scanner waits for the text model and lets the person continue without the chip
+when it cannot. Document auto-capture asks for the model but never waits for it,
+since the shutter works without it.
+
+Apps that ship to phones without Google Play Services, such as Huawei devices,
+can bring the bundled models back with `myazaKycBundledMlKit=true` in
+`android/gradle.properties`.
+
+### Release builds no longer fail on this plugin
+
+The plugin now compiles against Android 36, which three of its dependencies
+require. On 34 every host app's release build stopped before reaching app code.
+Some third-party plugins in the tree still declare 34, so the README shows the
+override a host app needs until they catch up.
+
 ## 2.7.0
 
 ### The address flow, complete

@@ -74,14 +74,18 @@ class _FramedMapPickerState extends State<FramedMapPicker> {
     if (!mounted) return;
     final colors = context.myazaColors;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primary = colors.primary.toARGB32().toRadixString(16).padLeft(8, '0');
+    // The r/g/b getters rather than toARGB32(): the package's declared floor
+    // (Flutter 3.27) has the getters but not toARGB32, which landed later.
+    final primary = colors.primary;
+    String channel(double v) =>
+        (v * 255).round().clamp(0, 255).toInt().toRadixString(16).padLeft(2, '0');
     final src = buildMapFrameSrc(
       frameUrl,
       center: widget.value ?? widget.defaultCenter,
       zoom: widget.defaultZoom,
       hasPin: widget.value != null,
       theme: isDark ? 'dark' : 'light',
-      primaryColor: '#${primary.substring(2)}',
+      primaryColor: '#${channel(primary.r)}${channel(primary.g)}${channel(primary.b)}',
     );
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)

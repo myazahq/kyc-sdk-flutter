@@ -28,7 +28,9 @@ import '../utils/resolve_url.dart';
 import '../utils/step_log.dart';
 import 'kyc_state.dart';
 import 'address_step_order.dart';
+import 'resubmit_kept_id.dart';
 import 'step_order.dart';
+import 'step_resubmit.dart' show carriesIdEvidence;
 import '../config/multi_id.dart';
 
 part 'kyc_provider.g.dart';
@@ -90,12 +92,15 @@ VerifyUserData? resolveVerifyUserData(UserData? fromProp, UserData? fromState) {
   final firstName = pick(fromProp?.firstName, fromState?.firstName);
   final lastName = pick(fromProp?.lastName, fromState?.lastName);
   final dateOfBirth = pick(fromProp?.dateOfBirth, fromState?.dateOfBirth);
+  // Nothing in the flow collects an email, so only the consumer's prop carries one.
+  final email = pick(fromProp?.email?.trim(), null);
 
-  if (firstName == null && lastName == null && dateOfBirth == null) return null;
+  if (firstName == null && lastName == null && dateOfBirth == null && email == null) return null;
   return VerifyUserData(
     firstName: firstName,
     lastName: lastName,
     dateOfBirth: dateOfBirth,
+    email: email,
   );
 }
 
@@ -113,7 +118,15 @@ class KYCNotifier extends _$KYCNotifier {
     // mount: which steps exist depends on it (see openingStep).
     final preloaded = ref.read(preloadedServerConfigProvider);
     final opening = openingStep(_config, serverConfig: preloaded);
-    StepLog.record(opening);
+    // A redo that keeps the original ID opens with it already chosen, which can
+    // move the opening step (see seedKeptIdType).
+    final start = seedKeptIdType(
+      _config,
+      preloaded != null
+          ? KYCState(currentStep: opening, serverConfig: preloaded)
+          : KYCState(currentStep: opening),
+    );
+    StepLog.record(start.currentStep);
     // A second run of the SDK in one app process is a new attempt, possibly by
     // a different person somewhere else, so the shared location fix starts
     // empty rather than answering with the last applicant's coordinates.
@@ -143,7 +156,7 @@ class KYCNotifier extends _$KYCNotifier {
     // When the launcher resolved a workflow before mount, its idTypes/branding
     // are already known — use them directly and skip the /config fetch.
     if (preloaded != null) {
-      return KYCState(currentStep: opening, serverConfig: preloaded);
+      return start;
     }
     // Otherwise kick off the /api/kyc/config fetch asynchronously. The state
     // starts in ServerConfigStatus.loading and the screens render placeholders
@@ -151,7 +164,7 @@ class KYCNotifier extends _$KYCNotifier {
     // falls back to the consumer's `idTypes` prop (server still 403s anything
     // actually disabled, so this is at worst as restrictive as the server).
     Future.microtask(_loadServerConfig);
-    return KYCState(currentStep: opening);
+    return start;
   }
 
   Future<void> _loadServerConfig() async {
@@ -178,6 +191,9 @@ class KYCNotifier extends _$KYCNotifier {
         serverConfig: ready,
         currentStep: state.currentStep == before && after != before ? after : null,
       );
+      // A kept ID resolved before the rows arrived takes the row's scan sides
+      // and chip flag now (see withKeptIdType).
+      state = withKeptIdType(_config, state);
     } catch (err) {
       final described = _describeConfigError(err);
       state = state.copyWith(
@@ -1062,6 +1078,7 @@ class KYCNotifier extends _$KYCNotifier {
               firstName: firstName,
               lastName: lastName,
               dateOfBirth: resolved?.dateOfBirth,
+              email: resolved?.email,
             )
           : null,
       mediaIds: mediaIds.hasAny
@@ -1122,9 +1139,16 @@ class KYCNotifier extends _$KYCNotifier {
     // Number-only IDs require a typed-in idNumber and must pass format
     // validation. Only for the SINGLE-ID path: each multi-ID check validated
     // its own evidence at its own step, and its number rides its own slot.
+    //
+    // A redo that keeps the original ID with no evidence asked sends none: the
+    // server carries the number and the documents, and this client never held
+    // them, so a missing number is expected here rather than an error.
+    final carried = carriesIdEvidence(_config.resubmit);
     String? idNumber = state.idNumber;
     if (idTypeConfig != null) {
-      if (!idTypeConfig.requiresDocumentCapture) {
+      if (carried) {
+        idNumber = null;
+      } else if (!idTypeConfig.requiresDocumentCapture) {
         if (idNumber == null || idNumber.isEmpty) {
           throw const KYCApiException(
             statusCode: 0,
@@ -1207,11 +1231,12 @@ class KYCNotifier extends _$KYCNotifier {
               // media (the one selfie and its video) sit at the top level.
               // Sending a slot's document here too would file the last ID's
               // capture as though it were the verification's own.
-              documentFront: multiSlots == null ? mediaIds.documentFront : null,
-              documentBack: multiSlots == null ? mediaIds.documentBack : null,
+              // A carried ID's documents are the server's, not this client's.
+              documentFront: multiSlots == null && !carried ? mediaIds.documentFront : null,
+              documentBack: multiSlots == null && !carried ? mediaIds.documentBack : null,
               selfie: mediaIds.selfie,
-              documentFrontVideo: mediaIds.documentFrontVideo,
-              documentBackVideo: mediaIds.documentBackVideo,
+              documentFrontVideo: carried ? null : mediaIds.documentFrontVideo,
+              documentBackVideo: carried ? null : mediaIds.documentBackVideo,
               livenessVideo: mediaIds.livenessVideo,
               proofOfAddress: mediaIds.proofOfAddress,
               addressPhoto: mediaIds.addressPhoto,
@@ -1235,8 +1260,10 @@ class KYCNotifier extends _$KYCNotifier {
             )
           : null,
       // Validate-and-drop: only send chip data for a chip-capable selected ID
-      // (mirrors the server, which drops the block for non-chip IDs).
+      // (mirrors the server, which drops the block for non-chip IDs). A carried
+      // ID's chip read, like its documents, is the server's.
       nfc: (multiSlots == null &&
+              !carried &&
               state.nfcChipData != null &&
               (idTypeConfig?.supportsNfc ?? false))
           ? _nfcPayload(state.nfcChipData!)
@@ -1324,12 +1351,17 @@ class KYCNotifier extends _$KYCNotifier {
     // on the same step a fresh provider would, with the server facts kept.
     final serverConfig = state.serverConfig;
     final opening = openingStep(_config, serverConfig: serverConfig);
+    // The kept ID of a redo is part of the flow's start, so a reset keeps it.
+    final start = seedKeptIdType(
+      _config,
+      KYCState(currentStep: opening, serverConfig: serverConfig),
+    );
     StepLog.reset();
-    StepLog.record(opening);
+    StepLog.record(start.currentStep);
     resetCurrentFix();
     _progressTimer?.cancel();
     _lastSavedProgress = '';
-    state = KYCState(currentStep: opening, serverConfig: serverConfig);
+    state = start;
   }
 
   // ── Attempt-session progress ────────────────────────────────────────────

@@ -8,11 +8,16 @@
          package README's background presence section). -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- ML Kit Face Detection model is bundled via the Gradle dependency. -->
     <application>
+        <!-- The ML Kit models are fetched by Google Play Services rather than
+             shipped in the APK (see android/build.gradle). Naming both here
+             makes Play fetch them at INSTALL time, so the first liveness check
+             or passport scan does not wait on a download. On a bundled build
+             (myazaKycBundledMlKit) the entry is harmless: the models are
+             already in the APK. -->
         <meta-data
             android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="face" />
+            android:value="face,ocr" />
 
         <!-- Background presence tier: fence transitions + reboot re-arm.
              Both unexported; both no-ops until the host enables the tier. -->

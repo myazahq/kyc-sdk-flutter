@@ -3,10 +3,12 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image/image.dart' as img;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'myaza_button.dart';
 
 // ─── Gallery-photo cropper ────────────────────────────────────────────────────
 //
@@ -233,14 +235,31 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
 
   // ── Build ─────────────────────────────────────────────────────────────────
 
+  /// The photo sits on a neutral dark stage in both themes (the web SDK's
+  /// neutral-900): it is the backdrop a document photo reads well against, and
+  /// it keeps the white crop strokes legible. Everything around the photo
+  /// takes the workflow's own colours.
+  static const Color stage = Color(0xFF171717);
+
   @override
   Widget build(BuildContext context) {
+    final colors = context.myazaColors;
+    final text = context.myazaText;
+    final isDark = colors.background.computeLuminance() < 0.5;
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: stage,
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A2E),
-        foregroundColor: Colors.white,
-        leadingWidth: 48,
+        // The band the flow's steps sit under, so the cropper reads as part of
+        // the flow rather than a separate system screen.
+        backgroundColor: kycHeaderSurface(colors, isDark: isDark),
+        foregroundColor: colors.textDark,
+        surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        systemOverlayStyle:
+            isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+        shape: Border(bottom: BorderSide(color: colors.border)),
+        leadingWidth: 56,
         leading: IconButton(
           icon: const Icon(LucideIcons.x, size: 20),
           onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
@@ -250,24 +269,20 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
+            Text(
               'Crop to ID Card',
-              style: TextStyle(
-                fontSize: 15,
+              style: text.bodyMedium.copyWith(
                 fontWeight: FontWeight.w600,
-                color: Colors.white,
+                color: colors.textDark,
               ),
             ),
             Text(
               'Drag to reposition · handles to resize',
-              style: TextStyle(
-                fontSize: 11,
-                color: Colors.white.withValues(alpha: 0.6),
-              ),
+              style: text.bodySmall.copyWith(color: colors.textMuted),
             ),
           ],
         ),
-        titleSpacing: 4,
+        titleSpacing: 0,
       ),
       body: Column(
         children: [
@@ -319,54 +334,23 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
           ),
 
           // ── Action bar ───────────────────────────────────────────────────
-          Container(
-            color: const Color(0xFF1A1A2E),
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: _isProcessing
-                    ? Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Processing…',
-                            style: TextStyle(
-                              color: Colors.white.withValues(alpha: 0.8),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ],
-                      )
-                    : ElevatedButton.icon(
-                        onPressed: _cropInitialized ? _onConfirm : null,
-                        icon: const Icon(LucideIcons.check, size: 18),
-                        label: const Text('Crop & Use'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: MyazaColors.primary,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor: Colors.white12,
-                          disabledForegroundColor: Colors.white38,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          textStyle: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: colors.background,
+              border: Border(top: BorderSide(color: colors.border)),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: SafeArea(
+                top: false,
+                // The flow's own button: primary fill and label from the
+                // workflow, its loading state while the crop runs.
+                child: MyazaButton(
+                  label: 'Crop & Use',
+                  leadingIcon: const Icon(LucideIcons.check, size: 18),
+                  isLoading: _isProcessing,
+                  onPressed: _cropInitialized ? _onConfirm : null,
+                ),
               ),
             ),
           ),

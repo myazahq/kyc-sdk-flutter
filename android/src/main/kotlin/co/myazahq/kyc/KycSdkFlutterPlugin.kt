@@ -117,6 +117,13 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
       "detect" -> faceDetector.detect(call, result)
       "recognize" -> textRecognizer.recognize(call, result)
       "recognizeBytes" -> textRecognizer.recognizeBytes(call, result)
+      // Whether each ML Kit model can run, and a request to fetch it (see
+      // MlKitModelReadiness). The names carry the model because the face and
+      // text channels share this one handler.
+      "faceModelStatus" -> MlKitModels.face.status(appContext, install = false) { result.success(it) }
+      "prepareFaceModel" -> MlKitModels.face.status(appContext, install = true) { result.success(it) }
+      "textModelStatus" -> MlKitModels.text.status(appContext, install = false) { result.success(it) }
+      "prepareTextModel" -> MlKitModels.text.status(appContext, install = true) { result.success(it) }
       "startRecorder" -> handleStartRecorder(result)
       "startRecording" -> {
         recorder?.startRecording()

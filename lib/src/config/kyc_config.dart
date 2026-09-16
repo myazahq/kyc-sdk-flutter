@@ -321,6 +321,11 @@ class UserData {
   /// SDK. Display-only: never submitted.
   final String? businessName;
 
+  /// The applicant's email, when you already hold it. Not asked for in the flow:
+  /// it is submitted so your organisation can have the applicant emailed about a
+  /// decision, for example once their verification is approved.
+  final String? email;
+
   const UserData({
     this.firstName,
     this.lastName,
@@ -329,6 +334,7 @@ class UserData {
     this.address,
     this.phoneNumber,
     this.businessName,
+    this.email,
   });
 
   factory UserData.fromJson(Map<String, dynamic> json) => UserData(
@@ -339,6 +345,7 @@ class UserData {
         address: json['address'] as String?,
         phoneNumber: json['phoneNumber'] as String?,
         businessName: json['businessName'] as String?,
+        email: json['email'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -348,6 +355,7 @@ class UserData {
         if (gender != null) 'gender': gender,
         if (address != null) 'address': address,
         if (phoneNumber != null) 'phoneNumber': phoneNumber,
+        if (email != null) 'email': email,
         // businessName is deliberately NOT serialized — it is consent-copy
         // display data, not verification input.
       };
@@ -459,6 +467,14 @@ class MyazaKYCConfig {
   /// "upload a photo instead" affordances are hidden and the user must capture
   /// with the camera.
   final bool allowDocumentUpload;
+
+  /// Use the live camera (viewfinder + auto-capture) for document capture.
+  /// Default `true`. When `false`, the camera is never opened on the document
+  /// step: the user picks a photo of each side from their device instead. At
+  /// least one of this and [allowDocumentUpload] stays on, so when both are
+  /// `false` the camera is used. Read them through `documentCaptureMethodsFor`
+  /// (config/document_capture_methods.dart), never raw.
+  final bool allowDocumentScan;
 
   final bool enableLiveness;
 
@@ -626,6 +642,7 @@ class MyazaKYCConfig {
     this.enableSelfie = true,
     this.enableDocumentCapture = true,
     this.allowDocumentUpload = true,
+    this.allowDocumentScan = true,
     this.enableLiveness = true,
     this.livenessMode = 'gestures',
     this.flashSequenceLength = 4,
@@ -668,6 +685,7 @@ class MyazaKYCConfig {
     bool? enableSelfie,
     bool? enableDocumentCapture,
     bool? allowDocumentUpload,
+    bool? allowDocumentScan,
     bool? enableLiveness,
     String? livenessMode,
     int? flashSequenceLength,
@@ -707,6 +725,7 @@ class MyazaKYCConfig {
         enableDocumentCapture:
             enableDocumentCapture ?? this.enableDocumentCapture,
         allowDocumentUpload: allowDocumentUpload ?? this.allowDocumentUpload,
+        allowDocumentScan: allowDocumentScan ?? this.allowDocumentScan,
         enableLiveness: enableLiveness ?? this.enableLiveness,
         livenessMode: livenessMode ?? this.livenessMode,
         flashSequenceLength: flashSequenceLength ?? this.flashSequenceLength,

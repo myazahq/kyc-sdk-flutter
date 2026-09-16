@@ -1,6 +1,6 @@
 name: myaza_kyc_sdk_flutter
 description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
-version: 2.7.0
+version: 3.0.0
 
 homepage: https://github.com/myazahq/kyc-sdk-flutter
 repository: https://github.com/myazahq/kyc-sdk-flutter
@@ -51,7 +51,9 @@ dependencies:
   # lib/src/nfc/.
   crypto: ^3.0.6
   pointycastle: ^3.9.1
-  device_info_plus: ^10.1.0
+  # 11.2.1+ builds as a Swift package on iOS; 10.x made Flutter list it as
+  # lacking Swift Package Manager support in every host app's build.
+  device_info_plus: ^11.2.1
   package_info_plus: ^8.0.0
   video_compress: ^3.1.3
   flutter_image_compress: ^2.3.0
@@ -70,7 +72,9 @@ dev_dependencies:
 
 flutter:
   assets:
-    - assets/liveness/
+    # assets/liveness/ is gone: the four gesture animations are served by the
+    # API and precached at the liveness step (config/liveness_avatar_url.dart).
+    # They were 5.7 MB in every integrator's app for a badge shown for seconds.
     - assets/brand/
   # Native on-device face detection ships in-package: iOS = Apple Vision (Swift),
   # Android = Google ML Kit via native Gradle. No cross-platform GoogleMLKit pod,

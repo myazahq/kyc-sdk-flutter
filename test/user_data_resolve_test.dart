@@ -55,5 +55,14 @@ void main() {
       expect(result!.firstName, 'Ada');
       expect(result.lastName, 'Okafor');
     });
+
+    test('sends the email the consumer passes, which nothing in the flow collects', () {
+      final result = resolveVerifyUserData(const UserData(email: ' ada@example.com '), null);
+      expect(result, isNotNull);
+      expect(result!.email, 'ada@example.com');
+      expect(result.toJson()['email'], 'ada@example.com');
+      // Blank is absent, like every other field.
+      expect(resolveVerifyUserData(const UserData(email: '  '), null), isNull);
+    });
   });
 }

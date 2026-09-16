@@ -232,6 +232,16 @@ export 'src/liveness/face_detection.dart'
         hasFaceDetectorFactory;
 
 // State
+// On Android the ML Kit models are fetched by Play Services rather than bundled.
+// A host that opens its own camera flow can start the downloads early.
+export 'src/services/model_readiness.dart'
+    show
+        ModelReadyState,
+        isFaceModelReady,
+        isTextModelReady,
+        primeFaceModel,
+        primeTextModel;
+
 export 'src/providers/kyc_state.dart'
     show
         KYCStep,
@@ -248,10 +258,8 @@ export 'src/widgets/step_header.dart' show StepHeader;
 export 'src/widgets/kyc_bottom_sheet.dart' show KycBottomSheet;
 
 // Entry widget (MyazaKYC.show + MyazaKYCWidget)
+//
+// Face re-authentication runs through this same entry point: mount it with a
+// workflow whose scope is `biometric-authentication` and the flow walks the
+// liveness step and submits to /verify like every other scope.
 export 'src/widgets/myaza_kyc_widget.dart' show MyazaKYC, MyazaKYCWidget;
-
-// Returning-user face re-authentication (MyazaBiometricAuth.show) + its wire
-// shapes.
-export 'src/widgets/myaza_biometric_auth.dart' show MyazaBiometricAuth;
-export 'src/services/api_service.dart'
-    show BiometricAuthResponse, BiometricStatusResponse;

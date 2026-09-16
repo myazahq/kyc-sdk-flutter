@@ -23,9 +23,27 @@ rootProject.allprojects {
 apply plugin: 'com.android.library'
 apply plugin: 'kotlin-android'
 
+// Whether the ML Kit models ship inside the host's APK. Resolved ONCE and used
+// twice: it picks both artifacts below AND is compiled into BuildConfig, so the
+// readiness check never asks Play Services about a model already in the APK. A
+// second read of the same property is how one model ends up bundled and the
+// other fetched, a build that is neither small nor offline.
+//
+// A host sets it in its root android/build.gradle (`ext.myazaKycBundledMlKit =
+// true`), its root build.gradle.kts (`extra["myazaKycBundledMlKit"] = true`), or
+// android/gradle.properties (`myazaKycBundledMlKit=true`).
+def bundledMlKit = (rootProject.ext.has('myazaKycBundledMlKit')
+        ? rootProject.ext.get('myazaKycBundledMlKit')
+        : (project.findProperty('myazaKycBundledMlKit') ?: false)).toString().toBoolean()
+
 android {
     namespace 'co.myazahq.kyc'
-    compileSdk 34
+    // 36, not 34. flutter_tts, flutter_nfc_kit and flutter_plugin_android_lifecycle
+    // declare they must be compiled against 36, and AGP checks that on THIS module
+    // during a host's release build (checkReleaseAarMetadata), so 34 failed every
+    // release build. compileSdk only chooses the APIs we compile against: minSdk,
+    // and the host's targetSdk, which decide runtime behaviour, are unchanged.
+    compileSdk 36
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -38,6 +56,15 @@ android {
 
     defaultConfig {
         minSdk 21
+
+        // Read by MlKitModelReadiness: on a bundled build the model is already
+        // here, and asking Play Services whether it holds the OPTIONAL module
+        // would answer "no" and strand a build that works perfectly offline.
+        buildConfigField "boolean", "BUNDLED_ML_KIT", "${bundledMlKit}"
+    }
+
+    buildFeatures {
+        buildConfig true
     }
 }
 
@@ -49,15 +76,39 @@ dependencies {
     // portrait on Android since PACE landed.
     implementation 'edu.ucar:jj2000:5.2'
 
-    // Native ML Kit face detection — NOT the cross-platform Flutter package.
-    // Keeping ML Kit Android-only (Gradle) means no GoogleMLKit CocoaPod on iOS,
-    // so iOS-simulator builds stay green while Android gets real ML Kit liveness.
-    implementation 'com.google.mlkit:face-detection:16.1.6'
-
-    // Native ML Kit text recognition — powers MRZ scanning on the NFC step.
-    // Android-only for the same reason as face detection: no iOS pod (iOS uses
-    // Apple Vision), so simulator builds stay green.
-    implementation 'com.google.mlkit:text-recognition:16.0.1'
+    // ── ML Kit: models fetched on demand by default ───────────────────────────
+    //
+    // Native ML Kit, NOT the cross-platform Flutter packages: keeping ML Kit
+    // Android-only means no GoogleMLKit CocoaPod on iOS (which uses Apple Vision),
+    // so iOS-simulator builds stay green. Face detection drives liveness; text
+    // recognition powers MRZ scanning on the NFC step and document auto-capture.
+    //
+    // Two variants of the same API exist. The `com.google.mlkit:*` artifacts embed
+    // the models in the APK; the `com.google.android.gms:play-services-mlkit-*`
+    // ones fetch them through Google Play Services. Measured on the React Native
+    // SDK, which carries the same pair: 18.5 MB per device bundled (arm64 text
+    // 10.55 MB, face 7.95 MB) plus .tflite files in assets/ that ship to EVERY
+    // device, against ~0.4 MB of shims unbundled.
+    //
+    // The trade is real, which is why the flag exists: the unbundled variants need
+    // Google Play Services, so they do not work on Huawei or bare AOSP builds. An
+    // org shipping to those devices sets `myazaKycBundledMlKit = true` and gets the
+    // fully-offline models back.
+    //
+    // Availability is checked explicitly, never inferred per frame, because an
+    // absent model is indistinguishable from an empty frame: no face found, no
+    // text found. See MlKitModelReadiness.kt and lib/src/services/model_readiness.dart.
+    //
+    // The Kotlin sources are unchanged by the switch: both variants expose the
+    // same `com.google.mlkit.vision.*` API, and the ModuleInstall API the check
+    // needs comes from play-services-base, which both variants depend on.
+    if (bundledMlKit) {
+        implementation 'com.google.mlkit:face-detection:16.1.6'
+        implementation 'com.google.mlkit:text-recognition:16.0.1'
+    } else {
+        implementation 'com.google.android.gms:play-services-mlkit-face-detection:17.1.0'
+        implementation 'com.google.android.gms:play-services-mlkit-text-recognition:19.0.1'
+    }
 
     // CameraX — used by the native liveness recorder, which runs a single
     // ImageAnalysis stream and fans each frame to BOTH ML Kit (gesture

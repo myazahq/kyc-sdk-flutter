@@ -20,13 +20,22 @@ import 'kyc_state.dart' show KYCStep;
 
 /// A reviewer's instruction to redo part of the flow.
 class ResubmitConfig {
-  const ResubmitConfig({required this.steps, this.message});
+  const ResubmitConfig({required this.steps, this.message, this.idType});
 
   /// Wire step names to redo. Never empty — the server omits the key instead.
   final List<String> steps;
 
   /// The reviewer's note to the applicant.
   final String? message;
+
+  /// The ID the verification being redone used, when the server CARRIES it.
+  ///
+  /// A redo keeps the verification id, so a reviewer who did not tick the ID
+  /// asked for nothing about it: the server keeps the original number,
+  /// documents and chip read, and says so by sending the idType here. Present
+  /// only on an individual, single-ID send-back whose reviewer did not tick
+  /// 'id-type'. Absent keeps the old behaviour. Read through [keptIdType].
+  final String? idType;
 
   static ResubmitConfig? fromJson(Map<String, dynamic>? json) {
     if (json == null) return null;
@@ -35,12 +44,35 @@ class ResubmitConfig {
     final steps = raw.whereType<String>().toList();
     if (steps.isEmpty) return null;
     final message = json['message'];
+    final idType = json['idType'];
     return ResubmitConfig(
       steps: steps,
       message: message is String && message.trim().isNotEmpty ? message : null,
+      idType: idType is String ? idType : null,
     );
   }
 }
+
+/// The ID a redo keeps, or null when the applicant must name one again.
+///
+/// Read defensively rather than trusted: an idType beside a plan that ticks the
+/// ID picker, or beside no plan at all, is not an instruction to skip it.
+String? keptIdType(ResubmitConfig? resubmit) {
+  final asked = resubmit?.steps;
+  if (asked == null || asked.isEmpty || asked.contains('id-type')) return null;
+  final idType = resubmit?.idType;
+  return (idType != null && idType.trim().isNotEmpty) ? idType : null;
+}
+
+/// Whether the server supplies the kept ID's evidence, so the submission names
+/// the ID and nothing else: no number, no document media, no chip read.
+///
+/// True only when the ID is kept AND no evidence step was asked. A reviewer who
+/// ticked the document or the number wants it again, and gets the ordinary
+/// submission for it.
+bool carriesIdEvidence(ResubmitConfig? resubmit) =>
+    keptIdType(resubmit) != null &&
+    !_evidence.any((step) => resubmit!.steps.contains(kStepWireNames[step]));
 
 /// Steps that are always kept, whatever the reviewer ticked.
 ///
@@ -68,9 +100,9 @@ const Set<KYCStep> _evidence = {
 /// Steps a narrowed flow keeps regardless, because without them it cannot
 /// produce a submission at all.
 ///
-/// A resubmission is a NEW verification on a FRESH session: nothing is carried
-/// forward from the one being redone, so the applicant must still say which ID
-/// this is and supply it. `POST /verify` requires an `idType`, and a number-only
+/// Unless the server carries the original ID ([keptIdType]), nothing is carried
+/// forward from the verification being redone, so the applicant must still say
+/// which ID this is and supply it. `POST /verify` requires an `idType`, and a number-only
 /// ID requires the number with it.
 ///
 /// So narrowing removes the things arranged AROUND the identity — liveness,
@@ -113,9 +145,14 @@ List<KYCStep> applyResubmitSteps(List<KYCStep> order, ResubmitConfig? resubmit) 
       if (name != null) wanted.add(name);
     }
   }
-  for (final step in order.contains(KYCStep.businessDetails)
+  // A kept ID needs no picker and, unless the reviewer asked for the evidence,
+  // no evidence step either: the redo is only what was ticked. KYB never keeps
+  // an ID (the server never sends one for a business redo), so it stays as is.
+  final isBusiness = order.contains(KYCStep.businessDetails);
+  final required = isBusiness
       ? _businessRequired
-      : _individualRequired) {
+      : (keptIdType(resubmit) != null ? const <KYCStep>{} : _individualRequired);
+  for (final step in required) {
     final name = kStepWireNames[step];
     if (name != null) wanted.add(name);
   }

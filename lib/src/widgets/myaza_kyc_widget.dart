@@ -2,21 +2,24 @@ import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:flutter/services.dart'
-    show SystemUiOverlayStyle, SystemChrome, DeviceOrientation;
+import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/document_capture_methods.dart';
 import '../config/kyc_config.dart';
 import '../config/proof_of_address.dart';
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
-import '../providers/camera_provider.dart';
 import '../providers/kyc_provider.dart';
 import '../providers/kyc_state.dart';
 import '../providers/liveness_provider.dart';
 import '../providers/step_order.dart';
 import '../providers/theme_provider.dart';
+import '../utils/portrait_lock.dart';
+import 'kyc_flow_scope.dart';
+
+export 'kyc_flow_scope.dart' show kycFlowOverrides;
 import '../screens/applicant_role_screen.dart';
 import '../screens/business_details_screen.dart';
 import '../screens/business_documents_screen.dart';
@@ -47,6 +50,7 @@ import 'kyc_bottom_sheet.dart';
 import 'sandbox_banner.dart';
 import 'myaza_button.dart';
 import '../config/kyc_result.dart';
+import '../services/model_readiness.dart';
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 
@@ -176,11 +180,9 @@ MyazaColorScheme _applyAppearance(
 
 /// Maps the appearance's initial theme to a ThemeMode. Null appearance/theme
 /// and the explicit `system` value both follow the device setting.
-ThemeMode _initialThemeMode(MyazaKYCAppearance? a) => switch (a?.theme) {
-      MyazaThemeMode.light => ThemeMode.light,
-      MyazaThemeMode.dark => ThemeMode.dark,
-      MyazaThemeMode.system || null => ThemeMode.system,
-    };
+// The flow's opening theme mode and its ProviderScope overrides both live in
+// kyc_flow_scope.dart, so the biometric host can mount the same scope without
+// importing this file (which imports it — see that file's header).
 
 // ─── Public entry points ──────────────────────────────────────────────────────
 
@@ -305,35 +307,13 @@ class MyazaKYC {
 
   /// The ProviderScope overrides that mount a flow with [effectiveConfig] and,
   /// when a workflow was resolved before mount, its preloaded server config.
+  /// The list itself lives in kyc_flow_scope.dart, which both hosts import.
   static List<Override> _overridesFor(
     MyazaKYCConfig effectiveConfig,
     ServerSdkConfig? preloaded,
   ) =>
-      [
-        // Config must be first — the notifiers read it during build.
-        kycConfigProvider.overrideWithValue(effectiveConfig),
-        if (preloaded != null)
-          preloadedServerConfigProvider.overrideWithValue(preloaded),
-        // Scope all three KYC notifiers to this container so they read
-        // kycConfigProvider from the override above, not from the root
-        // ProviderScope (which has no override and would throw).
-        kYCNotifierProvider.overrideWith(KYCNotifier.new),
-        cameraNotifierProvider.overrideWith(CameraNotifier.new),
-        livenessNotifierProvider.overrideWith(LivenessNotifier.new),
-        kycThemeModeProvider.overrideWith(
-            (ref) => _initialThemeMode(effectiveConfig.appearance)),
-      ];
+      kycFlowOverrides(effectiveConfig, preloaded);
 }
-
-/// The ProviderScope overrides a flow mounts with — exposed for the other
-/// entry points that host a step of the flow inside their own scope (face
-/// re-authentication hosts the liveness step). One list, so a notifier added
-/// here reaches every host.
-List<Override> kycFlowOverrides(
-  MyazaKYCConfig config,
-  ServerSdkConfig? preloaded,
-) =>
-    MyazaKYC._overridesFor(config, preloaded);
 
 /// Embeddable widget version. Wrap in your own layout.
 class MyazaKYCWidget extends StatelessWidget {
@@ -486,7 +466,8 @@ class _KycFlowWidget extends ConsumerStatefulWidget {
   ConsumerState<_KycFlowWidget> createState() => _KycFlowWidgetState();
 }
 
-class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
+class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
+    with PortraitLock {
   /// One stable key per step, so a step's State survives being REPARENTED.
   ///
   /// The full-bleed camera swaps the whole shell — sheet-with-chrome for a bare
@@ -502,22 +483,23 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
 
   @override
   void initState() {
+    // PortraitLock pins the flow upright for its lifetime and restores the
+    // host's orientations on close — see utils/portrait_lock.dart for why the
+    // camera preview makes this load-bearing rather than cosmetic.
     super.initState();
-    // The KYC flow is a portrait-only UI, and on Android the camera preview
-    // (CameraX) rotates to follow the DISPLAY orientation — so if the host app
-    // permits rotation, tilting the phone to photograph a document (holding it
-    // flat over the page) flips the feed sideways after a moment. Pin the flow
-    // to portrait for its lifetime so the display — and thus the preview — stays
-    // upright. The host's orientations are restored on close.
-    SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+    // On Android both on-device models are fetched by Play Services rather than
+    // shipped in the app. Asking now lets the downloads overlap the first
+    // screens, so the liveness step and the passport scanner rarely have to
+    // wait. The text model is the larger one and is needed earlier. A no-op
+    // off Android and once a model is on the phone.
+    primeFaceModel();
+    primeTextModel();
   }
 
   @override
   void dispose() {
-    // Release the lock. Flutter doesn't expose the host's PREVIOUS preferred
-    // orientations, so restore the default (all) rather than guess — a host that
-    // wants a specific lock re-applies it after the flow returns.
-    SystemChrome.setPreferredOrientations(DeviceOrientation.values);
+    // The orientation release is PortraitLock's.
     super.dispose();
   }
 
@@ -630,7 +612,29 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
         kYCNotifierProvider.select((s) => s.docReviewPhase),
       );
       final idTypeLabel = state.selectedIdType?.label ?? 'Document';
-      meta = switch (docPhase) {
+      // Camera off on this workflow: every side is a picked photo, so the
+      // header must not talk about framing or scanning.
+      final uploadOnly = documentCaptureMethodsFor(config).uploadOnly;
+      meta = uploadOnly
+          ? switch (docPhase) {
+              'front_preview' => const _StepMeta(
+                  'Front Side Added',
+                  'Looks good? Tap Next to add a photo of the back.',
+                ),
+              'camera_back' => _StepMeta(
+                  'Upload Back Side',
+                  'Now choose a clear photo of the back of your $idTypeLabel.',
+                ),
+              'review' => _StepMeta(
+                  'Review Your $idTypeLabel',
+                  'Tap Continue to upload and submit your document.',
+                ),
+              _ => _StepMeta(
+                  'Upload Your $idTypeLabel',
+                  'Choose a clear photo of your $idTypeLabel from your device.',
+                ),
+            }
+          : switch (docPhase) {
         'front_preview' => const _StepMeta(
             'Front Side Captured',
             'Looks good? Tap Next to flip the card and scan the back side.',
@@ -799,22 +803,9 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
       logoAsset: configError != null ? null : appearance?.logoAsset,
       companyName: configError != null ? null : companyName,
       country: headerCountry,
-      // Country select owns its own scroll (pinned search + full-height list),
-      // matching the web SDK's flex-1 body. Every other step keeps the shared
-      // scroll view.
-      // Country select owns its own scrolling list. Document capture wants the
-      // full viewport too: it is about to go immersive, and on the frames
-      // before that flag flips it would otherwise render inside the sheet's
-      // scroll view with unbounded height — which the camera cannot lay out
-      // against.
-      // The address pin step fills it too: its map owns every touch, so its
-      // Continue rides StickyActions at the bottom of a BOUNDED body rather
-      // than sitting under a surface a short phone cannot scroll past.
-      fillsViewport: configError == null &&
-          (step == KYCStep.countrySelect ||
-              step == KYCStep.documentCapture ||
-              step == KYCStep.addressCollection ||
-              step == KYCStep.addressEntrance),
+      // Which steps get the whole body instead of the shared scroll view: see
+      // _fillsViewport.
+      fillsViewport: configError == null && _fillsViewport(step),
       child: keyedScreen,
     );
 
@@ -924,6 +915,25 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
     return (progress: (idx + 1) / steps.length, stepCount: steps.length);
   }
 
+  /// The steps given the sheet's whole body instead of its shared scroll view.
+  ///
+  /// Country select owns its own scroll (pinned search + full-height list),
+  /// matching the web SDK's flex-1 body. Document capture wants the full
+  /// viewport too: it is about to go immersive, and on the frames before that
+  /// flag flips it would otherwise render inside the scroll view with unbounded
+  /// height, which the camera cannot lay out against. The address pin and
+  /// entrance steps fill it as well: the map owns every touch, so Continue rides
+  /// StickyActions at the bottom of a BOUNDED body rather than under a surface a
+  /// short phone cannot scroll past.
+  ///
+  /// Every other step lays out inside the scroll view, so its height is
+  /// unbounded and nothing wrapping its screen may flex it.
+  static bool _fillsViewport(KYCStep step) =>
+      step == KYCStep.countrySelect ||
+      step == KYCStep.documentCapture ||
+      step == KYCStep.addressCollection ||
+      step == KYCStep.addressEntrance;
+
   /// The steps a multi-ID run walks once PER ID — the ones whose screen is
   /// about one particular check and therefore need the position strip above.
   static const Set<KYCStep> _multiIdSteps = {
@@ -940,6 +950,19 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget> {
   Widget _screenWithMultiId(KYCStep step) {
     final plan = ref.read(kYCNotifierProvider.notifier).multiIdPlan();
     if (plan == null || !_multiIdSteps.contains(step)) return _screenForStep(step);
+    // A step inside the sheet's scroll view has UNBOUNDED height, and an
+    // Expanded cannot lay out there: a debug build asserts and paints nothing,
+    // which left the multi-ID ID picker blank (2026-09-15; a release build skips
+    // the assertion and happened to render). Only a step given the whole body
+    // (document capture, whose immersive shell is bounded too) may flex its
+    // screen under the strip.
+    if (!_fillsViewport(step)) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [MultiIdProgress(plan: plan), _screenForStep(step)],
+      );
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [

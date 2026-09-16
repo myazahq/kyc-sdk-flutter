@@ -11,7 +11,8 @@ builds and runs on Apple-Silicon iOS simulators.
   s.license          = { :type => 'MIT' }
   s.author           = { 'Myaza' => 'dev@myazahq.co' }
   s.source           = { :path => '.' }
-  s.source_files     = 'Classes/**/*'
+  # The same sources the Swift package builds (myaza_kyc_sdk_flutter/Package.swift).
+  s.source_files     = 'myaza_kyc_sdk_flutter/Sources/myaza_kyc_sdk_flutter/**/*.swift'
   s.dependency 'Flutter'
   s.platform = :ios, '13.0'
 

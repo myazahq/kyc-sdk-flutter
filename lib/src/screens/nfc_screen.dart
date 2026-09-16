@@ -216,6 +216,16 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
   Widget build(BuildContext context) {
     final text = context.myazaText;
 
+    // A photo uploaded on the document step has its MRZ read in the
+    // background, and on Android that read can finish after this step has
+    // mounted and opened its own scanner. Take the code the moment it lands
+    // rather than asking for a second scan of a page we already have.
+    ref.listen(kYCNotifierProvider.select((s) => s.mrzScan), (previous, next) {
+      if (next != null && previous == null && _phase == _Phase.scanning) {
+        _onScanned(next);
+      }
+    });
+
     if (_phase == _Phase.checking) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: MyazaSpacing.xl),

@@ -11,6 +11,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../config/capture_config.dart';
+import '../config/document_capture_check.dart';
+import '../config/document_capture_methods.dart';
 import '../config/document_guide.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
@@ -31,7 +33,9 @@ import '../services/kyc_error_mapper.dart';
 import '../services/media_compress_service.dart';
 import '../services/retry.dart';
 import '../utils/permissions.dart';
+import '../widgets/document_capture_check_notice.dart';
 import '../widgets/document_review.dart';
+import '../widgets/document_upload_only_view.dart';
 import '../widgets/camera_permission_view.dart';
 import '../widgets/camera_permission_priming_view.dart';
 import '../widgets/ready_primer.dart';
@@ -40,6 +44,7 @@ import '../widgets/myaza_alert.dart';
 import '../widgets/document_cropper.dart';
 import '../widgets/document_viewfinder.dart';
 import '../widgets/myaza_button.dart';
+import '../services/model_readiness.dart';
 
 // ─── Scan phase ───────────────────────────────────────────────────────────────
 //
@@ -160,6 +165,13 @@ class _DocumentCaptureScreenState
   String? _uploadError;
   ({int attempt, int total})? _uploadRetryInfo;
 
+  // What the server's capture check could not read on the uploaded sides (see
+  // config/document_capture_check.dart). Non-empty = the review footer offers
+  // retakes and "Continue anyway" instead of Continue. The sides are already
+  // uploaded and their mediaIds committed, so continuing anyway just advances.
+  // Cleared by any retake: the next Continue uploads and checks again.
+  List<CaptureProblem> _captureProblems = const [];
+
   // Ensures the camera_permission_denied error is reported to onError once.
   bool _cameraPermissionReported = false;
 
@@ -174,6 +186,13 @@ class _DocumentCaptureScreenState
   bool get _inCameraPhase =>
       _phase == _ScanPhase.cameraFront || _phase == _ScanPhase.cameraBack;
 
+  /// The workflow turned the camera off (`allowDocumentScan: false`): each
+  /// side is a picked photo. The capture phases then render the upload view,
+  /// and nothing on this screen may ask for camera permission, open a camera
+  /// or record a side clip.
+  bool get _uploadOnly =>
+      documentCaptureMethodsFor(ref.read(kycConfigProvider)).uploadOnly;
+
   /// Show the "Allow camera access" primer before requesting permission, unless
   /// the camera is already granted (in which case we open it straight away).
   ///
@@ -181,6 +200,7 @@ class _DocumentCaptureScreenState
   /// behind that screen is precisely what it exists to prevent, so while it is
   /// up this is a no-op.
   Future<void> _maybePrime() async {
+    if (_uploadOnly) return;
     if (!_ready && _inCameraPhase) return;
     if (await hasCameraPermission()) {
       if (!mounted) return;
@@ -219,6 +239,8 @@ class _DocumentCaptureScreenState
     // recorder), and on the plugin fallback a manual reinit races CameraX's
     // video recorder teardown (fatal "onConfigured in STOPPING state").
     if (!Platform.isIOS) return;
+    // Upload-only: there is no camera to restore.
+    if (_uploadOnly) return;
     // A pre-camera screen is up — restoring here would open the camera behind
     // it, which is what those screens exist to prevent. See LivenessScreen.
     if (!_ready || _showPrimer) return;
@@ -233,7 +255,8 @@ class _DocumentCaptureScreenState
   Future<void> _init() => _restartCamera();
 
   Future<void> _restartCamera() async {
-    if (_initializing || !mounted) return;
+    // Belt and braces: no path may open the camera on an upload-only flow.
+    if (_initializing || !mounted || _uploadOnly) return;
     _initializing = true;
     // Start the settle window here, not only after a capture: on the FIRST
     // camera open there is no previous shot to reset from, and an unset window
@@ -277,6 +300,11 @@ class _DocumentCaptureScreenState
   /// it couldn't start, which latches [_nativeFailed] so the caller falls back
   /// to the Flutter camera plugin for the rest of the screen.
   Future<bool> _startNativeCamera() async {
+    // Auto-capture reads text off each frame, and on Android the text model is
+    // fetched rather than bundled. Asked for here but NOT waited on: auto-capture
+    // is an accelerator and the shutter stays live, so a missing model costs a
+    // tap, never the step.
+    primeTextModel();
     final camera = NativeDocumentCamera();
     try {
       final textureId = await camera.start(onText: _onNativeText);
@@ -347,6 +375,8 @@ class _DocumentCaptureScreenState
   /// is what removes the visible camera reload between front and back, which a
   /// full re-initialisation used to cost on every side change.
   Future<void> _resumeCaptureForSide() async {
+    // Upload-only: the next side is another pick, never a camera.
+    if (_uploadOnly) return;
     final native = _nativeCamera;
     if (native == null) {
       await _restartCamera();
@@ -763,6 +793,12 @@ class _DocumentCaptureScreenState
     if (ref.read(kycConfigProvider).nfc?.enabled != true) return;
     if (state.mrzScan != null) return; // already have one
 
+    // Captured now: the read can outlive this screen (on Android the fetched
+    // text model makes it slower than a tap on Continue, so the chip step
+    // mounted with no MRZ and opened its own camera), and `ref` is unusable
+    // once the screen is disposed. The notifier belongs to the flow, so a late
+    // result still reaches the chip step, which switches over when it lands.
+    final notifier = ref.read(kYCNotifierProvider.notifier);
     unawaited(() async {
       final recognizer = TextRecognitionService();
 
@@ -785,19 +821,20 @@ class _DocumentCaptureScreenState
       for (final bytes in ordered) {
         try {
           final lines = await recognizer.recognizeBytes(bytes);
-          if (!mounted) return;
           if (lines.isEmpty) continue;
           final scan = extractMrz(lines);
           if (scan == null) {
             if (kDebugMode) {
-              debugPrint('[MyazaKYC] MRZ: ${lines.length} lines, no valid zone');
+              // Widths only: the text itself is a document's personal data.
+              debugPrint('[MyazaKYC] MRZ: ${lines.length} lines, no valid zone, '
+                  'widths ${lines.map((l) => sanitizeMrzLine(l).length).toList()}');
             }
             continue;
           }
           if (kDebugMode) {
             debugPrint('[MyazaKYC] MRZ read from captured photo');
           }
-          ref.read(kYCNotifierProvider.notifier).setMrzScan(scan);
+          notifier.setMrzScan(scan);
           return;
         } catch (_) {
           // Never surfaces — the chip step's own scanner is the fallback.
@@ -812,22 +849,41 @@ class _DocumentCaptureScreenState
 
   // ── Upload from gallery (opens interactive cropper before storing) ───────────
 
+  /// Why the last pick could not be used. Shown by the upload-only view, which
+  /// has no other way through; the camera path keeps its shutter either way.
+  String? _pickError;
+
+  static const _kPickErrorMessage =
+      'We could not read that photo. Please try another.';
+
   Future<void> _onUpload() async {
     if (_isCapturing || _isUploading) return;
 
-    final picker = ImagePicker();
-    final picked =
-        await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
-    if (picked == null || !mounted) return;
-
-    final rawBytes = await picked.readAsBytes();
+    final Uint8List rawBytes;
+    try {
+      final picker = ImagePicker();
+      final picked =
+          await picker.pickImage(source: ImageSource.gallery, imageQuality: 90);
+      if (picked == null || !mounted) return;
+      rawBytes = await picked.readAsBytes();
+    } catch (_) {
+      if (mounted) setState(() => _pickError = _kPickErrorMessage);
+      return;
+    }
     if (!mounted) return;
+    if (_pickError != null) setState(() => _pickError = null);
 
     // Show the interactive ID-card cropper and wait for the user to confirm.
+    // The route is built under the app's navigator, outside the flow's own
+    // Theme, so without this the cropper could not see the workflow's colours.
+    final flowTheme = Theme.of(context);
     final cropped = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => DocumentCropperScreen(imageBytes: rawBytes),
+        builder: (_) => Theme(
+          data: flowTheme,
+          child: DocumentCropperScreen(imageBytes: rawBytes),
+        ),
       ),
     );
     if (!mounted || cropped == null) return; // user cancelled
@@ -835,11 +891,12 @@ class _DocumentCaptureScreenState
     setState(() => _isCapturing = true);
     try {
       // Stop and discard the in-progress recording — a gallery photo is not
-      // a representation of what the camera was filming.
+      // a representation of what the camera was filming. Upload-only has no
+      // camera at all, so there is nothing to stop.
       final native = _nativeCamera;
       if (native != null) {
         await native.stopRecording();
-      } else {
+      } else if (!_uploadOnly) {
         final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
         if (cameraNotifier.isRecordingVideo) {
           await cameraNotifier.stopVideoRecording();
@@ -872,7 +929,10 @@ class _DocumentCaptureScreenState
     } catch (_) {
       if (mounted) {
         _resetAutoCapture();
-        setState(() => _isCapturing = false);
+        setState(() {
+          _isCapturing = false;
+          _pickError = _kPickErrorMessage;
+        });
       }
     }
   }
@@ -898,6 +958,10 @@ class _DocumentCaptureScreenState
         .addPostFrameCallback((_) => widget.onError?.call(error));
   }
 
+  // Both retakes drop the capture check's findings: a new photo is a new
+  // question, so the next Continue uploads and checks it again. (A new capture
+  // can only follow one of these, so they are the one place to clear it.)
+
   void _retakeFront() {
     setState(() {
       _frontBytes = null;
@@ -905,6 +969,7 @@ class _DocumentCaptureScreenState
       _frontVideoPath = null;
       _backVideoPath = null;
       _uploadError = null;
+      _captureProblems = const [];
     });
     _setPhase(_ScanPhase.cameraFront);
     unawaited(_resumeCaptureForSide());
@@ -915,6 +980,7 @@ class _DocumentCaptureScreenState
       _backBytes = null;
       _backVideoPath = null;
       _uploadError = null;
+      _captureProblems = const [];
     });
     _setPhase(_ScanPhase.cameraBack);
     unawaited(_resumeCaptureForSide());
@@ -929,6 +995,7 @@ class _DocumentCaptureScreenState
       _isUploading = true;
       _uploadError = null;
       _uploadRetryInfo = null;
+      _captureProblems = const [];
     });
 
     void onRetry(int attempt, int total) {
@@ -946,6 +1013,11 @@ class _DocumentCaptureScreenState
       );
       if (!mounted) return;
       notifier.setDocumentMediaId(frontMediaId, side: 'front');
+      // Each side's capture check starts the moment the side is stored, so it
+      // runs alongside the uploads still to come; they are awaited together
+      // below. A check never throws, so one left behind by an early return
+      // costs nothing.
+      final checks = [_checkSide(api, frontMediaId, 'front')];
 
       // Upload front video (best-effort — skip if not recorded or if its upload
       // fails after retries). Compress aggressively first.
@@ -975,6 +1047,7 @@ class _DocumentCaptureScreenState
         );
         if (!mounted) return;
         notifier.setDocumentMediaId(backMediaId, side: 'back');
+        checks.add(_checkSide(api, backMediaId, 'back'));
       }
 
       // Upload back video (best-effort)
@@ -996,8 +1069,21 @@ class _DocumentCaptureScreenState
         } catch (_) {/* best-effort */}
       }
 
+      // Bounded by each check's own timeout, and an unanswered check is no
+      // problem, so this can only ever ask for a retake.
+      final problems = captureCheckProblems(await Future.wait(checks));
       if (!mounted) return;
-      notifier.nextStep();
+      if (problems.isNotEmpty) {
+        // Stay on the review. The uploads are kept: "Continue anyway" advances
+        // without sending them again.
+        setState(() {
+          _isUploading = false;
+          _uploadRetryInfo = null;
+          _captureProblems = problems;
+        });
+        return;
+      }
+      _advance();
     } on KYCApiException catch (e) {
       if (!mounted) return;
       // Retries exhausted — show the inline error AND report a typed error.
@@ -1020,14 +1106,68 @@ class _DocumentCaptureScreenState
     }
   }
 
+  /// Asks the server whether it can read one uploaded side. Resolves to null
+  /// on any failure (see [KYCApiService.checkDocumentCapture]).
+  Future<DocumentCaptureCheckResult?> _checkSide(
+    KYCApiService api,
+    String mediaId,
+    String side,
+  ) {
+    final config = ref.read(kycConfigProvider);
+    final state = ref.read(kYCNotifierProvider);
+    final idType = state.selectedIdType?.key;
+    if (idType == null) return Future.value(null);
+    // On a business flow the document is the APPLICANT's own ID, and that
+    // submission carries the mapped applicant workflow and no session (the
+    // session belongs to the business application). The check mirrors it, so
+    // the photo is judged by the workflow that will decide it.
+    final applicantLeg = config.subjectType == 'business';
+    return api.checkDocumentCapture(
+      mediaId: mediaId,
+      side: side,
+      country: effectiveCountry(config, state),
+      idType: idType,
+      workflowId: applicantLeg ? config.applicantWorkflowId : config.workflowId,
+      sessionId: applicantLeg ? null : state.sessionId,
+    );
+  }
+
+  /// Leaves the step. A clean Continue and "Continue anyway" both come through
+  /// here, so both take nextStep's route (which also commits a multi-ID check).
+  void _advance() => ref.read(kYCNotifierProvider.notifier).nextStep();
+
+  /// Advances with photos the capture check could not read. They are already
+  /// uploaded and committed, so nothing is uploaded or checked again.
+  void _continueAnyway() {
+    setState(() => _captureProblems = const []);
+    _advance();
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final kycState     = ref.watch(kYCNotifierProvider);
+    final idTypeConfig = kycState.selectedIdType!;
+    final uploadOnly   = _uploadOnly;
+
+    // Upload-only never touches the camera provider: each side is a picked
+    // photo, and the preview and review below are shared with the camera path.
+    if (uploadOnly) {
+      _syncImmersive(false);
+      return switch (_phase) {
+        _ScanPhase.cameraFront || _ScanPhase.cameraBack => _buildUploadOnly(
+            idTypeConfig: idTypeConfig,
+            isBack: _phase == _ScanPhase.cameraBack,
+            isTwoSided: _needsBack,
+          ),
+        _ScanPhase.frontPreview => _buildFrontPreview(idTypeConfig),
+        _ScanPhase.review       => _buildReview(idTypeConfig),
+      };
+    }
+
     final cameraState  = ref.watch(cameraNotifierProvider);
     final controller   = ref.read(cameraNotifierProvider.notifier).controller;
-    final idTypeConfig = kycState.selectedIdType!;
 
     // Camera permission denied during a capture phase — show a dedicated screen.
     // Document capture still offers a gallery-upload fallback, so we surface that
@@ -1165,7 +1305,7 @@ class _DocumentCaptureScreenState
           showMrzBand: idTypeConfig.key == 'passport',
           onCapture: isReady && !_isCapturing ? _onCapture : null,
           onBack: _onImmersiveBack,
-          onUpload: ref.read(kycConfigProvider).allowDocumentUpload
+          onUpload: documentCaptureMethodsFor(ref.read(kycConfigProvider)).upload
               ? _onUpload
               : null,
         );
@@ -1192,6 +1332,33 @@ class _DocumentCaptureScreenState
   void _onImmersiveBack() {
     _syncImmersive(false);
     ref.read(kYCNotifierProvider.notifier).previousStep();
+  }
+
+  // ── Upload-only side ───────────────────────────────────────────────────────
+  //
+  // The camera phases on a flow with `allowDocumentScan: false`. The pick runs
+  // through _onUpload, so the cropper, compression, MRZ read, preview and
+  // review are exactly the camera path's "Upload a photo instead".
+
+  Widget _buildUploadOnly({
+    required IdTypeConfig idTypeConfig,
+    required bool isBack,
+    required bool isTwoSided,
+  }) {
+    return DocumentUploadOnlyView(
+      idTypeLabel: idTypeConfig.label,
+      isBack: isBack,
+      aspect: documentGuideAspect(idTypeConfig),
+      isBusy: _isCapturing,
+      error: _pickError,
+      onDismissError: () => setState(() => _pickError = null),
+      onPick: _onUpload,
+      header: _RequiredPill(
+        idTypeLabel: idTypeConfig.label,
+        sideBadge: isTwoSided ? (isBack ? 'Back Side' : 'Front Side') : null,
+        stepLabel: isTwoSided ? (isBack ? 'Step 2 of 2' : 'Step 1 of 2') : null,
+      ),
+    );
   }
 
   // ── Front preview ──────────────────────────────────────────────────────────
@@ -1231,22 +1398,27 @@ class _DocumentCaptureScreenState
         const SizedBox(height: MyazaSpacing.lg),
 
         // Retake / Next buttons — stack vertically on narrow screens (< 400 dp)
-        // so "Next — Scan Back" never overflows on phones like the S24.
+        // so "Next: Scan Back" never overflows on phones like the S24.
         LayoutBuilder(
           builder: (context, constraints) {
             final narrow = constraints.maxWidth < 400;
+            // An upload-only flow picked this photo rather than taking it,
+            // and the back will be another pick.
+            final uploadOnly = _uploadOnly;
+            final nextLabel = uploadOnly ? 'Next: Back Side' : 'Next: Scan Back';
+            final retakeLabel = uploadOnly ? 'Replace' : 'Retake';
             if (narrow) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   MyazaButton(
-                    label: 'Next — Scan Back',
+                    label: nextLabel,
                     onPressed: _proceedToBack,
                     leadingIcon: const Icon(LucideIcons.arrowRight),
                   ),
                   const SizedBox(height: MyazaSpacing.sm),
                   MyazaButton.outline(
-                    label: 'Retake',
+                    label: retakeLabel,
                     onPressed: _retakeFront,
                     leadingIcon: const Icon(LucideIcons.rotateCcw),
                   ),
@@ -1257,7 +1429,7 @@ class _DocumentCaptureScreenState
               children: [
                 Expanded(
                   child: MyazaButton.outline(
-                    label: 'Retake',
+                    label: retakeLabel,
                     onPressed: _retakeFront,
                     leadingIcon: const Icon(LucideIcons.rotateCcw),
                   ),
@@ -1265,7 +1437,7 @@ class _DocumentCaptureScreenState
                 const SizedBox(width: MyazaSpacing.md),
                 Expanded(
                   child: MyazaButton(
-                    label: 'Next — Scan Back',
+                    label: nextLabel,
                     onPressed: _proceedToBack,
                     leadingIcon: const Icon(LucideIcons.arrowRight),
                   ),
@@ -1306,6 +1478,7 @@ class _DocumentCaptureScreenState
             busyOverlay: busyOverlay,
             onRetakeFront: _retakeFront,
             onRetakeBack: _retakeBack,
+            uploadOnly: _uploadOnly,
             footer: _buildReviewFooter(),
           ),
         ),
@@ -1322,7 +1495,7 @@ class _DocumentCaptureScreenState
       children: [
         if (_uploadRetryInfo != null && _isUploading) ...[
           Text(
-            'Upload failed — retrying (${_uploadRetryInfo!.attempt}/${_uploadRetryInfo!.total})…',
+            'Upload failed. Retrying (${_uploadRetryInfo!.attempt}/${_uploadRetryInfo!.total})…',
             style: context.myazaText.bodySmall
                 .copyWith(color: const Color(0xFF92400E)), // amber-800
             textAlign: TextAlign.center,
@@ -1341,7 +1514,16 @@ class _DocumentCaptureScreenState
               .slideY(begin: -0.2, end: 0, duration: 250.ms),
           const SizedBox(height: MyazaSpacing.sm),
         ],
-        if (!_isUploading)
+        // The capture check could not read a side: retake it, or continue
+        // anyway (a detector can miss, so this is never a dead end).
+        if (!_isUploading && _captureProblems.isNotEmpty)
+          DocumentCaptureCheckNotice(
+            problems: _captureProblems,
+            uploadOnly: _uploadOnly,
+            onRetake: (side) => side == 'back' ? _retakeBack() : _retakeFront(),
+            onContinueAnyway: _continueAnyway,
+          )
+        else if (!_isUploading)
           MyazaButton(
             label: _uploadError != null ? 'Try Again' : 'Continue',
             onPressed: _onContinue,

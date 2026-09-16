@@ -14,7 +14,6 @@ export 'api_business.dart';
 // because the calls need the private Dio client and error mapper.
 part 'api_address.dart';
 part 'api_address_calls.dart';
-part 'api_biometric.dart';
 
 // ─── SDK version ─────────────────────────────────────────────────────────────
 //
@@ -22,7 +21,7 @@ part 'api_biometric.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '2.7.0';
+const String kSdkVersion = '3.0.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -71,6 +70,31 @@ class UploadResponse {
       UploadResponse(mediaId: json['mediaId'] as String);
 }
 
+/// Response from `POST /api/kyc/document-capture/check`: what the server's
+/// decision-time detectors made of one uploaded document side. `false` =
+/// looked and found nothing (ask for a retake), `true` = fine, `null` = not
+/// applicable or could not look (treated as fine).
+class DocumentCaptureCheckResult {
+  /// `front` | `back`.
+  final String side;
+  final bool? face;
+  final bool? barcode;
+
+  const DocumentCaptureCheckResult({
+    required this.side,
+    this.face,
+    this.barcode,
+  });
+
+  factory DocumentCaptureCheckResult.fromJson(Map<String, dynamic> json) =>
+      DocumentCaptureCheckResult(
+        side: json['side'] is String ? json['side'] as String : '',
+        // Anything but a real boolean is "could not look", never a problem.
+        face: json['face'] is bool ? json['face'] as bool : null,
+        barcode: json['barcode'] is bool ? json['barcode'] as bool : null,
+      );
+}
+
 // ─── Verify ───────────────────────────────────────────────────────────────────
 
 class VerifyUserData {
@@ -78,12 +102,17 @@ class VerifyUserData {
   final String? lastName;
   final String? dateOfBirth;
 
-  const VerifyUserData({this.firstName, this.lastName, this.dateOfBirth});
+  /// The applicant's email, when the integrator passed one. Kept server-side as
+  /// the address for any email the org has us send about a decision.
+  final String? email;
+
+  const VerifyUserData({this.firstName, this.lastName, this.dateOfBirth, this.email});
 
   Map<String, dynamic> toJson() => {
         if (firstName != null) 'firstName': firstName,
         if (lastName != null) 'lastName': lastName,
         if (dateOfBirth != null) 'dateOfBirth': dateOfBirth,
+        if (email != null) 'email': email,
       };
 }
 
@@ -917,6 +946,7 @@ class WorkflowFlowConfig {
   final bool? enableSelfie;
   final bool? enableDocumentCapture;
   final bool? allowDocumentUpload;
+  final bool? allowDocumentScan;
   final bool? enableLiveness;
   final bool? showThemeToggle;
   /// Raw wire value; parsed by MyazaProgressStyle.fromJson at merge time.
@@ -937,6 +967,7 @@ class WorkflowFlowConfig {
     this.enableSelfie,
     this.enableDocumentCapture,
     this.allowDocumentUpload,
+    this.allowDocumentScan,
     this.enableLiveness,
     this.showThemeToggle,
     this.progressStyle,
@@ -958,6 +989,7 @@ class WorkflowFlowConfig {
         enableSelfie: json['enableSelfie'] as bool?,
         enableDocumentCapture: json['enableDocumentCapture'] as bool?,
         allowDocumentUpload: json['allowDocumentUpload'] as bool?,
+        allowDocumentScan: json['allowDocumentScan'] as bool?,
         enableLiveness: json['enableLiveness'] as bool?,
         showThemeToggle: json['showThemeToggle'] as bool?,
         progressStyle: json['progressStyle'] as String?,
@@ -1146,6 +1178,64 @@ class KYCApiService {
       return UploadResponse.fromJson(res.data!).mediaId;
     } on DioException catch (e) {
       throw _mapDioError(e, fallbackError: 'upload_failed');
+    }
+  }
+
+  // ── Document capture check — can the server read this side? ──────────────
+  //
+  // Runs an uploaded document side through the detectors the server later
+  // decides with (a face on the printed photo, a readable barcode), so the
+  // applicant can retake a photo now rather than be declined later.
+  //
+  // Best-effort by contract: any error, any non-200 and anything slower than
+  // [_kCaptureCheckTimeout] returns null, which the flow reads as "no problem".
+  // The check can ask for a retake; it can never block or fail the flow.
+
+  static const Duration _kCaptureCheckTimeout = Duration(seconds: 8);
+
+  Future<DocumentCaptureCheckResult?> checkDocumentCapture({
+    required String mediaId,
+    required String side,
+    required String country,
+    required String idType,
+    String? workflowId,
+    String? sessionId,
+  }) async {
+    final cancel = CancelToken();
+    try {
+      final response = await _dio
+          .post<Map<String, dynamic>>(
+            '/api/kyc/document-capture/check',
+            data: {
+              'mediaId': mediaId,
+              'side': side,
+              'country': country,
+              'idType': idType,
+              if (workflowId != null) 'workflowId': workflowId,
+              if (sessionId != null) 'sessionId': sessionId,
+            },
+            cancelToken: cancel,
+            options: Options(
+              contentType: 'application/json',
+              sendTimeout: _kCaptureCheckTimeout,
+              receiveTimeout: _kCaptureCheckTimeout,
+            ),
+          )
+          // Dio's timeouts bound each phase; this bounds the whole call,
+          // connecting included (the client's connect timeout is 30s).
+          .timeout(_kCaptureCheckTimeout);
+      final data = response.data;
+      if (response.statusCode != 200 || data == null) return null;
+      final result = DocumentCaptureCheckResult.fromJson(data);
+      // Attributed to the side asked about: that is the photo the mediaId is.
+      return result.side == side
+          ? result
+          : DocumentCaptureCheckResult(
+              side: side, face: result.face, barcode: result.barcode);
+    } catch (_) {
+      // Stops a request the timeout abandoned; harmless on one already done.
+      cancel.cancel();
+      return null;
     }
   }
 

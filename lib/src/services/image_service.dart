@@ -365,6 +365,25 @@ Uint8List _enhanceAndEncodeSelfie(img.Image input) {
 Future<Uint8List> processSelfieImage(Uint8List bytes) =>
     compute(_selfieWorker, _SelfieParams(bytes));
 
+// Android's liveness still is the latest ANALYSIS frame, JPEG-encoded natively
+// (LivenessRecorder.captureStillJpeg), so it already carries the exposure the
+// user saw in the preview. It takes the lean encode, like the iOS stream frame:
+// the lift above reads a face-region mean under selfieDarkThreshold (115) as
+// backlit, an ordinary indoor face sits there, and every Android selfie came
+// out brighter than the preview it was taken from.
+Uint8List _selfieStreamStillWorker(_SelfieParams p) {
+  final im = img.decodeImage(p.bytes);
+  if (im == null) return p.bytes;
+  return _resizeAndEncodeSelfie(img.bakeOrientation(im));
+}
+
+/// Encodes a selfie that is already a JPEG of a camera-stream frame (Android's
+/// native liveness still): bakes orientation and size-bounds it, WITHOUT the
+/// exposure lift [processSelfieImage] applies to `takePicture` stills. Runs in
+/// an isolate via [compute].
+Future<Uint8List> processSelfieStreamStill(Uint8List bytes) =>
+    compute(_selfieStreamStillWorker, _SelfieParams(bytes));
+
 // ─── Card-region crop ─────────────────────────────────────────────────────────
 
 class _CropCardParams {

@@ -125,6 +125,7 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     enableSelfie: flow.enableSelfie,
     enableDocumentCapture: flow.enableDocumentCapture,
     allowDocumentUpload: flow.allowDocumentUpload,
+    allowDocumentScan: flow.allowDocumentScan,
     enableLiveness: flow.enableLiveness,
     showThemeToggle: flow.showThemeToggle,
     progressStyle: flow.progressStyle == null
@@ -185,6 +186,7 @@ MyazaKYCConfig overlayApplicantWorkflow(
     enableSelfie: flow.enableSelfie,
     enableDocumentCapture: flow.enableDocumentCapture,
     allowDocumentUpload: flow.allowDocumentUpload,
+    allowDocumentScan: flow.allowDocumentScan,
     enableLiveness: flow.enableLiveness,
     livenessMode: flow.raw['livenessMode'] as String?,
     flashSequenceLength: (flow.raw['flashSequenceLength'] as num?)?.toInt(),

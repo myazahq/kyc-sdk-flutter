@@ -51,6 +51,12 @@ class DocumentReview extends StatefulWidget {
   /// Errors, retry notices and the Continue button — pinned below the images.
   final Widget footer;
 
+  /// The workflow turned the camera off (`documentCaptureMethodsFor(config)
+  /// .uploadOnly`): the photos were picked, not taken, so the screen says
+  /// "added" and "Replace" rather than "captured" and "Retake". False
+  /// keeps the camera wording exactly.
+  final bool uploadOnly;
+
   const DocumentReview({
     super.key,
     required this.front,
@@ -61,6 +67,7 @@ class DocumentReview extends StatefulWidget {
     this.onRetakeFront,
     this.onRetakeBack,
     this.busyOverlay,
+    this.uploadOnly = false,
   });
 
   @override
@@ -113,7 +120,9 @@ class _DocumentReviewState extends State<DocumentReview> {
             ),
             const SizedBox(width: MyazaSpacing.xs),
             Text(
-              twoSided ? 'Both sides captured' : 'Photo captured',
+              widget.uploadOnly
+                  ? (twoSided ? 'Both sides added' : 'Photo added')
+                  : (twoSided ? 'Both sides captured' : 'Photo captured'),
               style: text.bodySmall.copyWith(fontWeight: FontWeight.w600),
             ),
           ],
@@ -143,6 +152,7 @@ class _DocumentReviewState extends State<DocumentReview> {
                           aspect: widget.aspect,
                           isBusy: widget.isBusy,
                           busyOverlay: widget.busyOverlay,
+                          uploadOnly: widget.uploadOnly,
                           onZoom: () => setState(() => _zoomed = sides[i]),
                         ),
                       ),
@@ -199,6 +209,7 @@ class _DocumentReviewState extends State<DocumentReview> {
               child: DocumentReviewZoom(
                 side: zoomed,
                 isBusy: widget.isBusy,
+                uploadOnly: widget.uploadOnly,
                 onClose: () => setState(() => _zoomed = null),
                 onRetake: () {
                   final retake = zoomed.onRetake;

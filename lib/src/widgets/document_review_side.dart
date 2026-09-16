@@ -35,6 +35,9 @@ class DocumentReviewThumb extends StatelessWidget {
   final Widget? busyOverlay;
   final VoidCallback onZoom;
 
+  /// Picked rather than taken: the action reads "Replace", not "Retake".
+  final bool uploadOnly;
+
   const DocumentReviewThumb({
     super.key,
     required this.side,
@@ -42,6 +45,7 @@ class DocumentReviewThumb extends StatelessWidget {
     required this.isBusy,
     required this.onZoom,
     this.busyOverlay,
+    this.uploadOnly = false,
   });
 
   @override
@@ -104,7 +108,8 @@ class DocumentReviewThumb extends StatelessWidget {
         TextButton.icon(
           onPressed: isBusy ? null : side.onRetake,
           icon: const Icon(LucideIcons.rotateCcw, size: 14),
-          label: Text('Retake', style: text.bodySmall),
+          label: Text(uploadOnly ? 'Replace' : 'Retake',
+              style: text.bodySmall),
           style: TextButton.styleFrom(
             foregroundColor: colors.primary,
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -131,12 +136,16 @@ class DocumentReviewZoom extends StatelessWidget {
   final VoidCallback onClose;
   final VoidCallback onRetake;
 
+  /// Picked rather than taken: the action reads "Replace", not "Retake".
+  final bool uploadOnly;
+
   const DocumentReviewZoom({
     super.key,
     required this.side,
     required this.isBusy,
     required this.onClose,
     required this.onRetake,
+    this.uploadOnly = false,
   });
 
   @override
@@ -196,7 +205,9 @@ class DocumentReviewZoom extends StatelessWidget {
             FilledButton.icon(
               onPressed: isBusy ? null : onRetake,
               icon: const Icon(LucideIcons.rotateCcw, size: 16),
-              label: Text('Retake ${side.label.toLowerCase()}'),
+              label: Text(uploadOnly
+                  ? 'Replace'
+                  : 'Retake ${side.label.toLowerCase()}'),
               style: FilledButton.styleFrom(
                 backgroundColor: Colors.white.withValues(alpha: 0.14),
                 foregroundColor: Colors.white,

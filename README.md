@@ -27,6 +27,10 @@ Android) and uses the camera, so it has native platform minimums:
 > ML Kit is pulled **Android-only** (native Gradle) — there is no cross-platform
 > ML Kit iOS pod, so the SDK builds and runs on Apple-Silicon iOS simulators.
 
+The iOS plugin ships a Swift package as well as a podspec, so it works whether
+your app uses Swift Package Manager (the default from Flutter 3.44) or
+CocoaPods. There is nothing extra to configure for either.
+
 ### Platform setup
 
 The SDK needs **camera** permission on both platforms (there is **no** microphone
@@ -37,7 +41,9 @@ permission — voice guidance is text-to-speech output only).
   <key>NSCameraUsageDescription</key>
   <string>We use the camera to photograph your ID and capture a live selfie.</string>
   ```
-  Set the iOS deployment target to **13.0+** (`ios/Podfile`: `platform :ios, '13.0'`).
+  Set the iOS deployment target to **13.0+**: in Xcode (Runner, General,
+  Minimum Deployments), and also in `ios/Podfile` (`platform :ios, '13.0'`) if
+  your app uses CocoaPods.
 
 - **Android** — add to `android/app/src/main/AndroidManifest.xml`:
   ```xml
@@ -65,6 +71,47 @@ enables the step:
   <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
   ```
   Foreground ("while in use") only — the SDK never tracks in the background.
+
+#### NFC (opting out if your workflows never read a chip)
+
+The SDK reads the eMRTD chip in passports and chip ID cards, so it depends on
+`flutter_nfc_kit`, whose own manifest declares:
+
+```xml
+<uses-permission android:name="android.permission.NFC" />
+```
+
+Android **merges** a plugin's manifest into your app's, so that permission
+appears in your build whether or not your workflows use the chip step. If they
+never do, remove it:
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+          xmlns:tools="http://schemas.android.com/tools">
+  <uses-permission android:name="android.permission.NFC" tools:node="remove" />
+</manifest>
+```
+
+The `xmlns:tools` declaration on the `<manifest>` element is required for
+`tools:node` to work.
+
+Nothing else needs changing. The chip step already checks for a radio at
+runtime and skips itself when there is none, so a build without the permission
+behaves exactly like a phone that has no NFC hardware — the rest of the flow is
+untouched.
+
+Two things this does **not** do, so the trade is clear:
+
+- **It does not make the app smaller.** `flutter_nfc_kit` ships no native
+  library (it is Kotlin over Android's platform NFC APIs), so the code removed
+  is negligible. The one measurable item is `edu.ucar:jj2000` (~500KB), the
+  JPEG 2000 decoder for the chip portrait, and that stays — it is referenced by
+  `Jp2Decoder.kt` at compile time. This is about the permission your users see
+  and your store listing, not about bytes.
+- **It does not change your iOS build.** The NFC entitlement and the
+  `NFCReaderUsageDescription` are only added if you add them yourself, and
+  `flutter_nfc_kit` weak-links `CoreNFC`, so an app that never declares them is
+  unaffected either way.
 
 ## Usage
 
@@ -172,6 +219,7 @@ void startKYC(BuildContext context) {
 | `enableSelfie`          | `bool`                  | `true`                | Capture a selfie during liveness.                                                                               |
 | `enableDocumentCapture` | `bool`                  | `true`                | Enable the document-scan step for document IDs.                                                                 |
 | `allowDocumentUpload`   | `bool`                  | `true`                | Allow picking a document photo from the device gallery as an alternative to the camera. `false` hides the "upload instead" option (still offered on the camera-permission-denied screen as an escape hatch). |
+| `allowDocumentScan`     | `bool`                  | `true`                | Use the live camera (viewfinder with auto-capture) for document capture. `false` never opens the camera on the document step: the user picks a photo of each side (front, then back) from their device instead, and no camera permission is requested there. At least one of `allowDocumentScan` and `allowDocumentUpload` must stay on; if both are `false`, the camera is used. |
 | `enableLiveness`        | `bool`                  | `true`                | Run the liveness challenge step. Server can disable it per ID type.                                             |
 | `voiceGuidance`         | `VoiceGuidanceConfig`   | enabled (`en-US`)     | Spoken liveness instructions (accessibility, TTS **output** — no microphone). `VoiceGuidanceConfig.off` mutes it; `VoiceGuidanceConfig(language: 'fr-FR')` sets the voice. See [Robustness & error handling](#robustness--error-handling). |
 | `appearance`            | `MyazaKYCAppearance?`   | brand defaults        | Brand & theme the flow — colors, logo, light/dark. See [Appearance & theming](#appearance--theming).            |
@@ -389,6 +437,65 @@ gallery-upload fallback on that screen as an escape hatch.
 - **Lighting** — too-dark *and* too-bright (glare) conditions are detected live
   during liveness; the SDK shows guidance and discourages auto-capture until
   lighting is acceptable.
+
+## App size
+
+The SDK adds native machine learning to a host app, and on Android that is where
+most of its weight sits. The defaults keep it small, and two settings on your
+side decide the rest.
+
+**On-device models are fetched, not bundled.** Face detection and text
+recognition run on Google ML Kit on Android, and the SDK depends on the Play
+Services variants, which download their models instead of shipping them in your
+APK. Bundled, the pair costs about 18.5 MB on every arm64 phone (text 10.55 MB,
+face 7.95 MB), plus model files that ship to every device whatever its
+architecture.
+Measured on this package's example app, fetching them takes 23.75 MB off an
+arm64 phone's download and 16.73 MB off an older 32-bit one.
+
+The SDK asks for both downloads the moment the flow opens, and its manifest
+names both models, so an install from the Play Store usually fetches them before
+the app first runs. If a model has not arrived when it is needed, the step says
+so instead of failing silently. The liveness step waits and explains, and the
+passport scanner says the printed code cannot be read and lets the person
+continue without the chip.
+
+The trade is real. The Play Services variants need Google Play Services, so they
+do not work on Huawei or bare AOSP devices. If you ship to those, add this to
+`android/gradle.properties` to get fully offline models back, at 18.5 MB per
+device:
+
+```properties
+myazaKycBundledMlKit=true
+```
+
+**Ship an App Bundle, or split per architecture.** `flutter build apk
+--target-platform` limits only Flutter's own engine to one architecture. Plugin
+native libraries, ML Kit's included, still ship for every architecture, so that
+APK carries three phones' worth of them. `flutter build appbundle` lets Play
+deliver only what each device needs. If you ship APKs, build them with
+`flutter build apk --split-per-abi`.
+
+**Release builds need compileSdk 36 on every plugin.** Several plugins the SDK
+depends on require it, while a few others, `file_picker` among them, still
+declare 34, so a release build stops at `checkReleaseAarMetadata`. Until they
+catch up, raise it for every plugin module in `android/build.gradle.kts`, above
+any `evaluationDependsOn` block:
+
+```kotlin
+subprojects {
+    afterEvaluate {
+        val android = extensions.findByName("android") as? com.android.build.gradle.BaseExtension
+        val current = android?.compileSdkVersion?.removePrefix("android-")?.toIntOrNull()
+        if (android != null && current != null && current < 36) {
+            android.compileSdkVersion(36)
+        }
+    }
+}
+```
+
+This changes only which Android APIs a plugin compiles against. Your app's
+`minSdk` and `targetSdk`, which decide how it behaves at runtime, are untouched.
 
 ## Documentation
 

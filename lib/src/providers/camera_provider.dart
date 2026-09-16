@@ -153,8 +153,9 @@ class CameraNotifier extends _$CameraNotifier {
       // lockCaptureOrientation freezes only the OUTER box, desyncing the pair so
       // the net rotation starts following the accelerometer — which is exactly
       // the "feed rotates after a second" bug. Portrait is instead pinned at the
-      // display level (SystemChrome.setPreferredOrientations in the flow widget),
-      // which keeps displayRotation — and thus the canceled net — at 0/upright.
+      // display level (the PortraitLock mixin every flow host mounts with, see
+      // utils/portrait_lock.dart), which keeps displayRotation — and thus the
+      // canceled net — at 0/upright.
 
       // Meter exposure + focus on the centre of the frame. The subject (face or
       // document) is always centred, so this stops a bright background (e.g. a
