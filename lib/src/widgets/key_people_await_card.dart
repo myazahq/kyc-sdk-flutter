@@ -44,7 +44,8 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
   /// a `sharePositionOrigin` to place the activity popover (mandatory on
   /// iPad, and newer iOS builds silently refuse to present without one) —
   /// share_plus only fills it in for you on some platforms, so an unanchored
-  /// `Share.share(url)` was a button that did nothing. If presenting still
+  /// `SharePlus.instance.share(...)` was a button that did nothing without an
+  /// anchor. If presenting still
   /// fails, fall back to copying the link — the user always walks away with
   /// it either way.
   Future<void> _share(BuildContext anchor) async {
@@ -52,10 +53,12 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
     if (url == null) return;
     final box = anchor.findRenderObject() as RenderBox?;
     try {
-      await Share.share(
-        url,
-        sharePositionOrigin:
-            box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+      await SharePlus.instance.share(
+        ShareParams(
+          text: url,
+          sharePositionOrigin:
+              box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+        ),
       );
     } catch (_) {
       await _copy();

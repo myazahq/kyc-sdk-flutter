@@ -1,3 +1,9 @@
+## 3.0.2
+
+- Migrated invite-link sharing to the `share_plus` 12 `SharePlus` API.
+- Requires `share_plus >=12.0.0 <13.0.0`, allowing host apps on
+  `share_plus` 12.x to resolve cleanly.
+
 ## 3.0.1
 
 - Relaxed the `share_plus` dependency constraint to allow host apps on
