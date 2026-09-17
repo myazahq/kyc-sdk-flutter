@@ -1,3 +1,8 @@
+## 3.0.1
+
+- Relaxed the `share_plus` dependency constraint to allow host apps on
+  `share_plus` 12.x.
+
 ## 3.0.0
 
 Two changes in this release need action from some apps, which is what makes it
