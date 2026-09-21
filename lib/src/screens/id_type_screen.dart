@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../config/country_id_types.dart';
 import '../config/id_types.dart';
-import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../providers/kyc_state.dart';
@@ -31,9 +31,10 @@ class IdTypeScreen extends ConsumerWidget {
     // list for the country (server still 403s anything actually disabled).
     final serverConfig = state.serverConfig;
     final country = effectiveCountry(config, state);
-    // In a multi-region flow the picked country's own idTypes narrow the list;
-    // otherwise the top-level `idTypes` prop applies. Null/empty = all granted.
-    final propKeys = _countryIdTypeFilter(config, country) ?? config.idTypes;
+    // The picked country's own idTypes narrow the list; otherwise the
+    // top-level `idTypes` prop applies. Null/empty = all granted. Shared with
+    // the multi-ID plan so the picker and the slot options cannot disagree.
+    final propKeys = pinnedIdTypesFor(config, country);
     bool allowed(String key) =>
         propKeys == null || propKeys.isEmpty || propKeys.contains(key);
 
@@ -125,18 +126,6 @@ class IdTypeScreen extends ConsumerWidget {
       ],
     );
   }
-}
-
-/// The per-country ID-type filter for a multi-region flow: the picked country's
-/// `idTypes` from the `countries` list. Null for single-country flows (the
-/// top-level `idTypes` prop then applies).
-List<String>? _countryIdTypeFilter(MyazaKYCConfig config, String country) {
-  final countries = config.countries;
-  if (countries == null || countries.length <= 1) return null;
-  for (final opt in countries) {
-    if (opt.country.toUpperCase() == country.toUpperCase()) return opt.idTypes;
-  }
-  return null;
 }
 
 // ─── Individual ID type card ──────────────────────────────────────────────────

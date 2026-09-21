@@ -10,6 +10,7 @@ import 'package:uuid/uuid.dart';
 import '../config/address_collection.dart';
 import '../config/business.dart';
 import '../config/business_application.dart';
+import '../config/country_id_types.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
@@ -329,17 +330,19 @@ class KYCNotifier extends _$KYCNotifier {
     final country = effectiveCountry(_config, state);
     final entry = (_config.countries ?? const <WorkflowCountryOption>[])
         .cast<WorkflowCountryOption?>()
-        .firstWhere((c) => c?.country == country, orElse: () => null);
+        .firstWhere(
+          (c) => c?.country.toUpperCase() == country.toUpperCase(),
+          orElse: () => null,
+        );
 
     // The country's pinned list, else everything the server granted there.
-    final offered = (entry?.idTypes != null && entry!.idTypes!.isNotEmpty)
-        ? entry.idTypes!
-        : (_config.idTypes != null && _config.idTypes!.isNotEmpty)
-            ? _config.idTypes!
-            : state.serverConfig.idTypes
-                .where((row) => row.country == country)
-                .map((row) => row.idType)
-                .toList(growable: false);
+    // Same resolver the ID picker uses, so the options offered there and the
+    // slot options here cannot disagree.
+    final offered = pinnedIdTypesFor(_config, country) ??
+        state.serverConfig.idTypes
+            .where((row) => row.country == country)
+            .map((row) => row.idType)
+            .toList(growable: false);
 
     final options = multiIdSlotOptions(cfg.count, entry?.multiIdSlots, offered);
     final picked =

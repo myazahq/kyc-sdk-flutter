@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
+import '../config/appearance_scheme.dart';
 import '../config/kyc_config.dart';
 import '../config/theme.dart';
 import '../config/workflow_merge.dart';
 import '../providers/kyc_state.dart';
 import '../services/api_service.dart';
 import '../utils/resolve_url.dart';
+import 'kyc_flow_scope.dart';
 import 'myaza_pulse_loader.dart';
 
 // ─── Workflow gate ────────────────────────────────────────────────────────────
@@ -99,6 +101,41 @@ Future<WorkflowGateResult?> resolveWorkflowBeforeMount(
   return outcome.result;
 }
 
+/// The loader shown while the workflow resolves.
+///
+/// It is painted BEFORE the workflow's own appearance is known — that appearance
+/// is precisely what this request is fetching — so it themes itself from the
+/// CALLER's configured appearance, the closest thing to the flow's real theme
+/// that exists yet. Without it the loader always rendered the built-in light
+/// scheme, so a dark or brand-coloured flow visibly repainted the instant it
+/// opened. A mount that configures no appearance still gets the built-in theme,
+/// which is what it will open in anyway.
+class WorkflowResolveLoader extends StatelessWidget {
+  final MyazaKYCConfig config;
+
+  const WorkflowResolveLoader({super.key, required this.config});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = schemeForAppearance(
+      config.appearance,
+      initialThemeMode(config.appearance),
+      platformBrightness: MediaQuery.platformBrightnessOf(context),
+    );
+    // MyazaPulseLoader reads context.myazaColors, so it has to sit BELOW this
+    // Theme for the extension to reach it.
+    return Theme(
+      data: Theme.of(context).copyWith(extensions: [scheme]),
+      child: const Center(
+        child: Padding(
+          padding: EdgeInsets.all(MyazaSpacing.xl),
+          child: MyazaPulseLoader(),
+        ),
+      ),
+    );
+  }
+}
+
 // ─── Internals ────────────────────────────────────────────────────────────────
 
 class _GateOutcome {
@@ -132,18 +169,7 @@ class _WorkflowResolveDialogState extends State<_WorkflowResolveDialog> {
   }
 
   @override
-  Widget build(BuildContext context) {
-    return const Center(
-      child: Card(
-        color: Colors.transparent,
-        elevation: 0,
-        child: Padding(
-          padding: EdgeInsets.all(MyazaSpacing.xl),
-          child: MyazaPulseLoader(),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => WorkflowResolveLoader(config: widget.config);
 }
 
 class _WorkflowErrorDialog extends StatelessWidget {

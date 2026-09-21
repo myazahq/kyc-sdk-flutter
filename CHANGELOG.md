@@ -1,3 +1,18 @@
+## 3.0.3
+
+- **Workflow ID types on single-country flows.** Publishing a workflow stores
+  its ID selection per country, and a flow offering a single country is stored
+  that same way. The ID picker ignored that list whenever it held one entry and
+  offered every ID type the organisation had been granted instead. Republishing
+  a single-country workflow therefore changed every other setting and never the
+  ID types. Multi-region flows were unaffected, and no app change is needed to
+  pick this up.
+- **The loader now follows your appearance.** The indicator shown while a
+  `workflowId` mount resolves was always drawn in the built-in light theme, so a
+  dark or brand-coloured flow repainted the moment it opened. It now uses the
+  `appearance` passed to the SDK. Colours a workflow publishes still take
+  precedence once it has loaded.
+
 ## 3.0.2
 
 - Migrated invite-link sharing to the `share_plus` 12 `SharePlus` API.

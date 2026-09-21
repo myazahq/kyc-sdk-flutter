@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/document_capture_methods.dart';
 import '../config/kyc_config.dart';
 import '../config/proof_of_address.dart';
+import '../config/appearance_scheme.dart';
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
 import '../providers/kyc_provider.dart';
@@ -41,7 +42,6 @@ import '../screens/address/address_search_step.dart';
 import '../screens/proof_of_address_screen.dart';
 import '../screens/questionnaire_screen.dart';
 import 'multi_id_progress.dart';
-import 'myaza_pulse_loader.dart';
 import 'workflow_gate.dart';
 import '../screens/liveness_screen.dart';
 import '../screens/submitted_screen.dart';
@@ -146,37 +146,6 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   // submitted has no title — the screen owns its layout.
   KYCStep.submitted: _StepMeta(''),
 };
-
-// ─── Appearance → color scheme ────────────────────────────────────────────────
-//
-// Maps the consumer's MyazaKYCAppearance overrides onto the base (light/dark)
-// MyazaColorScheme. Unset colors keep the built-in token. When a primaryColor
-// is given, the primary tint family (50/100/200) is derived from it so the whole
-// brand family follows; an explicit accentColor overrides the 100 tint.
-
-MyazaColorScheme _applyAppearance(
-  MyazaColorScheme base,
-  MyazaKYCAppearance? a,
-) {
-  if (a == null) return base;
-  final primary = a.primaryColor ?? base.primary;
-  final background = a.backgroundColor ?? base.background;
-  final hasPrimary = a.primaryColor != null;
-  Color tint(double opacity) =>
-      Color.alphaBlend(primary.withValues(alpha: opacity), background);
-
-  return base.copyWith(
-    primary: primary,
-    onPrimary: a.primaryTextColor,
-    background: background,
-    backgroundSecondary: a.surfaceColor,
-    border: a.borderColor,
-    textDark: a.textColor,
-    primary50: hasPrimary ? tint(0.06) : null,
-    primary100: a.accentColor ?? (hasPrimary ? tint(0.12) : null),
-    primary200: hasPrimary ? tint(0.24) : null,
-  );
-}
 
 /// Maps the appearance's initial theme to a ThemeMode. Null appearance/theme
 /// and the explicit `system` value both follow the device setting.
@@ -402,12 +371,7 @@ class _EmbeddedWorkflowGateState extends State<_EmbeddedWorkflowGate> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(MyazaSpacing.xl),
-              child: MyazaPulseLoader(),
-            ),
-          );
+          return WorkflowResolveLoader(config: widget.config);
         }
         if (snap.hasError) {
           final err = snap.error;
@@ -677,7 +641,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
     // active base scheme, so a light background would otherwise overwrite the
     // dark one and the toggle would do nothing on a branded flow.
     final colorScheme =
-        _applyAppearance(baseScheme, config.appearance?.forBrightness(isDark));
+        applyAppearance(baseScheme, config.appearance?.forBrightness(isDark));
 
     // ── Resolve org branding for the persistent header ─────────────────────
     // `appearance.logo = 'default'` pulls the org logo from the server config
