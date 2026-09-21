@@ -739,10 +739,15 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
             child: screen,
           );
 
-    // Show the country flag beside the title on the ID-selection steps (the
-    // effective country — the picked one in a multi-region flow).
+    // Show the country flag beside the title on the ID steps (the effective
+    // country — the picked one in a multi-region flow). Document capture asks
+    // for a country's document as directly as the ID steps do, so it carries
+    // the same flag rather than a second treatment.
     final headerCountry = configError == null &&
-            (step == KYCStep.idType || step == KYCStep.idInput)
+            (step == KYCStep.idType ||
+                step == KYCStep.idInput ||
+                step == KYCStep.documentCapture ||
+                step == KYCStep.nfc)
         ? effectiveCountry(config, state)
         : null;
 

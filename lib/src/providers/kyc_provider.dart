@@ -298,7 +298,7 @@ class KYCNotifier extends _$KYCNotifier {
       commitMultiIdSlot(plan.last ? next : KYCStep.idType);
       return;
     }
-    state = state.copyWith(currentStep: next);
+    _moveToStep(next);
   }
 
   /// The chip payload as the wire wants it. One builder, so a check's chip and
@@ -447,7 +447,7 @@ class KYCNotifier extends _$KYCNotifier {
     final order = buildStepOrder(_config, state);
     final idx = order.indexOf(state.currentStep);
     if (idx > 0) {
-      state = state.copyWith(currentStep: order[idx - 1]);
+      _moveToStep(order[idx - 1]);
     }
   }
 
@@ -506,6 +506,22 @@ class KYCNotifier extends _$KYCNotifier {
       contactChannel: channel,
       contactVia: via,
       contactDestination: destination,
+    );
+  }
+
+  /// Move to [next], clearing anything scoped to the step being left.
+  ///
+  /// `immersiveCapture` is raised by the document-capture screen while a
+  /// full-bleed camera is on screen, and it lives HERE rather than on that
+  /// screen — so it outlives it. Leaving the step without lowering it left a
+  /// raised flag that the shell hid (it also gates on the step) until the
+  /// applicant came back, at which point the chrome-free layout applied to a
+  /// screen with no camera: no header, content under the status bar.
+  void _moveToStep(KYCStep next) {
+    state = state.copyWith(
+      currentStep: next,
+      immersiveCapture:
+          next == KYCStep.documentCapture ? state.immersiveCapture : false,
     );
   }
 
@@ -621,7 +637,7 @@ class KYCNotifier extends _$KYCNotifier {
   /// Jump to a specific step (used by submit recovery to return the applicant
   /// to a contact step, and by that step to return to `submitted`).
   void goToStep(KYCStep step) {
-    if (state.currentStep != step) state = state.copyWith(currentStep: step);
+    if (state.currentStep != step) _moveToStep(step);
   }
 
   /// Stores the liveness step's capture-integrity claim (mode + flash result).

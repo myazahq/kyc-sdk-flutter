@@ -128,10 +128,6 @@ class _DocumentCaptureScreenState
   // from a constant — so it is measured, not assumed.
   Size? _viewfinderSize;
 
-  // Mirrors what we last told the provider, so the flag is only pushed on a
-  // real change (and never from inside build).
-  bool _immersiveWanted = false;
-
   // Torch state + whether this camera has a flash unit at all.
   bool _torchOn = false;
   bool _hasTorch = false;
@@ -348,8 +344,15 @@ class _DocumentCaptureScreenState
   /// after the frame because it is decided during build, and a provider write
   /// mid-build would rebuild the tree underneath us.
   void _syncImmersive(bool wanted) {
-    if (_immersiveWanted == wanted) return;
-    _immersiveWanted = wanted;
+    // Compare against the SHELL's value, not a local cache. The flag lives on
+    // the shell and outlives this screen, while any local cache of it is
+    // reborn false with every new State. Backing out of the camera unmounts this
+    // screen before the post-frame write lands (it is guarded on `mounted`),
+    // so the shell stays raised; the step gate hides that while another step
+    // is showing, and re-entering this one applied a chrome-free layout to a
+    // screen with no camera on it — no header, content under the status bar.
+    // Reading the live value makes the re-entry a mismatch, so it corrects.
+    if (ref.read(kYCNotifierProvider).immersiveCapture == wanted) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(kYCNotifierProvider.notifier).setImmersiveCapture(wanted);

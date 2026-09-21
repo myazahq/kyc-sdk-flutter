@@ -1,3 +1,15 @@
+## 3.0.4
+
+- **Backing out of the camera no longer strips the header.** Opening document
+  capture, pressing back, then picking the ID again rendered the step with no
+  header and its content tucked under the status bar. The layout flag that lets
+  a full-bleed camera take the whole sheet outlived the screen that raised it,
+  so returning applied it to a screen with no camera on it. It is now cleared
+  whenever the flow changes step. No app change is needed to pick this up.
+- **The country flag now sits beside the document and chip steps.** It already
+  appeared on the ID-selection steps and then disappeared at exactly the point
+  the applicant is holding the document it describes.
+
 ## 3.0.3
 
 - **Workflow ID types on single-country flows.** Publishing a workflow stores
