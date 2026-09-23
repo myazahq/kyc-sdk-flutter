@@ -6,6 +6,7 @@ import 'nfc_config.dart';
 import 'address_collection.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
+import 'supporting_documents.dart';
 import '../providers/step_resubmit.dart';
 import 'multi_id.dart';
 import 'biometric_options.dart';
@@ -592,6 +593,12 @@ class MyazaKYCConfig {
   /// no PoA step. Normally set by a resolved workflow.
   final ProofOfAddressConfig? proofOfAddress;
 
+  /// Artefacts the organisation keeps on file, each one named by the org.
+  /// NOT the identity evidence the verification is decided on — the step is
+  /// collection, and an unreadable upload never fails the check.
+  /// Null or disabled = no step. Normally set by a resolved workflow.
+  final SupportingDocumentsConfig? supportingDocuments;
+
   /// Address Intelligence — smart-address capture (map pin + optional door
   /// photo and directions). Null or disabled = no step. On a KYB flow the pin
   /// is the business premises. Normally set by a resolved workflow.
@@ -664,6 +671,7 @@ class MyazaKYCConfig {
     this.questionnaire,
     this.resubmit,
     this.proofOfAddress,
+    this.supportingDocuments,
     this.addressCollection,
     this.emailVerification,
     this.phoneVerification,
@@ -703,6 +711,7 @@ class MyazaKYCConfig {
     QuestionnaireConfig? questionnaire,
     ResubmitConfig? resubmit,
     ProofOfAddressConfig? proofOfAddress,
+    SupportingDocumentsConfig? supportingDocuments,
     AddressCollectionConfig? addressCollection,
     EmailVerificationConfig? emailVerification,
     PhoneVerificationConfig? phoneVerification,
@@ -747,6 +756,7 @@ class MyazaKYCConfig {
         questionnaire: questionnaire ?? this.questionnaire,
         resubmit: resubmit ?? this.resubmit,
         proofOfAddress: proofOfAddress ?? this.proofOfAddress,
+        supportingDocuments: supportingDocuments ?? this.supportingDocuments,
         addressCollection: addressCollection ?? this.addressCollection,
         emailVerification: emailVerification ?? this.emailVerification,
         phoneVerification: phoneVerification ?? this.phoneVerification,

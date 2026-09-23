@@ -21,7 +21,7 @@ part 'api_address_calls.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.0.4';
+const String kSdkVersion = '3.1.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -57,6 +57,7 @@ class MediaType {
   static const proofOfAddress = 'proof_of_address';
   static const addressPhoto = 'address_photo';
   static const businessDocument = 'business_document';
+  static const supportingDocument = 'supporting_document';
 }
 
 /// Response from `POST /api/kyc/upload` — the stored mediaId referenced later
@@ -374,6 +375,12 @@ class VerifyRequest {
   /// `mediaIds.proofOfAddress`.
   final String? proofOfAddressType;
 
+  /// Supporting documents the org keeps ON FILE — `[{ type, mediaId }]`.
+  /// Validated against the workflow's requested list: anything it did not ask
+  /// for is dropped, a missing required one is a 422. The checks that follow
+  /// are soft and never change the verification's status.
+  final List<Map<String, dynamic>>? supportingDocuments;
+
   /// Address Intelligence — the smart-address block (pin + optional directions
   /// + device fix), when the address-collection step gathered one. On a KYB
   /// submission the pin is the business premises. Built by `addressPayload`.
@@ -410,6 +417,7 @@ class VerifyRequest {
     this.mediaIds,
     this.questionnaire,
     this.proofOfAddressType,
+    this.supportingDocuments,
     this.address,
     this.deviceIntelligence,
     this.contact,
@@ -435,6 +443,8 @@ class VerifyRequest {
           'questionnaire': questionnaire,
         if (proofOfAddressType != null)
           'proofOfAddressType': proofOfAddressType,
+        if (supportingDocuments != null && supportingDocuments!.isNotEmpty)
+          'supportingDocuments': supportingDocuments,
         if (address != null && address!.isNotEmpty) 'address': address,
         if (deviceIntelligence != null)
           'deviceIntelligence': deviceIntelligence,

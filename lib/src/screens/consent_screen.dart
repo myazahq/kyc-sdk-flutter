@@ -167,14 +167,20 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
           'Verify your business against the official registry',
         ),
       ] else if (scope == 'address') ...[
-        const _ProcessStep(
-          LucideIcons.mapPinHouse,
-          'Pin your home address on a map',
-        ),
-        const _ProcessStep(
-          LucideIcons.badgeCheck,
-          'Confirm the details only you can know',
-        ),
+        // NOT a fixed pair: the scope verifies an address by the pin, by a
+        // document, or by both, so promising a map on a flow that only asks
+        // for a document is a promise the flow never keeps. The document's own
+        // bullet is appended by the shared post-capture block below.
+        if (config.addressCollection?.enabled ?? false) ...[
+          const _ProcessStep(
+            LucideIcons.mapPinHouse,
+            'Pin your home address on a map',
+          ),
+          const _ProcessStep(
+            LucideIcons.badgeCheck,
+            'Confirm the details only you can know',
+          ),
+        ],
       ] else if (faceScope) ...[
         const _ProcessStep(
           LucideIcons.scanFace,

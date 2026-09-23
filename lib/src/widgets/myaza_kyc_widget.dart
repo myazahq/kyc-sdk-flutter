@@ -24,6 +24,8 @@ export 'kyc_flow_scope.dart' show kycFlowOverrides;
 import '../screens/applicant_role_screen.dart';
 import '../screens/business_details_screen.dart';
 import '../screens/business_documents_screen.dart';
+import '../config/supporting_documents.dart';
+import '../screens/supporting_documents_screen.dart';
 import '../screens/business_key_people_screen.dart';
 import '../screens/consent_screen.dart';
 import '../screens/contact_verification_channel.dart';
@@ -42,6 +44,7 @@ import '../screens/address/address_search_step.dart';
 import '../screens/proof_of_address_screen.dart';
 import '../screens/questionnaire_screen.dart';
 import 'multi_id_progress.dart';
+import 'myaza_pulse_loader.dart';
 import 'workflow_gate.dart';
 import '../screens/liveness_screen.dart';
 import '../screens/submitted_screen.dart';
@@ -121,6 +124,10 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
     'Confirm your address',
     'Check everything is right before you continue.',
   ),
+  KYCStep.supportingDocuments: _StepMeta(
+    'Supporting documents',
+    'Upload the documents below so we can keep them on file. Required documents are marked with *.',
+  ),
   KYCStep.questionnaire: _StepMeta(
     'A Few More Questions',
     'Please answer the following to complete your verification.',
@@ -146,6 +153,7 @@ const Map<KYCStep, _StepMeta> _kStepMeta = {
   // submitted has no title — the screen owns its layout.
   KYCStep.submitted: _StepMeta(''),
 };
+
 
 /// Maps the appearance's initial theme to a ThemeMode. Null appearance/theme
 /// and the explicit `system` value both follow the device setting.
@@ -371,7 +379,12 @@ class _EmbeddedWorkflowGateState extends State<_EmbeddedWorkflowGate> {
       future: _future,
       builder: (context, snap) {
         if (snap.connectionState != ConnectionState.done) {
-          return WorkflowResolveLoader(config: widget.config);
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(MyazaSpacing.xl),
+              child: MyazaPulseLoader(),
+            ),
+          );
         }
         if (snap.hasError) {
           final err = snap.error;
@@ -493,6 +506,22 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
       meta = _StepMeta(
         'Enter your ${state.selectedIdType!.label}',
         meta.description,
+      );
+    }
+
+    // Supporting documents: the line follows the COUNTS, so it says how many
+    // have to be produced rather than how to read an asterisk. Resolved the
+    // same way the screen resolves its slots, or the header could name a
+    // number the body does not show.
+    if (step == KYCStep.supportingDocuments) {
+      meta = _StepMeta(
+        meta.title,
+        supportingDocumentsIntro(
+          resolveSupportingDocuments(
+            config.supportingDocuments,
+            verifiedIdComposites(config, state),
+          ),
+        ),
       );
     }
 
@@ -739,15 +768,10 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
             child: screen,
           );
 
-    // Show the country flag beside the title on the ID steps (the effective
-    // country — the picked one in a multi-region flow). Document capture asks
-    // for a country's document as directly as the ID steps do, so it carries
-    // the same flag rather than a second treatment.
+    // Show the country flag beside the title on the ID-selection steps (the
+    // effective country — the picked one in a multi-region flow).
     final headerCountry = configError == null &&
-            (step == KYCStep.idType ||
-                step == KYCStep.idInput ||
-                step == KYCStep.documentCapture ||
-                step == KYCStep.nfc)
+            (step == KYCStep.idType || step == KYCStep.idInput)
         ? effectiveCountry(config, state)
         : null;
 
@@ -975,6 +999,15 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
                   : const KYCError(
                       code: 'upload_failed',
                       message: 'Business document upload failed.'),
+            ),
+          ),
+        KYCStep.supportingDocuments => SupportingDocumentsScreen(
+            onError: (e) => widget.onError?.call(
+              e is KYCError
+                  ? e
+                  : const KYCError(
+                      code: 'upload_failed',
+                      message: 'Supporting document upload failed.'),
             ),
           ),
         KYCStep.proofOfAddress => ProofOfAddressScreen(

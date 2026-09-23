@@ -28,6 +28,7 @@ const Map<KYCStep, String> kStepWireNames = {
   KYCStep.nfc: 'nfc',
   KYCStep.liveness: 'liveness',
   KYCStep.proofOfAddress: 'proof-of-address',
+  KYCStep.supportingDocuments: 'supporting-documents',
   KYCStep.addressSearch: 'address-search',
   KYCStep.addressCollection: 'address-collection',
   KYCStep.addressEntrance: 'address-entrance',

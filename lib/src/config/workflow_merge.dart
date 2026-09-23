@@ -7,6 +7,7 @@ import 'nfc_config.dart';
 import 'address_collection.dart';
 import 'proof_of_address.dart';
 import 'questionnaire.dart';
+import 'supporting_documents.dart';
 import '../providers/step_resubmit.dart';
 import 'multi_id.dart';
 
@@ -55,6 +56,11 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
       ? ProofOfAddressConfig.fromJson(rawPoa.cast<String, dynamic>())
       : null;
 
+  final rawSupporting = flow.raw['supportingDocuments'];
+  final supportingDocuments = rawSupporting is Map
+      ? SupportingDocumentsConfig.fromJson(rawSupporting.cast<String, dynamic>())
+      : null;
+
   final rawAddress = flow.raw['addressCollection'];
   final addressCollection = rawAddress is Map
       ? AddressCollectionConfig.fromJson(rawAddress.cast<String, dynamic>())
@@ -98,6 +104,7 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     countries: countries,
     questionnaire: questionnaire,
     proofOfAddress: proofOfAddress,
+    supportingDocuments: supportingDocuments,
     addressCollection: addressCollection,
     resubmit: resubmit,
     emailVerification: emailVerification,

@@ -58,6 +58,14 @@ Map<String, dynamic> progressFromState(KYCState s, {String? effectiveCountryValu
         if (s.phoneToken != null) 'phoneToken': s.phoneToken,
         if (s.expiredContact.isNotEmpty) 'expired': s.expiredContact,
       },
+      // The uploads, without their previews: a restored slot shows as
+      // uploaded, which is what the mediaId is for. Preview bytes never ride
+      // progress — the same rule the selfie keeps.
+      if (s.supportingDocuments.isNotEmpty)
+        'supportingDocuments': [
+          for (final d in s.supportingDocuments)
+            {'type': d.type, 'mediaId': d.mediaId},
+        ],
       'questionnaireAnswers': s.questionnaireAnswers,
       // The smart address survives a resume — a placed pin is work done, and
       // so is the address the applicant picked for it. Richer than the wire

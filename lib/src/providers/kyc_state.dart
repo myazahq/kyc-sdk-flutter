@@ -4,6 +4,7 @@ import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/supporting_documents.dart';
 import '../services/api_service.dart';
 import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
@@ -32,6 +33,7 @@ enum KYCStep {
   nfc,
   liveness,
   proofOfAddress,
+  supportingDocuments,
   // The address flow: find it → confirm it → show it → commit it.
   // `addressCollection` is the PIN step and keeps its original wire name even
   // though it is now the second screen, so progress saved by older builds
@@ -307,6 +309,12 @@ class KYCState {
   /// `utility_bill`). Submitted as `proofOfAddressType`.
   final String? poaDocumentType;
 
+  /// Artefacts uploaded on the supporting-documents step, keyed by their
+  /// catalogue type. Held ON FILE rather than checked: the verification is
+  /// already decided by the time they are asked for, so an unreadable upload
+  /// costs the applicant nothing. Submitted as `supportingDocuments`.
+  final List<SupportingDocumentUpload> supportingDocuments;
+
   /// The smart address the address-collection step gathered (pin + directions
   /// + optional device fix). On a KYB flow this is the business premises.
   /// Submitted under `address` on /verify. Null until placed.
@@ -446,6 +454,7 @@ class KYCState {
     this.questionnaireAnswers = const {},
     this.integrity = const {},
     this.poaDocumentType,
+    this.supportingDocuments = const [],
     this.address,
     this.addressPhotoPreview,
     this.addressIntroSeen = false,
@@ -509,6 +518,7 @@ class KYCState {
     Map<String, dynamic>? questionnaireAnswers,
     Map<String, dynamic>? integrity,
     String? poaDocumentType,
+    List<SupportingDocumentUpload>? supportingDocuments,
     AddressState? address,
     // Starting the address over must null the pin, which `?? this` cannot
     // express — the same explicit-flag pattern as clearSelectedIdType.
@@ -598,6 +608,7 @@ class KYCState {
         integrity: integrity ?? this.integrity,
         poaDocumentType:
             clearPoaDocumentType ? null : (poaDocumentType ?? this.poaDocumentType),
+        supportingDocuments: supportingDocuments ?? this.supportingDocuments,
         address: clearAddress ? null : (address ?? this.address),
         addressPhotoPreview: clearAddressPhotoPreview
             ? null

@@ -3,6 +3,7 @@ import '../config/business_application.dart';
 import 'address_step_order.dart';
 import '../config/kyc_config.dart';
 import '../config/scope.dart';
+import '../config/supporting_documents.dart';
 import 'kyc_state.dart';
 import 'step_resubmit.dart';
 
@@ -70,6 +71,24 @@ bool hasNfcStep(MyazaKYCConfig config, KYCState state) {
   if (cfg == null || !cfg.supportsNfc) return false;
   return nfc.selects(effectiveCountry(config, state), cfg.key);
 }
+
+/// The ID composites this attempt has committed — one per ID, multi-ID
+/// included. What the supporting-documents step is resolved against: a NIN
+/// slip is asked for because the person used their NIN, so the question can
+/// only be answered once an ID is chosen.
+List<String> verifiedIdComposites(MyazaKYCConfig config, KYCState state) =>
+    verifiedIdsFor(
+      country: effectiveCountry(config, state),
+      idType: state.selectedIdType?.key,
+      multiIdTypes: [for (final slot in state.multiIdSlots) slot.idType],
+    );
+
+/// Whether the supporting-documents step has anything to ask for right now.
+bool hasSupportingDocumentsFor(MyazaKYCConfig config, KYCState state) =>
+    hasSupportingDocumentsStep(
+      config.supportingDocuments,
+      verifiedIdComposites(config, state),
+    );
 
 // ─── Step order (single source of truth) ─────────────────────────────────────
 //
@@ -243,6 +262,10 @@ List<KYCStep> _fullStepOrder(MyazaKYCConfig config, KYCState state) {
     if (requiresCapture) KYCStep.documentCapture else KYCStep.idInput,
     if (hasNfc) KYCStep.nfc,
     if (hasLiveness) KYCStep.liveness,
+    // Collection, not evidence — so it sits after every check the verification
+    // is decided on, and ahead of the address evidence it is judged on (user
+    // decision 2026-09-22). An empty resolution drops the step entirely.
+    if (hasSupportingDocumentsFor(config, state)) KYCStep.supportingDocuments,
     if (hasProofOfAddress) KYCStep.proofOfAddress,
     // The address capture is REAL steps — find it, confirm it, show it, commit
     // it — so the progress bar advances through them and back/forward is

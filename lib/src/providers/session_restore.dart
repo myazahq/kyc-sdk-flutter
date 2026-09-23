@@ -3,6 +3,7 @@ import '../config/address_flow.dart';
 import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart';
+import '../config/supporting_documents.dart';
 import '../utils/step_log.dart';
 import 'address_step_order.dart';
 import 'kyc_state.dart';
@@ -112,6 +113,17 @@ KYCState restoredState(
         if (_keyPersonFromJson(row.cast<String, dynamic>()) case final KeyPersonEntry p) p,
   ];
 
+  // Uploads restore as ids alone — the snapshot carries no preview bytes, so
+  // the slot renders as uploaded without a thumbnail. Anything unreadable is
+  // dropped rather than restored half-formed.
+  final supportingDocuments = <SupportingDocumentUpload>[
+    for (final row in (data['supportingDocuments'] as List?) ?? const [])
+      if (row is Map)
+        if (SupportingDocumentUpload.fromJson(row.cast<String, dynamic>())
+            case final SupportingDocumentUpload doc)
+          doc,
+  ];
+
   final idType = idTypeKey != null && country != null
       ? resolveIdTypeDefinition(country, idTypeKey)
       : s.selectedIdType;
@@ -164,6 +176,8 @@ KYCState restoredState(
     expiredContact: contact['expired'] is List
         ? (contact['expired'] as List).whereType<String>().toList()
         : s.expiredContact,
+    supportingDocuments:
+        supportingDocuments.isNotEmpty ? supportingDocuments : s.supportingDocuments,
     questionnaireAnswers: data['questionnaireAnswers'] is Map
         ? {
             ...s.questionnaireAnswers,

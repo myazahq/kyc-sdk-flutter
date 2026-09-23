@@ -14,6 +14,7 @@ import '../config/country_id_types.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/supporting_documents.dart';
 import 'session_progress.dart';
 import 'session_restore.dart';
 import '../config/key_people_prefill.dart';
@@ -756,6 +757,25 @@ class KYCNotifier extends _$KYCNotifier {
     );
   }
 
+  /// Records one uploaded SUPPORTING document (an artefact kept on file),
+  /// replacing any prior upload for the same slot.
+  void setSupportingDocument(SupportingDocumentUpload upload) {
+    state = state.copyWith(
+      supportingDocuments: [
+        ...state.supportingDocuments.where((d) => d.type != upload.type),
+        upload,
+      ],
+    );
+  }
+
+  /// Drops the upload for one supporting-document slot.
+  void removeSupportingDocument(String type) {
+    state = state.copyWith(
+      supportingDocuments:
+          state.supportingDocuments.where((d) => d.type != type).toList(),
+    );
+  }
+
   /// Stores the applicant's declared role + optional full name.
   /// [keyPersonIndex] = the applicant picked THEMSELVES from the entered key
   /// people (index into state.keyPeople); null = they're someone else.
@@ -1266,6 +1286,11 @@ class KYCNotifier extends _$KYCNotifier {
           : null,
       proofOfAddressType:
           mediaIds.proofOfAddress != null ? state.poaDocumentType : null,
+      // Artefacts kept on file. The server drops anything the workflow did not
+      // ask for, so sending what the step collected is always safe.
+      supportingDocuments: state.supportingDocuments.isNotEmpty
+          ? [for (final doc in state.supportingDocuments) doc.toJson()]
+          : null,
       // The smart address, when the step gathered one — the server validates
       // it against the workflow either way. Mirrors the RN buildVerifyRequest.
       address: state.address != null

@@ -1,18 +1,16 @@
 import 'dart:typed_data';
 
-import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../config/business_application.dart';
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../services/api_service.dart';
-import '../widgets/media_source_sheet.dart';
 import '../widgets/myaza_button.dart';
 import '../config/upload_limits.dart';
 import 'business_document_slot.dart';
+import 'document_pick.dart';
 
 part 'business_documents_pick.dart';
 
@@ -24,8 +22,9 @@ part 'business_documents_pick.dart';
 // ride the business /verify submission as `business.documents`.
 //
 // Mirrors the web SDK's BusinessDocumentsStep. Files come from the photo
-// library, the camera, or Files (the only path that can supply a PDF) — the
-// picking lives in business_documents_pick.dart.
+// library, the camera, or Files (the only path that can supply a PDF), through
+// the shared picker in document_pick.dart; business_documents_pick.dart is the
+// thin part that hands the result to this screen's own upload.
 
 class BusinessDocumentsScreen extends ConsumerStatefulWidget {
   final void Function(Object error)? onError;

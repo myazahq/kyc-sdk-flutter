@@ -67,6 +67,14 @@ export 'src/config/questionnaire.dart'
 export 'src/config/proof_of_address.dart'
     show PoaDocumentType, ProofOfAddressConfig;
 
+// Artefacts kept on file, so a host configuring the flow in code (rather
+// than through a workflow) can name what it wants collected.
+export 'src/config/supporting_documents.dart'
+    show
+        SupportingDocumentRequest,
+        SupportingDocumentsConfig,
+        SupportingDocumentUpload;
+
 export 'src/config/address_collection.dart'
     show
         AddressCollectionConfig,

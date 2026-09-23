@@ -20,6 +20,12 @@ import '../widgets/dashed_border.dart';
 
 class BusinessDocumentSlot extends StatelessWidget {
   final String label;
+
+  /// Guidance the organisation wrote: which document, and what it has to show.
+  /// Optional because the business-documents step names a fixed catalogue the
+  /// applicant already recognises; a supporting document is whatever the org
+  /// called it, so this is often the only thing that makes it findable.
+  final String? description;
   final bool required;
   final String? fileName;
 
@@ -37,10 +43,15 @@ class BusinessDocumentSlot extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onRemove;
 
+  /// The slot sits inside a card that already names the document, so it drops
+  /// the title, the asterisk and the guidance rather than saying them twice.
+  final bool compact;
+
   const BusinessDocumentSlot({
     super.key,
     required this.label,
     required this.required,
+    this.description,
     required this.fileName,
     required this.uploading,
     this.previewBytes,
@@ -49,6 +60,7 @@ class BusinessDocumentSlot extends StatelessWidget {
     this.error,
     this.onTap,
     this.onRemove,
+    this.compact = false,
   });
 
   @override
@@ -94,14 +106,16 @@ class BusinessDocumentSlot extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    label,
-                    style:
-                        text.bodySmall.copyWith(color: colors.textSecondary),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  if (!compact) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      label,
+                      style:
+                          text.bodySmall.copyWith(color: colors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -157,11 +171,13 @@ class BusinessDocumentSlot extends StatelessWidget {
                     Text.rich(
                       TextSpan(children: [
                         TextSpan(
-                          text: label,
+                          text: compact
+                              ? 'Upload ${label.toLowerCase()}'
+                              : label,
                           style: text.label
                               .copyWith(fontWeight: FontWeight.w600),
                         ),
-                        if (required)
+                        if (required && !compact)
                           TextSpan(
                             text: ' *',
                             style: text.label
@@ -171,6 +187,16 @@ class BusinessDocumentSlot extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
+                    if (description != null && !uploading && !compact) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        description!,
+                        style: text.bodySmall
+                            .copyWith(color: colors.textDark.withValues(alpha: 0.75)),
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                     const SizedBox(height: 2),
                     Text(
                       uploading ? 'Uploading…' : kUploadHint,
@@ -189,7 +215,7 @@ class BusinessDocumentSlot extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
+      padding: EdgeInsets.only(bottom: compact ? 0 : MyazaSpacing.md),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
