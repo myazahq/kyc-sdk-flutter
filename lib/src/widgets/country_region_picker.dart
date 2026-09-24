@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/id_types.dart' show countryLabel;
 import '../config/regions.dart';
 import '../config/theme.dart';
 import 'country_option_tile.dart';
 import 'myaza_input.dart';
+import 'icons/icons.dart';
 
 // ─── Country region picker ────────────────────────────────────────────────────
 //
@@ -77,7 +77,7 @@ class _CountryRegionPickerState extends State<CountryRegionPicker> {
       children: [
         MyazaInput(
           hint: 'Search countries…',
-          prefix: Icon(LucideIcons.search, size: 18, color: colors.textSecondary),
+          prefix: MyazaIcon(MyazaIcons.search, size: 18, color: colors.textSecondary),
           onChanged: (v) => setState(() => _query = v),
         ),
         const SizedBox(height: MyazaSpacing.md),

@@ -1,10 +1,10 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/screen_corners.dart';
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── Themed bottom sheet ──────────────────────────────────────────────────────
 //
@@ -116,7 +116,7 @@ class _MyazaSheetHeader extends StatelessWidget {
                 // draws; shrinking it to tidy the layout would not be.
                 constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
                 icon:
-                    Icon(LucideIcons.x, size: 18, color: colors.textSecondary),
+                    MyazaIcon(MyazaIcons.x, size: 18, color: colors.textSecondary),
               ),
             ),
           ),

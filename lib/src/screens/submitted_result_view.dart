@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -12,6 +11,7 @@ import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 import 'submitted_waiting_view.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── The result screen (a flow that waits for its verdict) ──────────────────
 //
@@ -114,14 +114,14 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
     final colors = context.myazaColors;
     final text = context.myazaText;
     final (bg, fg, icon) = switch (copy.tone) {
-      ResultTone.success => (colors.successBg, MyazaColors.success, LucideIcons.check),
-      ResultTone.error => (colors.errorBg, MyazaColors.error, LucideIcons.circleAlert),
+      ResultTone.success => (colors.successBg, MyazaColors.success, MyazaIcons.check),
+      ResultTone.error => (colors.errorBg, MyazaColors.error, MyazaIcons.circleAlert),
       // The org's primary, as RN reads it: the brand constant ignored a
       // custom primaryColor on this one tone.
       ResultTone.info => (
           colors.primary.withValues(alpha: 0.08),
           colors.primary,
-          LucideIcons.info,
+          MyazaIcons.info,
         ),
     };
 
@@ -142,7 +142,7 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
                   color: bg,
                   border: Border.all(color: fg.withValues(alpha: 0.3), width: 2),
                 ),
-                child: Icon(icon, size: 44, color: fg),
+                child: MyazaIcon(icon, size: 44, color: fg),
               )
                   .animate()
                   .scale(

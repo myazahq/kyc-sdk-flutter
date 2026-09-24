@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'myaza_button.dart';
+import 'icons/icons.dart';
 
 /// "Allow camera access" priming screen, shown right before the native OS camera
 /// permission prompt (mirrors Stripe Identity). It sets the user's expectation
@@ -46,8 +46,8 @@ class CameraPermissionPrimingView extends StatelessWidget {
                   color: colors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(
-                  LucideIcons.camera,
+                child: MyazaIcon(
+                  MyazaIcons.camera,
                   size: 36,
                   color: colors.primary,
                 ),

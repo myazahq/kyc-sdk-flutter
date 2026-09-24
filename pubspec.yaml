@@ -1,6 +1,6 @@
 name: myaza_kyc_sdk_flutter
 description: Myaza KYC SDK — ID verification, liveness detection, and document OCR for Flutter
-version: 3.1.0
+version: 3.2.0
 
 homepage: https://github.com/myazahq/kyc-sdk-flutter
 repository: https://github.com/myazahq/kyc-sdk-flutter
@@ -57,7 +57,10 @@ dependencies:
   package_info_plus: ^8.0.0
   video_compress: ^3.1.3
   flutter_image_compress: ^2.3.0
-  lucide_icons_flutter: ^3.1.14+2
+  # Hugeicons Stroke Rounded: the dashboard's and the web SDK's icon set.
+  # Icons are SVG path data rather than a font, so they render through
+  # flutter_svg above and are drawn by lib/src/widgets/icons/ alone.
+  hugeicons: ^1.2.0
   country_flags: ^3.2.0  # 3.x: MyazaCountryFlag uses fromCountryCode(height/width/shape); 4.x replaced these with a FlagTheme API (would need a widget rewrite)
   phone_numbers_parser: ^9.0.24
   flutter_svg: ^2.0.10  # brand marks Lucide does not carry (the WhatsApp glyph)

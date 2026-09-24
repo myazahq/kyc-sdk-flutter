@@ -1,10 +1,10 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import 'address_photo_dropzone.dart';
+import '../../widgets/icons/icons.dart';
 
 /// The picked entrance photo at full width, its controls as pills over the
 /// image. Split from the dropzone per the 200-line rule. Web's exact pills,
@@ -39,7 +39,7 @@ class AddressPhotoFilled extends StatelessWidget {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(LucideIcons.circleCheck,
+                  const MyazaIcon(MyazaIcons.circleCheck,
                       size: 32, color: MyazaColors.success),
                   const SizedBox(height: MyazaSpacing.sm),
                   Text('Entrance photo added',
@@ -54,13 +54,13 @@ class AddressPhotoFilled extends StatelessWidget {
             child: Row(
               children: [
                 _ActionPill(
-                  icon: LucideIcons.refreshCcw,
+                  icon: MyazaIcons.refreshCcw,
                   label: 'Replace',
                   onTap: parent.onPick,
                 ),
                 const SizedBox(width: MyazaSpacing.sm),
                 _ActionPill(
-                  icon: LucideIcons.x,
+                  icon: MyazaIcons.x,
                   label: 'Remove',
                   semanticsLabel: 'Remove photo',
                   onTap: parent.onRemove,
@@ -100,7 +100,7 @@ class _TagPill extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(LucideIcons.circleCheck, size: 12, color: colors.primary),
+          MyazaIcon(MyazaIcons.circleCheck, size: 12, color: colors.primary),
           const SizedBox(width: 6),
           Text(
             'ENTRANCE PHOTO',
@@ -118,7 +118,7 @@ class _TagPill extends StatelessWidget {
 }
 
 class _ActionPill extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
   final String? semanticsLabel;
   final VoidCallback onTap;
@@ -150,7 +150,7 @@ class _ActionPill extends StatelessWidget {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(icon, size: 14, color: colors.textDark),
+                  MyazaIcon(icon, size: 14, color: colors.textDark),
                   const SizedBox(width: 6),
                   Text(label,
                       style: text.bodySmall.copyWith(

@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── One captured side, and its enlarged view ─────────────────────────────────
 //
@@ -90,7 +90,7 @@ class DocumentReviewThumb extends StatelessWidget {
                 bottom: MyazaSpacing.md,
                 child: _Chip(
                   icon: true,
-                  child: Icon(LucideIcons.maximize2,
+                  child: MyazaIcon(MyazaIcons.maximize2,
                       size: 18, color: Colors.white),
                 ),
               ),
@@ -107,7 +107,7 @@ class DocumentReviewThumb extends StatelessWidget {
         // is the difference between a discoverable action and a decoration.
         TextButton.icon(
           onPressed: isBusy ? null : side.onRetake,
-          icon: const Icon(LucideIcons.rotateCcw, size: 14),
+          icon: const MyazaIcon(MyazaIcons.rotateCcw, size: 14),
           label: Text(uploadOnly ? 'Replace' : 'Retake',
               style: text.bodySmall),
           style: TextButton.styleFrom(
@@ -172,7 +172,7 @@ class DocumentReviewZoom extends StatelessWidget {
                     child: const SizedBox(
                       width: 40,
                       height: 40,
-                      child: Icon(LucideIcons.x, size: 20, color: Colors.white),
+                      child: MyazaIcon(MyazaIcons.x, size: 20, color: Colors.white),
                     ),
                   ),
                 ),
@@ -204,7 +204,7 @@ class DocumentReviewZoom extends StatelessWidget {
             const SizedBox(height: MyazaSpacing.sm),
             FilledButton.icon(
               onPressed: isBusy ? null : onRetake,
-              icon: const Icon(LucideIcons.rotateCcw, size: 16),
+              icon: const MyazaIcon(MyazaIcons.rotateCcw, size: 16),
               label: Text(uploadOnly
                   ? 'Replace'
                   : 'Retake ${side.label.toLowerCase()}'),

@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -45,6 +44,7 @@ import '../widgets/document_cropper.dart';
 import '../widgets/document_viewfinder.dart';
 import '../widgets/myaza_button.dart';
 import '../services/model_readiness.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Scan phase ───────────────────────────────────────────────────────────────
 //
@@ -1417,13 +1417,13 @@ class _DocumentCaptureScreenState
                   MyazaButton(
                     label: nextLabel,
                     onPressed: _proceedToBack,
-                    leadingIcon: const Icon(LucideIcons.arrowRight),
+                    leadingIcon: const MyazaIcon(MyazaIcons.arrowRight),
                   ),
                   const SizedBox(height: MyazaSpacing.sm),
                   MyazaButton.outline(
                     label: retakeLabel,
                     onPressed: _retakeFront,
-                    leadingIcon: const Icon(LucideIcons.rotateCcw),
+                    leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
                   ),
                 ],
               );
@@ -1434,7 +1434,7 @@ class _DocumentCaptureScreenState
                   child: MyazaButton.outline(
                     label: retakeLabel,
                     onPressed: _retakeFront,
-                    leadingIcon: const Icon(LucideIcons.rotateCcw),
+                    leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
                   ),
                 ),
                 const SizedBox(width: MyazaSpacing.md),
@@ -1442,7 +1442,7 @@ class _DocumentCaptureScreenState
                   child: MyazaButton(
                     label: nextLabel,
                     onPressed: _proceedToBack,
-                    leadingIcon: const Icon(LucideIcons.arrowRight),
+                    leadingIcon: const MyazaIcon(MyazaIcons.arrowRight),
                   ),
                 ),
               ],
@@ -1530,8 +1530,8 @@ class _DocumentCaptureScreenState
           MyazaButton(
             label: _uploadError != null ? 'Try Again' : 'Continue',
             onPressed: _onContinue,
-            leadingIcon: Icon(
-              _uploadError != null ? LucideIcons.rotateCcw : LucideIcons.check,
+            leadingIcon: MyazaIcon(
+              _uploadError != null ? MyazaIcons.rotateCcw : MyazaIcons.check,
             ),
           ),
       ],
@@ -1570,7 +1570,7 @@ class _RequiredPill extends StatelessWidget {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(LucideIcons.creditCard,
+                MyazaIcon(MyazaIcons.creditCard,
                     size: 13, color: colors.primary),
                 const SizedBox(width: 5),
                 Text(

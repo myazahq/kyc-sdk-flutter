@@ -1,3 +1,39 @@
+## 3.2.0
+
+### One icon set across the product
+
+The SDK now draws Hugeicons Stroke Rounded, the set the dashboard and the web SDK
+already use, so a step looks the same whichever surface renders it. Only React
+Native is still on the old set.
+
+Every icon comes through `lib/src/widgets/icons/`, the same shape of boundary the
+web SDK uses, and `MyazaIcons` names each one as Lucide did — so the three SDKs
+stay in lockstep by the NAME a step picks rather than by the glyph. Where the web
+SDK already draws a name, the entry resolves to the *same* drawing: the mapping
+goes through the icon set's own alias table rather than being guessed from the
+name.
+
+Nothing in the public API changes and an existing app needs no code edit.
+
+- `lucide_icons_flutter` is replaced by `hugeicons`.
+- `MyazaIcon` takes its icon positionally like Flutter's own `Icon`, inherits
+  colour and size from `IconTheme`, and holds its space on a null icon, so a row
+  of optional icons still does not shift.
+- The theme toggle was the last Material icon and joins the set, so nothing is
+  left drawing a second language.
+
+### An icon keeps its own size inside a fixed-size parent
+
+`MyazaIcon` draws an SVG, and an SVG fills the box it is given, where Flutter's
+`Icon` draws a font glyph that stays its own size whatever box it is handed. A
+`Container(width: 56, height: 56, child: MyazaIcon(..., size: 28))` passes tight
+constraints, so the glyph silently grew to 56 — about twice what the call site
+asked for. Affected every fixed-size container in the SDK, the consent hero
+among them.
+
+The drawing is now pinned to the resolved size and centred, which is the
+structure `Icon` already has.
+
 ## 3.1.0
 
 ### Supporting documents

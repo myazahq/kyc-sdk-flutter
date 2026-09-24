@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../utils/map_tiles.dart';
 import '../../widgets/dashed_border.dart';
+import '../../widgets/icons/icons.dart';
 
 // The SANDBOX map stand-in (the web SDK's preview placeholder, for test keys):
 // no tiles, no framed page, no vendor loads. The pin lands on the default
@@ -56,8 +56,8 @@ class _AddressMapStubState extends State<AddressMapStub> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(
-                  LucideIcons.mapPinHouse,
+                MyazaIcon(
+                  MyazaIcons.mapPinHouse,
                   size: 32,
                   color: colors.textSecondary,
                 ),

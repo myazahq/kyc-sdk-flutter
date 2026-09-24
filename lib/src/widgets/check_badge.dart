@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── Check badge ──────────────────────────────────────────────────────────────
 //
@@ -42,8 +42,8 @@ class CheckBadge extends StatelessWidget {
           width: 2,
         ),
       ),
-      child: Icon(
-        LucideIcons.check,
+      child: MyazaIcon(
+        MyazaIcons.check,
         // Keeps the glyph's proportion to the circle at any size.
         size: size * 0.5,
         color: MyazaColors.success,

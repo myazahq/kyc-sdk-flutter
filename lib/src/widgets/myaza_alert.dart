@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── Variant ──────────────────────────────────────────────────────────────────
 
@@ -22,11 +22,11 @@ extension _MyazaAlertVariantStyle on MyazaAlertVariant {
         MyazaAlertVariant.info    => colors.infoBg,
       };
 
-  IconData get icon => switch (this) {
-        MyazaAlertVariant.error   => LucideIcons.circleAlert,
-        MyazaAlertVariant.success => LucideIcons.circleCheck,
-        MyazaAlertVariant.warning => LucideIcons.triangleAlert,
-        MyazaAlertVariant.info    => LucideIcons.info,
+  MyazaIconData get icon => switch (this) {
+        MyazaAlertVariant.error   => MyazaIcons.circleAlert,
+        MyazaAlertVariant.success => MyazaIcons.circleCheck,
+        MyazaAlertVariant.warning => MyazaIcons.triangleAlert,
+        MyazaAlertVariant.info    => MyazaIcons.info,
       };
 }
 
@@ -98,7 +98,7 @@ class MyazaAlert extends StatelessWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(variant.icon, size: 18, color: accent),
+                    MyazaIcon(variant.icon, size: 18, color: accent),
                     const SizedBox(width: MyazaSpacing.sm),
                     Expanded(
                       child: Column(
@@ -125,7 +125,7 @@ class MyazaAlert extends StatelessWidget {
                       const SizedBox(width: MyazaSpacing.sm),
                       GestureDetector(
                         onTap: onDismiss,
-                        child: Icon(LucideIcons.x, size: 16, color: accent),
+                        child: MyazaIcon(MyazaIcons.x, size: 16, color: accent),
                       ),
                     ],
                   ],

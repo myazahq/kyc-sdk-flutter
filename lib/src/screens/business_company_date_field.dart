@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/themed_sheet.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Date of incorporation field ─────────────────────────────────────────────
 //
@@ -51,7 +51,7 @@ class BusinessDateField extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(LucideIcons.calendar, size: 18, color: colors.textSecondary),
+            MyazaIcon(MyazaIcons.calendar, size: 18, color: colors.textSecondary),
             const SizedBox(width: MyazaSpacing.sm),
             Text(
               value ?? placeholder,

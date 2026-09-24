@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── Check card ────────────────────────────────────────────────────────────────
 //
@@ -22,7 +22,7 @@ class MyazaCheckCard extends StatelessWidget {
   final VoidCallback onTap;
 
   /// A glyph between the check and the label — the check stays.
-  final IconData? icon;
+  final MyazaIconData? icon;
 
   /// Greyed and inert — a choice that is locked, not one that is gone.
   final bool enabled;
@@ -63,7 +63,7 @@ class MyazaCheckCard extends StatelessWidget {
                 MyazaCheckBox(checked: checked),
                 const SizedBox(width: 10),
                 if (icon != null) ...[
-                  Icon(
+                  MyazaIcon(
                     icon,
                     size: 20,
                     color: checked ? colors.primary : colors.textSecondary,
@@ -98,7 +98,7 @@ class MyazaCheckBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
       ),
       child: checked
-          ? Icon(LucideIcons.check, size: 14, color: colors.onPrimary)
+          ? MyazaIcon(MyazaIcons.check, size: 14, color: colors.onPrimary)
           : null,
     );
   }

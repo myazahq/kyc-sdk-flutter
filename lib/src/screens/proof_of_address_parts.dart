@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../config/upload_limits.dart';
 import '../widgets/country_flag.dart';
+import '../widgets/icons/icons.dart';
 
 export 'proof_of_address_uploaded_row.dart';
 
@@ -77,7 +77,7 @@ class PoaDropzone extends StatelessWidget {
                   ),
                 )
               else
-                Icon(LucideIcons.upload, size: 30, color: colors.textSecondary),
+                MyazaIcon(MyazaIcons.upload, size: 30, color: colors.textSecondary),
               const SizedBox(height: MyazaSpacing.sm),
               Row(
                 mainAxisSize: MainAxisSize.min,

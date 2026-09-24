@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // The Copy / Share pill under a row that still owes a check. Split from the
 // card (200-line rule).
 
 class KeyPeopleActionPill extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
   final VoidCallback onTap;
 
@@ -31,7 +32,7 @@ class KeyPeopleActionPill extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(icon, size: 15, color: colors.primary),
+              MyazaIcon(icon, size: 15, color: colors.primary),
               const SizedBox(width: MyazaSpacing.xs + 2),
               Text(
                 label,

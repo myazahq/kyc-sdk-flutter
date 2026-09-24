@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/myaza_input.dart';
+import '../../widgets/icons/icons.dart';
 
 /// The minimum a query must reach before either backend is asked. Below it the
 /// answer is noise and the request is wasted.
@@ -35,7 +35,7 @@ class AddressAutocompleteField extends StatelessWidget {
       autocorrect: false,
       textInputAction: TextInputAction.search,
       onChanged: onChanged,
-      prefix: Icon(LucideIcons.search, size: 16, color: colors.textSecondary),
+      prefix: MyazaIcon(MyazaIcons.search, size: 16, color: colors.textSecondary),
       suffix: busy
           ? SizedBox(
               width: 16,
@@ -122,7 +122,7 @@ class _AddressBasicSearchFieldState extends State<AddressBasicSearchField> {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: colors.primary),
                       )
-                    : Icon(LucideIcons.search,
+                    : MyazaIcon(MyazaIcons.search,
                         size: 18,
                         color: enabled ? colors.primary : colors.gray400),
               ),

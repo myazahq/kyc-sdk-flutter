@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'country_flag.dart';
+import 'icons/icons.dart';
 
 // ─── Step header ──────────────────────────────────────────────────────────────
 
@@ -111,9 +111,9 @@ class _BackButton extends StatelessWidget {
         width: size,
         height: size,
         child: Center(
-          child: Icon(
+          child: MyazaIcon(
             // The long-shaft Lucide arrow RN and the web draw.
-            LucideIcons.moveLeft,
+            MyazaIcons.moveLeft,
             size: 22,
             color: colors.textDark.withValues(alpha: 0.8),
           ),

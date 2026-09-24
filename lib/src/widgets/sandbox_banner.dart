@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 /// "You are not in production" strip, shown above the sheet's header.
 ///
@@ -69,7 +69,7 @@ class SandboxBanner extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(LucideIcons.flaskConical, size: 13, color: _ink),
+            const MyazaIcon(MyazaIcons.flaskConical, size: 13, color: _ink),
             const SizedBox(width: MyazaSpacing.xs),
             Text(
               sandbox ? 'SANDBOX' : 'DEVELOPMENT',

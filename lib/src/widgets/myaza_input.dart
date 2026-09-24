@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 
@@ -115,8 +115,8 @@ class _MyazaInputState extends State<MyazaInput> {
     if (widget.obscureText) {
       suffixIcon = GestureDetector(
         onTap: () => setState(() => _obscured = !_obscured),
-        child: Icon(
-          _obscured ? LucideIcons.eyeOff : LucideIcons.eye,
+        child: MyazaIcon(
+          _obscured ? MyazaIcons.eyeOff : MyazaIcons.eye,
           size: 20,
           color: colors.textMuted,
         ),
@@ -231,7 +231,7 @@ class _MyazaInputState extends State<MyazaInput> {
           const SizedBox(height: MyazaSpacing.xs),
           Row(
             children: [
-              const Icon(LucideIcons.circleAlert,
+              const MyazaIcon(MyazaIcons.circleAlert,
                   size: 14, color: MyazaColors.error),
               const SizedBox(width: 4),
               Expanded(

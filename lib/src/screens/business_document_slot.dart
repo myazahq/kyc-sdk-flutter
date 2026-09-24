@@ -2,11 +2,11 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../config/upload_limits.dart';
 import '../widgets/dashed_border.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── One business-document upload slot ────────────────────────────────────────
 //
@@ -134,7 +134,7 @@ class BusinessDocumentSlot extends StatelessWidget {
                 onPressed: onRemove,
                 visualDensity: VisualDensity.compact,
                 tooltip: 'Remove $label',
-                icon: Icon(LucideIcons.x,
+                icon: MyazaIcon(MyazaIcons.x,
                     size: 18, color: colors.textSecondary),
               ),
           ],
@@ -161,7 +161,7 @@ class BusinessDocumentSlot extends StatelessWidget {
                   ),
                 )
               else
-                Icon(LucideIcons.upload, size: 20, color: colors.textMuted),
+                MyazaIcon(MyazaIcons.upload, size: 20, color: colors.textMuted),
               const SizedBox(width: MyazaSpacing.sm + 4),
               Expanded(
                 child: Column(
@@ -281,7 +281,7 @@ class _Leading extends StatelessWidget {
           // A picker can hand back bytes Flutter can't decode (HEIC on some
           // devices); fall back to the tile rather than throwing in build.
           errorBuilder: (_, __, ___) =>
-              _Tile(icon: LucideIcons.fileText, colors: colors),
+              _Tile(icon: MyazaIcons.fileText, colors: colors),
         ),
       );
     }
@@ -298,15 +298,15 @@ class _Leading extends StatelessWidget {
           fit: BoxFit.cover,
           // The OS may have purged the temp file — degrade to the check tile.
           errorBuilder: (_, __, ___) =>
-              _Tile(icon: LucideIcons.check, colors: colors, tinted: true),
+              _Tile(icon: MyazaIcons.check, colors: colors, tinted: true),
         ),
       );
     }
 
     return _Tile(
       icon: done
-          ? (isPdf ? LucideIcons.fileText : LucideIcons.check)
-          : LucideIcons.upload,
+          ? (isPdf ? MyazaIcons.fileText : MyazaIcons.check)
+          : MyazaIcons.upload,
       colors: colors,
       tinted: done,
     );
@@ -314,7 +314,7 @@ class _Leading extends StatelessWidget {
 }
 
 class _Tile extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final MyazaColorScheme colors;
   final bool tinted;
 
@@ -329,7 +329,7 @@ class _Tile extends StatelessWidget {
         color: tinted ? colors.primary100 : colors.backgroundSecondary,
         borderRadius: BorderRadius.circular(MyazaRadius.sm),
       ),
-      child: Icon(icon,
+      child: MyazaIcon(icon,
           size: 20, color: tinted ? colors.primary : colors.textSecondary),
     );
   }

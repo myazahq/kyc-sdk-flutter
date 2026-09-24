@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
+import '../../widgets/icons/icons.dart';
 
 /// The keep-or-update question after a pin move.
 ///
@@ -47,7 +47,7 @@ class AddressLabelDecision extends StatelessWidget {
                   color: colors.primary.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(LucideIcons.mapPinned,
+                child: MyazaIcon(MyazaIcons.mapPinned,
                     size: 16, color: colors.primary),
               ),
               const SizedBox(width: 12),

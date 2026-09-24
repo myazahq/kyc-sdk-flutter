@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../services/nfc_reader.dart';
+import 'icons/icons.dart';
 
 // ─── NFC read progress ────────────────────────────────────────────────────────
 //
@@ -90,7 +90,7 @@ class _StepRow extends StatelessWidget {
 
     final Widget leading;
     if (complete) {
-      leading = const Icon(LucideIcons.circleCheck,
+      leading = const MyazaIcon(MyazaIcons.circleCheck,
           size: 16, color: MyazaColors.success);
     } else if (active) {
       leading = SizedBox(
@@ -99,7 +99,7 @@ class _StepRow extends StatelessWidget {
         child: CircularProgressIndicator(strokeWidth: 2, color: colors.primary),
       );
     } else {
-      leading = Icon(LucideIcons.circle, size: 16, color: colors.gray300);
+      leading = MyazaIcon(MyazaIcons.circle, size: 16, color: colors.gray300);
     }
 
     final color = complete

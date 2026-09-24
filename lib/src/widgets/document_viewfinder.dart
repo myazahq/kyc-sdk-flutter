@@ -1,6 +1,5 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/capture_hints.dart';
 import '../config/theme.dart';
@@ -11,6 +10,7 @@ import 'document_info_pill.dart';
 import 'document_plugin_preview.dart';
 import 'document_scan_overlay.dart';
 import 'native_camera_preview.dart';
+import 'icons/icons.dart';
 
 /// Keys for the two controls whose overlap is a real (and once-shipped) bug:
 /// the hint sat behind the shutter. Layout tests target these.
@@ -158,7 +158,7 @@ class DocumentViewfinder extends StatelessWidget {
                 top: topInset,
                 left: 10,
                 child: _CircleButton(
-                  icon: LucideIcons.arrowLeft,
+                  icon: MyazaIcons.arrowLeft,
                   onTap: onBack!,
                 ),
               ),
@@ -225,7 +225,7 @@ class DocumentViewfinder extends StatelessWidget {
                   if (onUpload != null && !isProcessing) ...[
                     TextButton.icon(
                       onPressed: onUpload,
-                      icon: const Icon(LucideIcons.upload,
+                      icon: const MyazaIcon(MyazaIcons.upload,
                           size: 15, color: Colors.white),
                       label: const Text(
                         'Upload a photo instead',
@@ -329,7 +329,7 @@ class _ViewfinderPlaceholder extends StatelessWidget {
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(LucideIcons.videoOff,
+                  const MyazaIcon(MyazaIcons.videoOff,
                       color: Colors.white54, size: 36),
                   const SizedBox(height: MyazaSpacing.sm),
                   Text('Camera unavailable',
@@ -416,8 +416,8 @@ class _ShutterButton extends StatelessWidget {
             // A scan glyph rather than a camera one: this shutter reads a
             // document, and the corner-bracket shape echoes the guide the user
             // is lining the document up inside.
-            child: Icon(
-              LucideIcons.scanLine,
+            child: MyazaIcon(
+              MyazaIcons.scanLine,
               size: 24,
               color: isEnabled ? Colors.white : Colors.white54,
             ),
@@ -475,8 +475,8 @@ class _TorchButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: on ? Colors.white : Colors.black.withValues(alpha: 0.45),
         ),
-        child: Icon(
-          on ? LucideIcons.zap : LucideIcons.zapOff,
+        child: MyazaIcon(
+          on ? MyazaIcons.zap : MyazaIcons.zapOff,
           size: 18,
           color: on ? context.myazaColors.primary : Colors.white,
         ),
@@ -488,7 +488,7 @@ class _TorchButton extends StatelessWidget {
 /// A round translucent control for the in-frame top row (back, and anything
 /// else the hidden chrome used to carry).
 class _CircleButton extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final VoidCallback onTap;
 
   const _CircleButton({required this.icon, required this.onTap});
@@ -504,7 +504,7 @@ class _CircleButton extends StatelessWidget {
           shape: BoxShape.circle,
           color: Colors.black.withValues(alpha: 0.45),
         ),
-        child: Icon(icon, size: 18, color: Colors.white),
+        child: MyazaIcon(icon, size: 18, color: Colors.white),
       ),
     );
   }

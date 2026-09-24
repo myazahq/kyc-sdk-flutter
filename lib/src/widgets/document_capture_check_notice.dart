@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/document_capture_check.dart';
 import '../config/theme.dart';
 import 'myaza_button.dart';
+import 'icons/icons.dart';
 
 // ─── "Check your photos", on the document review ──────────────────────────────
 //
@@ -55,7 +55,7 @@ class DocumentCaptureCheckNotice extends StatelessWidget {
 
     Widget retake(String side, {required bool primary}) {
       final label = captureRetakeLabel(side, uploadOnly: uploadOnly);
-      const icon = Icon(LucideIcons.rotateCcw);
+      const icon = MyazaIcon(MyazaIcons.rotateCcw);
       // One primary action: the first retake. The rest stay secondary.
       return primary
           ? MyazaButton(
@@ -87,7 +87,7 @@ class DocumentCaptureCheckNotice extends StatelessWidget {
         MyazaButton.outline(
           label: kCaptureCheckContinueAnyway,
           onPressed: onContinueAnyway,
-          leadingIcon: const Icon(LucideIcons.arrowRight),
+          leadingIcon: const MyazaIcon(MyazaIcons.arrowRight),
         ),
       ],
     );
@@ -147,7 +147,7 @@ class _Notice extends StatelessWidget {
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(LucideIcons.triangleAlert, size: 18, color: ink),
+                      MyazaIcon(MyazaIcons.triangleAlert, size: 18, color: ink),
                       const SizedBox(width: MyazaSpacing.sm),
                       Expanded(
                         child: Column(

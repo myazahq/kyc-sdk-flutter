@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'document_upload_target.dart';
 import 'myaza_alert.dart';
+import 'icons/icons.dart';
 
 // ─── Upload-only document side ────────────────────────────────────────────────
 //
@@ -89,9 +89,9 @@ class DocumentUploadOnlyView extends StatelessWidget {
                   onPick: onPick,
                 ),
                 const SizedBox(height: MyazaSpacing.lg),
-                const _Tip(LucideIcons.scan, 'All four corners are in the photo'),
-                const _Tip(LucideIcons.sun, 'No glare, shadows or blur'),
-                const _Tip(LucideIcons.type, 'Every word is easy to read'),
+                const _Tip(MyazaIcons.scan, 'All four corners are in the photo'),
+                const _Tip(MyazaIcons.sun, 'No glare, shadows or blur'),
+                const _Tip(MyazaIcons.type, 'Every word is easy to read'),
               ],
             ),
           ),
@@ -102,7 +102,7 @@ class DocumentUploadOnlyView extends StatelessWidget {
 }
 
 class _Tip extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
 
   const _Tip(this.icon, this.label);
@@ -114,7 +114,7 @@ class _Tip extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: MyazaSpacing.sm),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: colors.primary),
+          MyazaIcon(icon, size: 16, color: colors.primary),
           const SizedBox(width: MyazaSpacing.sm),
           Expanded(
             child: Text(

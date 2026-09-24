@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myaza_kyc_sdk_flutter/src/config/id_types.dart';
 import 'package:myaza_kyc_sdk_flutter/src/services/document_framing_gate.dart';
@@ -7,6 +6,8 @@ import 'package:myaza_kyc_sdk_flutter/src/widgets/country_flag.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/document_ghost.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/document_info_pill.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/document_viewfinder.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/icons/icons.dart';
+import 'icon_finder.dart';
 
 // The full-screen viewfinder stacks controls over a live camera, where a
 // mis-parented or overlapping child is invisible in tests but obvious (and
@@ -167,7 +168,7 @@ void main() {
     ));
     await tester.pump();
 
-    final back = tester.getRect(find.byIcon(LucideIcons.arrowLeft));
+    final back = tester.getRect(findMyazaIcon(MyazaIcons.arrowLeft));
     expect(back.top, greaterThanOrEqualTo(statusBar),
         reason: 'back button overlaps the status bar');
   });

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../services/mrz_parser.dart';
+import 'icons/icons.dart';
 
 // ─── Scanned identity card ────────────────────────────────────────────────────
 //
@@ -38,7 +38,7 @@ class NfcScannedSummary extends StatelessWidget {
             // Optically aligns the tick with the first line of text rather than
             // the block's centre, which drifts as the name wraps.
             padding: const EdgeInsets.only(top: 2),
-            child: Icon(LucideIcons.circleCheck, size: 18, color: colors.primary),
+            child: MyazaIcon(MyazaIcons.circleCheck, size: 18, color: colors.primary),
           ),
           const SizedBox(width: MyazaSpacing.sm),
           Expanded(

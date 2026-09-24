@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/country_names.g.dart';
 import '../config/dial_codes.g.dart';
@@ -9,6 +8,7 @@ import 'dial_code_row.dart';
 import 'dial_code_rows.dart';
 import 'myaza_input.dart';
 import 'themed_sheet.dart';
+import 'icons/icons.dart';
 
 // ─── Country / dial-code picker ───────────────────────────────────────────────
 //
@@ -150,7 +150,7 @@ class _DialCodeSheetState extends State<_DialCodeSheet> {
                 // person has even seen it - search is one tap away.
                 child: MyazaInput(
                   hint: widget.showDial ? 'Search country or code' : 'Search country',
-                  prefix: Icon(LucideIcons.search,
+                  prefix: MyazaIcon(MyazaIcons.search,
                       size: 18, color: colors.textSecondary),
                   onChanged: (v) => setState(() => _query = v),
                 ),

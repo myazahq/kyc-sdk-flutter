@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Contact verification — the already-verified panel ────────────────────────
 //
@@ -49,7 +49,7 @@ class ContactVerifiedView extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(LucideIcons.circleCheck, color: colors.primary),
+              MyazaIcon(MyazaIcons.circleCheck, color: colors.primary),
               const SizedBox(width: MyazaSpacing.md),
               Expanded(
                 child: Text(

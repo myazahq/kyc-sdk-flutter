@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/country_flag.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── The company the applicant picked, standing where the search box was ─────
 //
@@ -54,7 +54,7 @@ class BusinessPickedCard extends StatelessWidget {
                   color: colors.primary,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(LucideIcons.building2,
+                child: MyazaIcon(MyazaIcons.building2,
                     size: 20, color: colors.onPrimary),
               ),
               const SizedBox(width: 12),
@@ -95,7 +95,7 @@ class BusinessPickedCard extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(LucideIcons.pencil,
+                      MyazaIcon(MyazaIcons.pencil,
                           size: 14, color: colors.textDark),
                       const SizedBox(width: 6),
                       Text(

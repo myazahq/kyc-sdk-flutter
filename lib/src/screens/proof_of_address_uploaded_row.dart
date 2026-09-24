@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/country_flag.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Proof of Address — the uploaded state ────────────────────────────────────
 //
@@ -88,7 +88,7 @@ class PoaUploadedRow extends StatelessWidget {
               onPressed: onRemove,
               visualDensity: VisualDensity.compact,
               tooltip: 'Remove document',
-              icon: Icon(LucideIcons.x, size: 18, color: colors.textSecondary),
+              icon: MyazaIcon(MyazaIcons.x, size: 18, color: colors.textSecondary),
             ),
         ],
       ),
@@ -120,7 +120,7 @@ class PoaThumb extends StatelessWidget {
           border: Border.all(color: colors.border),
           borderRadius: BorderRadius.circular(MyazaRadius.xs),
         ),
-        child: Icon(LucideIcons.fileText, size: 22, color: colors.primary),
+        child: MyazaIcon(MyazaIcons.fileText, size: 22, color: colors.primary),
       );
     }
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/whatsapp_icon.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Contact verification — delivery-channel choice ───────────────────────────
 //
@@ -29,7 +29,7 @@ const Map<String, String> _kChannelHints = {
 /// WhatsApp needs its own brand mark; SMS reads fine as a generic glyph.
 Widget _channelGlyph(String channel, Color color) => channel == 'whatsapp'
     ? WhatsAppIcon(color: color, size: 16)
-    : Icon(LucideIcons.messageSquare, size: 16, color: color);
+    : MyazaIcon(MyazaIcons.messageSquare, size: 16, color: color);
 
 class ContactChannelChoice extends StatelessWidget {
   final List<String> offered;

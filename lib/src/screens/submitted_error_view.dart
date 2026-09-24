@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
 import '../config/kyc_config.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Error view ───────────────────────────────────────────────────────────────
 
@@ -82,7 +82,7 @@ class ErrorView extends StatelessWidget {
                 child: MyazaButton.outline(
                   label: 'Try Again',
                   onPressed: onRetry,
-                  leadingIcon: const Icon(LucideIcons.refreshCw),
+                  leadingIcon: const MyazaIcon(MyazaIcons.refreshCw),
                 ),
               ),
               const SizedBox(width: MyazaSpacing.md),
@@ -119,8 +119,8 @@ class _ErrorBadge extends StatelessWidget {
           width: 2,
         ),
       ),
-      child: const Icon(
-        LucideIcons.circleAlert,
+      child: const MyazaIcon(
+        MyazaIcons.circleAlert,
         size: 44,
         color: MyazaColors.error,
       ),

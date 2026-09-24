@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
 import 'country_flag.dart';
+import 'icons/icons.dart';
 import 'dial_code_picker.dart' show showCountryPicker;
 
 // ─── Country field ────────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@ class CountryField extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: MyazaSpacing.sm),
-              Icon(LucideIcons.chevronDown,
+              MyazaIcon(MyazaIcons.chevronDown,
                   size: 18, color: colors.textSecondary),
             ],
           ),

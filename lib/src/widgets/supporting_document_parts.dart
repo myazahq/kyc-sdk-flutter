@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── The pieces of a supporting-document card ────────────────────────────────
 //
@@ -35,7 +35,7 @@ class DocumentMarker extends StatelessWidget {
         shape: BoxShape.circle,
       ),
       child: done
-          ? Icon(LucideIcons.check, size: 16, color: colors.onPrimary)
+          ? MyazaIcon(MyazaIcons.check, size: 16, color: colors.onPrimary)
           : total > 1
               ? Text(
                   '$position',
@@ -44,7 +44,7 @@ class DocumentMarker extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 )
-              : Icon(LucideIcons.fileText, size: 14, color: colors.primary),
+              : MyazaIcon(MyazaIcons.fileText, size: 14, color: colors.primary),
     );
   }
 }
@@ -123,7 +123,7 @@ class DocumentReads extends StatelessWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(LucideIcons.check, size: 12, color: colors.primary),
+                      MyazaIcon(MyazaIcons.check, size: 12, color: colors.primary),
                       const SizedBox(width: 4),
                       Text(read, style: text.bodySmall),
                     ],

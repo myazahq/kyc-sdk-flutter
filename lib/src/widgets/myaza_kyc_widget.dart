@@ -1,7 +1,6 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,6 +53,7 @@ import 'sandbox_banner.dart';
 import 'myaza_button.dart';
 import '../config/kyc_result.dart';
 import '../services/model_readiness.dart';
+import 'icons/icons.dart';
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 
@@ -1078,8 +1078,8 @@ class _ConfigErrorScreen extends StatelessWidget {
                   color: MyazaColors.error.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  LucideIcons.circleAlert,
+                child: const MyazaIcon(
+                  MyazaIcons.circleAlert,
                   size: 40,
                   color: MyazaColors.error,
                 ),

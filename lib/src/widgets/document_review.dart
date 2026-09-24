@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'document_review_side.dart';
+import 'icons/icons.dart';
 
 // ─── Document review ──────────────────────────────────────────────────────────
 //
@@ -115,7 +115,7 @@ class _DocumentReviewState extends State<DocumentReview> {
                 color: MyazaColors.success.withValues(alpha: 0.15),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(LucideIcons.check,
+              child: const MyazaIcon(MyazaIcons.check,
                   size: 13, color: MyazaColors.success),
             ),
             const SizedBox(width: MyazaSpacing.xs),

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/business.dart';
 import '../config/business_application.dart';
 import '../config/id_types.dart' show countryLabel;
 import '../config/theme.dart';
 import '../widgets/country_flag.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── One saved key person, summarised ────────────────────────────────────────
 //
@@ -172,7 +172,7 @@ class KeyPersonCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: MyazaSpacing.sm),
-                Icon(LucideIcons.pencil,
+                MyazaIcon(MyazaIcons.pencil,
                     size: 16, color: colors.textSecondary),
                 if (onRemove != null)
                   Padding(
@@ -184,7 +184,7 @@ class KeyPersonCard extends StatelessWidget {
                       constraints:
                           const BoxConstraints(minWidth: 36, minHeight: 36),
                       padding: EdgeInsets.zero,
-                      icon: Icon(LucideIcons.x,
+                      icon: MyazaIcon(MyazaIcons.x,
                           size: 16, color: colors.textMuted),
                     ),
                   ),

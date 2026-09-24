@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../config/id_types.dart' show countryLabel;
@@ -8,6 +7,7 @@ import '../config/theme.dart';
 import 'country_flag.dart';
 import 'key_people_await_pill.dart';
 import 'key_people_await_row.dart';
+import 'icons/icons.dart';
 
 // One person on the KYB success screen's list: who they are, where their check
 // stands, and — while it is still open — the link that gets them there.
@@ -119,8 +119,8 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
                                 child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Icon(
-                                      LucideIcons.building2,
+                                    MyazaIcon(
+                                      MyazaIcons.building2,
                                       size: 12,
                                       color: colors.textDark,
                                     ),
@@ -204,7 +204,7 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
               children: [
                 Expanded(
                   child: KeyPeopleActionPill(
-                    icon: _copied ? LucideIcons.check : LucideIcons.copy,
+                    icon: _copied ? MyazaIcons.check : MyazaIcons.copy,
                     label: _copied ? 'Copied' : 'Copy link',
                     onTap: _copy,
                   ),
@@ -215,7 +215,7 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
                   // box (not the whole card).
                   child: Builder(
                     builder: (pillContext) => KeyPeopleActionPill(
-                      icon: LucideIcons.share2,
+                      icon: MyazaIcons.share2,
                       label: 'Share',
                       onTap: () => _share(pillContext),
                     ),

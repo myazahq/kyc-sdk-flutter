@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
+import '../widgets/icons/icons.dart';
 
 /// The FATF fallback, attested.
 ///
@@ -67,7 +67,7 @@ class KeyPeopleUboExemption extends StatelessWidget {
                         color: checked ? colors.primary : Colors.transparent,
                       ),
                       child: checked
-                          ? Icon(LucideIcons.check,
+                          ? MyazaIcon(MyazaIcons.check,
                               size: 13, color: colors.onPrimary)
                           : null,
                     ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import 'presence_milestones.dart';
+import 'icons/icons.dart';
 
 /// The milestone track: a vertical rail, each node wearing its stage label.
 ///
@@ -150,7 +151,7 @@ class PresenceMedallion extends StatelessWidget {
                       ]
                     : null,
               ),
-              child: Icon(milestone.icon,
+              child: MyazaIcon(milestone.icon,
                   size: size * 0.45,
                   color: active ? colors.onPrimary : colors.primary),
             ),

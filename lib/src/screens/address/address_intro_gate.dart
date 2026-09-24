@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/myaza_button.dart';
 import '../../widgets/presence_milestone_track.dart';
 import '../../widgets/presence_milestones.dart';
 import 'address_intro_disclosures.dart';
+import '../../widgets/icons/icons.dart';
 
 // ─── The presence primer ─────────────────────────────────────────────────────
 //
@@ -44,20 +44,20 @@ class AddressIntroGate extends StatelessWidget {
 
   List<PresenceMilestone> get _milestones => [
         const PresenceMilestone(
-          icon: LucideIcons.mapPinHouse,
+          icon: MyazaIcons.mapPinHouse,
           stage: 'Your part',
           title: 'Pin your address',
           caption: 'Put the pin right on your building. Takes a minute.',
           active: true,
         ),
         PresenceMilestone(
-          icon: LucideIcons.radar,
+          icon: MyazaIcons.radar,
           stage: 'After that',
           title: 'Quiet check-ins',
           caption: background ? _kCheckInBackground : _kCheckInForeground,
         ),
         const PresenceMilestone(
-          icon: LucideIcons.bellRing,
+          icon: MyazaIcons.bellRing,
           stage: 'Then',
           title: 'Confirmed',
           caption: "You’ll be notified. That is it.",
@@ -75,7 +75,7 @@ class AddressIntroGate extends StatelessWidget {
           PresenceCard(
             header: PresenceHeaderBand(
               badge: PresenceBadge(
-                leading: Icon(LucideIcons.mapPinCheck,
+                leading: MyazaIcon(MyazaIcons.mapPinCheck,
                     size: 12, color: colors.primary),
                 label: 'Address verification',
               ),

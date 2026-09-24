@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/dashed_border.dart';
 import 'address_photo_filled.dart';
+import '../../widgets/icons/icons.dart';
 
 // ─── The entrance photo, as the hero of its screen ───────────────────────────
 //
@@ -87,7 +87,7 @@ class _Empty extends StatelessWidget {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: colors.primary),
                         )
-                      : Icon(LucideIcons.camera,
+                      : MyazaIcon(MyazaIcons.camera,
                           size: 24, color: colors.primary),
                 ),
                 const SizedBox(height: MyazaSpacing.md),

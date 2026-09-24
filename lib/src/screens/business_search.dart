@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../providers/kyc_provider.dart';
@@ -10,6 +9,7 @@ import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
 import 'business_search_results.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Finding the company by name, because that is what people know ───────────
 //
@@ -159,7 +159,7 @@ class _BusinessSearchState extends ConsumerState<BusinessSearch> {
         MyazaInput(
           controller: _queryCtrl,
           hint: 'Search by company name',
-          prefix: Icon(LucideIcons.search, size: 16, color: colors.textMuted),
+          prefix: MyazaIcon(MyazaIcons.search, size: 16, color: colors.textMuted),
           onChanged: (_) => setState(() {}),
           onSubmitted: (_) => _run(),
         ),
@@ -169,7 +169,7 @@ class _BusinessSearchState extends ConsumerState<BusinessSearch> {
         MyazaButton(
           label: searching ? 'Searching…' : 'Search',
           leadingIcon:
-              searching ? null : const Icon(LucideIcons.search, size: 18),
+              searching ? null : const MyazaIcon(MyazaIcons.search, size: 18),
           isLoading: searching,
           onPressed: searching ||
                   _queryCtrl.text.trim().length < 2 ||
@@ -225,7 +225,7 @@ class _BusinessSearchState extends ConsumerState<BusinessSearch> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(LucideIcons.pencil,
+                    MyazaIcon(MyazaIcons.pencil,
                         size: 14, color: colors.textSecondary),
                     const SizedBox(width: 6),
                     Text(

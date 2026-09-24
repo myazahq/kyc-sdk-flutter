@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'dashed_border.dart';
+import 'icons/icons.dart';
 
 // ─── The upload-only tap target ───────────────────────────────────────────────
 //
@@ -77,7 +77,7 @@ class DocumentUploadTarget extends StatelessWidget {
                             child: CircularProgressIndicator(
                                 strokeWidth: 2, color: colors.primary),
                           )
-                        : Icon(LucideIcons.imageUp,
+                        : MyazaIcon(MyazaIcons.imageUp,
                             size: 24, color: colors.primary),
                   ),
                   const SizedBox(height: MyazaSpacing.sm),
@@ -108,7 +108,7 @@ class DocumentUploadTarget extends StatelessWidget {
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(LucideIcons.upload,
+                        MyazaIcon(MyazaIcons.upload,
                             size: 16, color: colors.primary),
                         const SizedBox(width: 6),
                         Text(
@@ -119,7 +119,7 @@ class DocumentUploadTarget extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 2),
-                        Icon(LucideIcons.chevronRight,
+                        MyazaIcon(MyazaIcons.chevronRight,
                             size: 16, color: colors.primary),
                       ],
                     ),

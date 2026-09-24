@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 // ─── The presence story, as one shape ────────────────────────────────────────
 //
@@ -16,7 +17,7 @@ import '../config/theme.dart';
 /// One node on the track. [active] nodes are filled; the rest are TINTED, not
 /// greyed out: they are the plan, not disabled controls.
 class PresenceMilestone {
-  final IconData icon;
+  final MyazaIconData icon;
   final String stage;
   final String title;
   final String caption;

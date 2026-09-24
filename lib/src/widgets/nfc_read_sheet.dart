@@ -1,12 +1,12 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../services/nfc_reader.dart';
 import 'nfc_read_progress.dart';
 import 'themed_sheet.dart';
+import 'icons/icons.dart';
 
 // ─── NFC read sheet (Android) ─────────────────────────────────────────────────
 //
@@ -150,7 +150,7 @@ class _PulsingChipIcon extends StatelessWidget {
         shape: BoxShape.circle,
         color: colors.primary50,
       ),
-      child: Icon(LucideIcons.nfc, size: 30, color: colors.primary),
+      child: MyazaIcon(MyazaIcons.nfc, size: 30, color: colors.primary),
     );
 
     if (!waiting) return Center(child: icon);

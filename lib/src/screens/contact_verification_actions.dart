@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Contact verification — footer actions ────────────────────────────────────
 //
@@ -72,8 +72,8 @@ class ContactActions extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isPhone ? LucideIcons.smartphone : LucideIcons.mail,
+            MyazaIcon(
+              isPhone ? MyazaIcons.smartphone : MyazaIcons.mail,
               size: 12,
               color: colors.textSecondary,
             ),

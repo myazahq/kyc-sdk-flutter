@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'themed_sheet.dart';
+import 'icons/icons.dart';
 
 // ─── Media source sheet ───────────────────────────────────────────────────────
 //
@@ -34,21 +34,21 @@ Future<MediaSource?> showMediaSourceSheet(
           mainAxisSize: MainAxisSize.min,
           children: [
             _SourceTile(
-              icon: LucideIcons.image,
+              icon: MyazaIcons.image,
               title: 'Photo Library',
               subtitle: 'Pick an existing photo',
               onTap: () =>
                   Navigator.of(sheetContext).pop(MediaSource.photoLibrary),
             ),
             _SourceTile(
-              icon: LucideIcons.camera,
+              icon: MyazaIcons.camera,
               title: 'Take Photo',
               subtitle: 'Use the camera',
               onTap: () => Navigator.of(sheetContext).pop(MediaSource.camera),
             ),
             if (allowFiles)
               _SourceTile(
-                icon: LucideIcons.fileText,
+                icon: MyazaIcons.fileText,
                 title: filesLabel,
                 subtitle: filesSubtitle,
                 onTap: () => Navigator.of(sheetContext).pop(MediaSource.files),
@@ -61,7 +61,7 @@ Future<MediaSource?> showMediaSourceSheet(
 }
 
 class _SourceTile extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final String title;
   final String subtitle;
   final VoidCallback onTap;
@@ -95,7 +95,7 @@ class _SourceTile extends StatelessWidget {
                 color: colors.primary50,
                 borderRadius: BorderRadius.circular(MyazaRadius.sm),
               ),
-              child: Icon(icon, size: 20, color: colors.primary),
+              child: MyazaIcon(icon, size: 20, color: colors.primary),
             ),
             const SizedBox(width: MyazaSpacing.md),
             Expanded(

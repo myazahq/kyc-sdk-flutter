@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +13,7 @@ import '../widgets/country_flag.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
 import '../widgets/themed_sheet.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Questionnaire screen ─────────────────────────────────────────────────────
 //
@@ -511,7 +511,7 @@ class _DateField extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(LucideIcons.calendar, size: 18, color: colors.textSecondary),
+            MyazaIcon(MyazaIcons.calendar, size: 18, color: colors.textSecondary),
             const SizedBox(width: MyazaSpacing.sm),
             Text(
               value ?? (field.placeholder ?? 'Select a date'),

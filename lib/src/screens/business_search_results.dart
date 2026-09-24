@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../services/api_service.dart';
 import '../widgets/country_flag.dart';
 import '../widgets/myaza_input.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── The search result list ───────────────────────────────────────────────────
 //
@@ -63,7 +63,7 @@ class BusinessSearchResults extends StatelessWidget {
                     hint: 'Name or number',
                     height: 40,
                     fontSize: 14,
-                    prefix: Icon(LucideIcons.filter,
+                    prefix: MyazaIcon(MyazaIcons.filter,
                         size: 14, color: colors.textMuted),
                     onChanged: onFilter,
                   ),
@@ -93,7 +93,7 @@ class BusinessSearchResults extends StatelessWidget {
                     ),
                     child: Row(
                       children: [
-                        Icon(LucideIcons.building2,
+                        MyazaIcon(MyazaIcons.building2,
                             size: 16, color: colors.textSecondary),
                         const SizedBox(width: 12),
                         Expanded(

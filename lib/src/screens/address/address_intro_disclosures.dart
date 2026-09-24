@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
+import '../../widgets/icons/icons.dart';
 
 // ─── The presence disclosures ────────────────────────────────────────────────
 //
@@ -11,7 +11,7 @@ import '../../config/theme.dart';
 // 200-line rule. Copy is a lockstep mirror of the web and RN SDKs.
 
 class _Disclosure {
-  final IconData icon;
+  final MyazaIconData icon;
   final String title;
   final String body;
   const _Disclosure(this.icon, this.title, this.body);
@@ -28,18 +28,18 @@ const _kHowItWorksBackground =
 
 List<_Disclosure> _disclosuresFor(bool background) => [
   _Disclosure(
-    LucideIcons.circleHelp,
+    MyazaIcons.circleHelp,
     'How it works',
     background ? _kHowItWorksBackground : _kHowItWorksForeground,
   ),
   const _Disclosure(
-    LucideIcons.slidersHorizontal,
+    MyazaIcons.slidersHorizontal,
     'You stay in control',
     'You can turn location off at any time in your device settings. An '
         'unfinished check simply expires. It never counts against you.',
   ),
   const _Disclosure(
-    LucideIcons.shieldCheck,
+    MyazaIcons.shieldCheck,
     'Your data is protected',
     "Location summaries are used only to confirm this address and are handled "
         "under your country's data protection rules.",
@@ -133,7 +133,7 @@ class _DisclosureRow extends StatelessWidget {
                             : colors.backgroundSecondary,
                         borderRadius: BorderRadius.circular(MyazaRadius.xs),
                       ),
-                      child: Icon(disclosure.icon,
+                      child: MyazaIcon(disclosure.icon,
                           size: 16,
                           color:
                               open ? colors.primary : colors.textSecondary),
@@ -147,7 +147,7 @@ class _DisclosureRow extends StatelessWidget {
                       turns: open ? 0.5 : 0,
                       duration: const Duration(milliseconds: 300),
                       curve: Curves.easeOut,
-                      child: Icon(LucideIcons.chevronDown,
+                      child: MyazaIcon(MyazaIcons.chevronDown,
                           size: 16, color: colors.textSecondary),
                     ),
                   ],

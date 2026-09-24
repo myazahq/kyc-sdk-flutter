@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'presence_milestone_track.dart';
 import 'presence_milestones.dart';
+import 'icons/icons.dart';
 
 /// The success screen's presence card, drawn as a LIVE PROCESS rather than a
 /// notice: the check began the moment they submitted, so the badge pulses and
@@ -18,20 +18,20 @@ class PresenceExpectations extends StatelessWidget {
 
   static const _milestones = [
     PresenceMilestone(
-      icon: LucideIcons.mapPinCheck,
+      icon: MyazaIcons.mapPinCheck,
       stage: 'Today',
       title: 'Check started',
       caption: 'Your pin is saved. Keep location on.',
       active: true,
     ),
     PresenceMilestone(
-      icon: LucideIcons.radar,
+      icon: MyazaIcons.radar,
       stage: 'Next few days',
       title: 'Quiet check-ins',
       caption: 'Your phone confirms it is at your address now and then.',
     ),
     PresenceMilestone(
-      icon: LucideIcons.bellRing,
+      icon: MyazaIcons.bellRing,
       stage: 'Then',
       title: 'Confirmed',
       caption: 'You get a notification. That is it.',

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'myaza_button.dart';
+import 'icons/icons.dart';
 
 /// Friendly screen shown when the OS camera permission is denied/blocked.
 /// Explains that camera access is required and how to re-enable it, with an
@@ -53,8 +53,8 @@ class CameraPermissionView extends StatelessWidget {
                   color: MyazaColors.error.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  LucideIcons.cameraOff,
+                child: const MyazaIcon(
+                  MyazaIcons.cameraOff,
                   size: 38,
                   color: MyazaColors.error,
                 ),

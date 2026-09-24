@@ -5,10 +5,10 @@ import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:image/image.dart' as img;
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'myaza_button.dart';
+import 'icons/icons.dart';
 
 // ─── Gallery-photo cropper ────────────────────────────────────────────────────
 //
@@ -261,7 +261,7 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
         shape: Border(bottom: BorderSide(color: colors.border)),
         leadingWidth: 56,
         leading: IconButton(
-          icon: const Icon(LucideIcons.x, size: 20),
+          icon: const MyazaIcon(MyazaIcons.x, size: 20),
           onPressed: () => Navigator.of(context).pop<Uint8List?>(null),
           tooltip: 'Cancel',
         ),
@@ -347,7 +347,7 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
                 // workflow, its loading state while the crop runs.
                 child: MyazaButton(
                   label: 'Crop & Use',
-                  leadingIcon: const Icon(LucideIcons.check, size: 18),
+                  leadingIcon: const MyazaIcon(MyazaIcons.check, size: 18),
                   isLoading: _isProcessing,
                   onPressed: _cropInitialized ? _onConfirm : null,
                 ),

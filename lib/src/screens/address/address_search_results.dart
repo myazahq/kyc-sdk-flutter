@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
+import '../../widgets/icons/icons.dart';
 
 /// The results container: a bordered list of rows, or the empty line.
 ///
@@ -86,7 +86,7 @@ class AddressSearchResultRow extends StatelessWidget {
               children: [
                 Padding(
                   padding: const EdgeInsets.only(top: 2),
-                  child: Icon(LucideIcons.mapPin,
+                  child: MyazaIcon(MyazaIcons.mapPin,
                       size: 16, color: colors.primary),
                 ),
                 const SizedBox(width: MyazaSpacing.sm),

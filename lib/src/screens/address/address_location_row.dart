@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
+import '../../widgets/icons/icons.dart';
 
 /// "Use my current location" as a proper ROW, not a button pretending to be
 /// two: a medallion showing the fix's state, a title with the RESOLVED ADDRESS
@@ -60,8 +60,8 @@ class CurrentLocationRow extends StatelessWidget {
                         child: CircularProgressIndicator(
                             strokeWidth: 2, color: colors.primary),
                       )
-                    : Icon(
-                        hasHint ? LucideIcons.mapPin : LucideIcons.locateFixed,
+                    : MyazaIcon(
+                        hasHint ? MyazaIcons.mapPin : MyazaIcons.locateFixed,
                         size: 18,
                         color: hasHint ? colors.onPrimary : colors.primary,
                       ),
@@ -90,7 +90,7 @@ class CurrentLocationRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: MyazaSpacing.sm),
-              Icon(LucideIcons.chevronRight,
+              MyazaIcon(MyazaIcons.chevronRight,
                   size: 16, color: colors.textSecondary),
             ],
           ),
@@ -148,7 +148,7 @@ class LocateOnMapButton extends StatelessWidget {
                         strokeWidth: 2, color: colors.textSecondary),
                   )
                 else
-                  Icon(LucideIcons.locateFixed,
+                  MyazaIcon(MyazaIcons.locateFixed,
                       size: 16, color: colors.primary),
                 const SizedBox(width: MyazaSpacing.sm),
                 Text(

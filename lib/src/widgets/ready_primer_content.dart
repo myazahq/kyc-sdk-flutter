@@ -1,5 +1,5 @@
 import 'package:flutter/widgets.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'icons/icons.dart';
 
 // ─── "Here's what happens next" copy ─────────────────────────────────────────
 //
@@ -14,7 +14,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 @immutable
 class ReadyChecklistItem {
   const ReadyChecklistItem(this.icon, this.label);
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
 }
 
@@ -27,7 +27,7 @@ class ReadyContent {
     required this.checklist,
   });
 
-  final IconData icon;
+  final MyazaIconData icon;
   final String title;
   final String body;
 
@@ -36,25 +36,25 @@ class ReadyContent {
 }
 
 const readyDocument = ReadyContent(
-  icon: LucideIcons.scanLine,
+  icon: MyazaIcons.scanLine,
   title: "You're about to scan your ID",
   body: "We'll photograph your document and read it automatically. "
       'Nothing is shared until you submit.',
   checklist: [
-    ReadyChecklistItem(LucideIcons.idCard, 'Have your physical document with you'),
-    ReadyChecklistItem(LucideIcons.sun, 'Find even lighting, avoid glare'),
-    ReadyChecklistItem(LucideIcons.timer, 'Takes about a minute'),
+    ReadyChecklistItem(MyazaIcons.idCard, 'Have your physical document with you'),
+    ReadyChecklistItem(MyazaIcons.sun, 'Find even lighting, avoid glare'),
+    ReadyChecklistItem(MyazaIcons.timer, 'Takes about a minute'),
   ],
 );
 
 const readyLiveness = ReadyContent(
-  icon: LucideIcons.scanFace,
+  icon: MyazaIcons.scanFace,
   title: "Let's confirm you're really here",
   body: "You'll follow a few short prompts on screen. This proves a real person "
       'is present, not a photo or a recording.',
   checklist: [
-    ReadyChecklistItem(LucideIcons.userRound, 'Put your face in the circle'),
-    ReadyChecklistItem(LucideIcons.sun, 'Find even lighting, remove sunglasses'),
-    ReadyChecklistItem(LucideIcons.timer, 'Takes about 10 seconds'),
+    ReadyChecklistItem(MyazaIcons.userRound, 'Put your face in the circle'),
+    ReadyChecklistItem(MyazaIcons.sun, 'Find even lighting, remove sunglasses'),
+    ReadyChecklistItem(MyazaIcons.timer, 'Takes about 10 seconds'),
   ],
 );

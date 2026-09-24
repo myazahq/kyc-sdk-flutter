@@ -3,7 +3,6 @@ import '../config/scope.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../config/brand.dart';
@@ -11,6 +10,7 @@ import '../config/business_application.dart';
 import '../providers/step_resubmit.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Consent screen ───────────────────────────────────────────────────────────
 
@@ -22,7 +22,7 @@ class ConsentScreen extends ConsumerStatefulWidget {
 }
 
 class _ProcessStep {
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
   const _ProcessStep(this.icon, this.label);
 }
@@ -159,11 +159,11 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     final steps = <_ProcessStep>[
       if (isBusiness) ...[
         const _ProcessStep(
-          LucideIcons.building2,
+          MyazaIcons.building2,
           'Collect your business registration details',
         ),
         const _ProcessStep(
-          LucideIcons.badgeCheck,
+          MyazaIcons.badgeCheck,
           'Verify your business against the official registry',
         ),
       ] else if (scope == 'address') ...[
@@ -173,42 +173,42 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         // bullet is appended by the shared post-capture block below.
         if (config.addressCollection?.enabled ?? false) ...[
           const _ProcessStep(
-            LucideIcons.mapPinHouse,
+            MyazaIcons.mapPinHouse,
             'Pin your home address on a map',
           ),
           const _ProcessStep(
-            LucideIcons.badgeCheck,
+            MyazaIcons.badgeCheck,
             'Confirm the details only you can know',
           ),
         ],
       ] else if (faceScope) ...[
         const _ProcessStep(
-          LucideIcons.scanFace,
+          MyazaIcons.scanFace,
           'Take a quick selfie with liveness checks',
         ),
         _ProcessStep(
-          LucideIcons.badgeCheck,
+          MyazaIcons.badgeCheck,
           scope == 'biometric-authentication'
               ? 'We match it against your enrolled face'
               : 'It becomes your face check for next time',
         ),
       ] else if (scope == 'questionnaire') ...[
         const _ProcessStep(
-          LucideIcons.badgeCheck,
+          MyazaIcons.badgeCheck,
           'Answer a few short questions',
         ),
       ] else if (scope == 'contact') ...[
         const _ProcessStep(
-          LucideIcons.lock,
+          MyazaIcons.lock,
           'Confirm your contact details with a one-time code',
         ),
       ] else ...[
         const _ProcessStep(
-          LucideIcons.badgeCheck,
+          MyazaIcons.badgeCheck,
           'Verify your government-issued ID',
         ),
         const _ProcessStep(
-          LucideIcons.userRound,
+          MyazaIcons.userRound,
           'Collect basic personal information',
         ),
       ],
@@ -217,12 +217,12 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
       // twice the moment both channels were on.
       if (scope != 'contact' && hasContactStep)
         _ProcessStep(
-          LucideIcons.lock,
+          MyazaIcons.lock,
           'Confirm your $contactWhat with a one-time code',
         ),
       if (!isBusiness && scope == null && config.enableDocumentCapture)
         const _ProcessStep(
-          LucideIcons.scanLine,
+          MyazaIcons.scanLine,
           'Capture a photo of your ID document',
         ),
       // Chip-capable IDs (e-passports, some eID cards) additionally read the
@@ -231,12 +231,12 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
       // the document/selfie rows (a non-chip ID simply skips it).
       if (!isBusiness && scope == null && (config.nfc?.enabled ?? false))
         const _ProcessStep(
-          LucideIcons.nfc,
+          MyazaIcons.nfc,
           'Scan your document’s security chip (NFC)',
         ),
       if (!isBusiness && scope == null && config.enableSelfie)
         const _ProcessStep(
-          LucideIcons.scanFace,
+          MyazaIcons.scanFace,
           'Take a selfie for facial verification',
         ),
       // Post-capture features, in the order the flow runs them. Each is gated
@@ -244,34 +244,34 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
       // catalogue bullet already covers the same step.
       if (!isBusiness && (config.proofOfAddress?.enabled ?? false))
         const _ProcessStep(
-          LucideIcons.fileText,
+          MyazaIcons.fileText,
           'Upload a proof of address document',
         ),
       if (scope != 'address' && (config.addressCollection?.enabled ?? false))
         const _ProcessStep(
-          LucideIcons.mapPinHouse,
+          MyazaIcons.mapPinHouse,
           'Pin your address on a map',
         ),
       // The step-order predicate, not a raw fields check: a questionnaire with
       // questions but enabled: false never runs, so it must not be promised.
       if (scope != 'questionnaire' && (config.questionnaire?.isActive ?? false))
         const _ProcessStep(
-          LucideIcons.badgeCheck,
+          MyazaIcons.badgeCheck,
           'Answer a few short questions',
         ),
       if (isBusiness && hasKeyPeopleCollection(business))
         const _ProcessStep(
-          LucideIcons.usersRound,
+          MyazaIcons.usersRound,
           "List the company's directors and owners",
         ),
       if (isBusiness && hasBusinessDocumentsStep(business))
         const _ProcessStep(
-          LucideIcons.fileText,
+          MyazaIcons.fileText,
           'Upload supporting business documents',
         ),
       if (isBusiness && hasApplicantVerification(business))
         const _ProcessStep(
-          LucideIcons.scanFace,
+          MyazaIcons.scanFace,
           'Verify your own identity',
         ),
     ];
@@ -299,7 +299,7 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(LucideIcons.refreshCw, size: 16, color: MyazaColors.warning),
+                const MyazaIcon(MyazaIcons.refreshCw, size: 16, color: MyazaColors.warning),
                 const SizedBox(width: MyazaSpacing.sm),
                 Expanded(
                   child: Column(
@@ -404,7 +404,7 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(LucideIcons.lock, size: 13, color: colors.textMuted),
+            MyazaIcon(MyazaIcons.lock, size: 13, color: colors.textMuted),
             const SizedBox(width: 6),
             Text(
               'Your data is encrypted and securely processed',
@@ -466,7 +466,7 @@ class _ShieldHero extends StatelessWidget {
                 ),
               ],
             ),
-            child: Icon(LucideIcons.shieldCheck, size: 28, color: colors.onPrimary),
+            child: MyazaIcon(MyazaIcons.shieldCheck, size: 28, color: colors.onPrimary),
           ),
         ],
       ),
@@ -540,7 +540,7 @@ class _StepRow extends StatelessWidget {
             color: colors.primary.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(MyazaRadius.xs),
           ),
-          child: Icon(step.icon, size: 18, color: colors.primary),
+          child: MyazaIcon(step.icon, size: 18, color: colors.primary),
         ),
         const SizedBox(width: MyazaSpacing.sm + 4),
         Expanded(

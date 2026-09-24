@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import 'myaza_button.dart';
 import 'pulse_ring.dart';
 import 'ready_primer_content.dart';
+import 'icons/icons.dart';
 
 /// "Here's what happens next" screen, shown once before a capture step opens
 /// the camera.
@@ -72,7 +73,7 @@ class ReadyPrimer extends StatelessWidget {
                             color: colors.primary.withValues(alpha: 0.15),
                             shape: BoxShape.circle,
                           ),
-                          child: Icon(content.icon,
+                          child: MyazaIcon(content.icon,
                               size: 28, color: colors.primary), // h-7 w-7
                         ),
                       ],
@@ -104,7 +105,7 @@ class ReadyPrimer extends StatelessWidget {
                       color: colors.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(MyazaRadius.xs),
                     ),
-                    child: Icon(item.icon, size: 18, color: colors.primary),
+                    child: MyazaIcon(item.icon, size: 18, color: colors.primary),
                   ),
                   const SizedBox(width: 12), // gap-3
                   Expanded(

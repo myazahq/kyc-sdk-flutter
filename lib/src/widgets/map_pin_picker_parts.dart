@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../utils/map_tiles.dart';
 import 'map_pin_marker.dart';
+import 'icons/icons.dart';
 
 // ─── Map picker chrome ───────────────────────────────────────────────────────
 //
@@ -122,13 +122,13 @@ class MapZoomControls extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           _ZoomButton(
-            icon: LucideIcons.plus,
+            icon: MyazaIcons.plus,
             label: 'Zoom in',
             onTap: () => onZoom(1),
           ),
           Container(height: 1, width: 32, color: colors.border),
           _ZoomButton(
-            icon: LucideIcons.minus,
+            icon: MyazaIcons.minus,
             label: 'Zoom out',
             onTap: () => onZoom(-1),
           ),
@@ -139,7 +139,7 @@ class MapZoomControls extends StatelessWidget {
 }
 
 class _ZoomButton extends StatelessWidget {
-  final IconData icon;
+  final MyazaIconData icon;
   final String label;
   final VoidCallback onTap;
   const _ZoomButton({required this.icon, required this.label, required this.onTap});
@@ -154,7 +154,7 @@ class _ZoomButton extends StatelessWidget {
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.all(8),
-          child: Icon(icon, size: 16, color: colors.textDark),
+          child: MyazaIcon(icon, size: 16, color: colors.textDark),
         ),
       ),
     );

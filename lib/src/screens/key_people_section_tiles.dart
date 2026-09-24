@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/business_application.dart';
 import '../config/theme.dart';
 import '../widgets/dashed_border.dart';
+import '../widgets/icons/icons.dart';
 
 // The two tiles a section offers: a quick-add chip for someone already on the
 // list, and the dashed add tile. Split from key_people_section (200-line rule).
@@ -35,7 +35,7 @@ class KeyPeopleQuickAddChip extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(entry.isCorporate ? LucideIcons.building2 : LucideIcons.user,
+              MyazaIcon(entry.isCorporate ? MyazaIcons.building2 : MyazaIcons.user,
                   size: 16, color: colors.textSecondary),
               const SizedBox(width: 8),
               ConstrainedBox(
@@ -57,7 +57,7 @@ class KeyPeopleQuickAddChip extends StatelessWidget {
                   shape: BoxShape.circle,
                 ),
                 alignment: Alignment.center,
-                child: Icon(LucideIcons.plus, size: 12, color: colors.primary),
+                child: MyazaIcon(MyazaIcons.plus, size: 12, color: colors.primary),
               ),
             ],
           ),
@@ -94,7 +94,7 @@ class KeyPeopleAddTile extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(LucideIcons.plus, size: 16, color: colors.primary),
+                MyazaIcon(MyazaIcons.plus, size: 16, color: colors.primary),
                 const SizedBox(width: 6),
                 Text(label,
                     style: text.bodyMedium.copyWith(

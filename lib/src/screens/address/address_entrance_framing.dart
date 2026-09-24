@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../utils/map_tiles.dart' show mapSurfaceHeight;
 import '../../widgets/dashed_border.dart';
 import '../../widgets/myaza_button.dart';
 import '../../widgets/sticky_actions.dart';
+import '../../widgets/icons/icons.dart';
 
 // ─── The entrance step's SANDBOX stand-in ────────────────────────────────────
 //
@@ -45,7 +45,7 @@ class AddressEntrancePlaceholder extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(LucideIcons.landmark,
+              MyazaIcon(MyazaIcons.landmark,
                   size: 32, color: colors.textSecondary.withValues(alpha: 0.6)),
               const SizedBox(height: MyazaSpacing.sm),
               ConstrainedBox(

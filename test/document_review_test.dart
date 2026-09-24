@@ -2,9 +2,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/document_review.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/document_review_side.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/icons/icons.dart';
+import 'icon_finder.dart';
 
 // ─── Two-sided review ─────────────────────────────────────────────────────────
 //
@@ -157,9 +158,9 @@ void main() {
         reason: 'the overlay must read as a new layer, not a tint');
 
     // And a close control that is an actual target, not a bare glyph.
-    final closeSize = tester.getSize(find.byIcon(LucideIcons.x));
+    final closeSize = tester.getSize(findMyazaIcon(MyazaIcons.x));
     expect(closeSize.width, greaterThan(0));
-    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.tap(findMyazaIcon(MyazaIcons.x));
     await tester.pumpAndSettle();
     expect(find.byType(DocumentReviewZoom), findsNothing);
   });

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter/services.dart';
 
 import '../config/dial_codes.g.dart';
@@ -8,6 +7,7 @@ import '../config/theme.dart';
 import 'country_flag.dart';
 import 'dial_code_picker.dart';
 import 'myaza_input.dart';
+import 'icons/icons.dart';
 
 // ─── Phone number input ───────────────────────────────────────────────────────
 //
@@ -160,7 +160,7 @@ class _PhoneNumberInputState extends State<PhoneNumberInput> {
                 const SizedBox(width: MyazaSpacing.xs),
                 Text('+$_dial', style: text.label),
                 const SizedBox(width: MyazaSpacing.xs),
-                Icon(LucideIcons.chevronDown, size: 14, color: colors.textMuted),
+                MyazaIcon(MyazaIcons.chevronDown, size: 14, color: colors.textMuted),
               ],
             ),
           ),

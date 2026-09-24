@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'themed_sheet.dart';
+import 'icons/icons.dart';
 
 // ─── Select ───────────────────────────────────────────────────────────────────
 //
@@ -126,7 +126,7 @@ class MyazaSelect<T> extends StatelessWidget {
                   ),
                 ),
           const SizedBox(width: MyazaSpacing.sm),
-          Icon(LucideIcons.chevronDown, size: 18, color: colors.textSecondary),
+          MyazaIcon(MyazaIcons.chevronDown, size: 18, color: colors.textSecondary),
         ],
       ),
     );
@@ -218,7 +218,7 @@ class _OptionsSheetState<T> extends State<_OptionsSheet<T>> {
                   decoration: InputDecoration(
                     hintText: 'Search',
                     hintStyle: text.label.copyWith(color: colors.textMuted),
-                    prefixIcon: Icon(LucideIcons.search,
+                    prefixIcon: MyazaIcon(MyazaIcons.search,
                         size: 16, color: colors.textMuted),
                     isDense: true,
                     filled: true,
@@ -295,7 +295,7 @@ class _OptionsSheetState<T> extends State<_OptionsSheet<T>> {
                             ),
                           ),
                           if (isSelected)
-                            Icon(LucideIcons.check,
+                            MyazaIcon(MyazaIcons.check,
                                 size: 18, color: colors.primary),
                         ],
                       ),

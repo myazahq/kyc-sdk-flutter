@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:myaza_kyc_sdk_flutter/src/config/theme.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/themed_sheet.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/icons/icons.dart';
+import 'icon_finder.dart';
 
 // The sheet's close button, which is the half of this that can fail invisibly.
 //
@@ -39,9 +40,9 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('sheet body'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.x), findsOneWidget, reason: 'no way out');
+    expect(findMyazaIcon(MyazaIcons.x), findsOneWidget, reason: 'no way out');
 
-    await tester.tap(find.byIcon(LucideIcons.x));
+    await tester.tap(findMyazaIcon(MyazaIcons.x));
     await tester.pumpAndSettle();
 
     expect(find.text('sheet body'), findsNothing);
@@ -77,7 +78,7 @@ void main() {
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     expect(find.text('own chrome'), findsOneWidget);
-    expect(find.byIcon(LucideIcons.x), findsNothing);
+    expect(findMyazaIcon(MyazaIcons.x), findsNothing);
   });
 
   testWidgets('the handle rides at the lip, not halfway down the panel',

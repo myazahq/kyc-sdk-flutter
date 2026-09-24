@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/proof_of_address.dart';
 import '../config/theme.dart';
 import '../widgets/check_card.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Proof of Address — the document kinds, listed ────────────────────────────
 //
@@ -16,12 +16,12 @@ import '../widgets/check_card.dart';
 // uploaded. Mirrors the web SDK's steps/PoaDocumentTypeList and the RN twin.
 
 /// One glyph per kind — the SAME Lucide names the web and RN maps carry.
-IconData poaTypeIcon(PoaDocumentType type) => switch (type) {
-      PoaDocumentType.utilityBill => LucideIcons.zap,
-      PoaDocumentType.bankStatement => LucideIcons.landmark,
-      PoaDocumentType.tenancyAgreement => LucideIcons.house,
-      PoaDocumentType.governmentDocument => LucideIcons.stamp,
-      PoaDocumentType.other => LucideIcons.fileText,
+MyazaIconData poaTypeIcon(PoaDocumentType type) => switch (type) {
+      PoaDocumentType.utilityBill => MyazaIcons.zap,
+      PoaDocumentType.bankStatement => MyazaIcons.landmark,
+      PoaDocumentType.tenancyAgreement => MyazaIcons.house,
+      PoaDocumentType.governmentDocument => MyazaIcons.stamp,
+      PoaDocumentType.other => MyazaIcons.fileText,
     };
 
 class PoaDocumentTypeList extends StatelessWidget {

@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/theme.dart';
 import '../../providers/kyc_provider.dart';
 import '../../widgets/dashed_border.dart';
+import '../../widgets/icons/icons.dart';
 
 // Dev/sandbox only: the address flow's Test-result tabs — the web and RN
 // SDKs' control, on the BusinessSandboxToggle's mechanics. Four equal columns
@@ -18,7 +18,7 @@ const _options = [
   (
     key: 'address_attested',
     label: 'Attested',
-    icon: LucideIcons.shieldCheck,
+    icon: MyazaIcons.shieldCheck,
     pill: Color(0xFF059669),
     tintLight: Color(0xFF059669),
     tintDark: Color(0xFF34D399),
@@ -26,7 +26,7 @@ const _options = [
   (
     key: 'address_corroborated',
     label: 'Corroborated',
-    icon: LucideIcons.badgeCheck,
+    icon: MyazaIcons.badgeCheck,
     pill: Color(0xFF0284C7),
     tintLight: Color(0xFF0284C7),
     tintDark: Color(0xFF38BDF8),
@@ -34,7 +34,7 @@ const _options = [
   (
     key: 'address_collected',
     label: 'Collected',
-    icon: LucideIcons.circleDashed,
+    icon: MyazaIcons.circleDashed,
     pill: Color(0xFF475569),
     tintLight: null,
     tintDark: null,
@@ -42,7 +42,7 @@ const _options = [
   (
     key: 'address_mismatch',
     label: 'Mismatch',
-    icon: LucideIcons.circleX,
+    icon: MyazaIcons.circleX,
     pill: Color(0xFFDC2626),
     tintLight: Color(0xFFDC2626),
     tintDark: Color(0xFFF87171),
@@ -123,7 +123,7 @@ class AddressSandboxTabs extends ConsumerWidget {
                                       .read(kYCNotifierProvider.notifier)
                                       .setAddressSandboxOutcome(option.key),
                                   child: Center(
-                                    child: Icon(
+                                    child: MyazaIcon(
                                       option.icon,
                                       size: 18,
                                       color: i == index

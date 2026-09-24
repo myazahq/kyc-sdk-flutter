@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
+import 'icons/icons.dart';
 
 // ─── Liveness avatar ──────────────────────────────────────────────────────────
 //
@@ -123,8 +123,8 @@ class _AvatarContent extends StatelessWidget {
   }
 
   Widget _fallbackIcon(BuildContext context) => Center(
-        child: Icon(
-          LucideIcons.scanFace,
+        child: MyazaIcon(
+          MyazaIcons.scanFace,
           size: iconSize,
           color: context.myazaColors.primary,
         ),

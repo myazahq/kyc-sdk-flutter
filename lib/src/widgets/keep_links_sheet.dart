@@ -1,12 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../config/theme.dart';
 import 'myaza_alert.dart';
 import 'myaza_button.dart';
 import 'themed_sheet.dart';
+import 'icons/icons.dart';
 
 // Shown when the applicant taps Done while key people still owe a check.
 //
@@ -65,7 +65,7 @@ class _KeepLinksBodyState extends State<_KeepLinksBody> {
                 shape: BoxShape.circle,
                 color: colors.primary50,
               ),
-              child: Icon(LucideIcons.globe, size: 26, color: colors.primary),
+              child: MyazaIcon(MyazaIcons.globe, size: 26, color: colors.primary),
             ),
           ),
           const SizedBox(height: MyazaSpacing.md),
@@ -86,7 +86,7 @@ class _KeepLinksBodyState extends State<_KeepLinksBody> {
           const SizedBox(height: MyazaSpacing.lg),
           MyazaButton(
             label: 'Open in my browser',
-            leadingIcon: const Icon(LucideIcons.globe, size: 18),
+            leadingIcon: const MyazaIcon(MyazaIcons.globe, size: 18),
             onPressed: () {
               launchUrl(Uri.parse(widget.url),
                   mode: LaunchMode.externalApplication);
@@ -95,8 +95,8 @@ class _KeepLinksBodyState extends State<_KeepLinksBody> {
           const SizedBox(height: MyazaSpacing.sm),
           MyazaButton.outline(
             label: _copied ? 'Link copied' : 'Copy the page link',
-            leadingIcon: Icon(
-              _copied ? LucideIcons.check : LucideIcons.copy,
+            leadingIcon: MyazaIcon(
+              _copied ? MyazaIcons.check : MyazaIcons.copy,
               size: 18,
             ),
             onPressed: () async {

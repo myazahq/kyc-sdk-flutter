@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/theme.dart';
 import 'country_flag.dart';
 import 'geo_badge.dart';
+import 'icons/icons.dart';
 
 // ─── Country option tile ──────────────────────────────────────────────────────
 //
@@ -78,8 +78,8 @@ class CountryOptionTile extends StatelessWidget {
                   GeoBadge(label: badge!),
                   const SizedBox(width: MyazaSpacing.sm),
                 ],
-                Icon(
-                  LucideIcons.chevronRight,
+                MyazaIcon(
+                  MyazaIcons.chevronRight,
                   size: 18,
                   color: isSelected ? colors.primary : colors.textSecondary,
                 ),

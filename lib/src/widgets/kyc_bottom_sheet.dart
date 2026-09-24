@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -10,6 +9,7 @@ import 'kyc_progress_bar.dart';
 import '../config/kyc_config.dart';
 import 'powered_by.dart';
 import 'step_header.dart';
+import 'icons/icons.dart';
 
 // ─── Bottom sheet container ───────────────────────────────────────────────────
 //
@@ -563,8 +563,8 @@ class _StepDot extends StatelessWidget {
                   color: MyazaColors.success,
                   border: Border.all(color: Colors.white, width: 1),
                 ),
-                child: Icon(
-                  LucideIcons.check,
+                child: MyazaIcon(
+                  MyazaIcons.check,
                   size: (badgeSize * 0.6).roundToDouble(),
                   color: Colors.white,
                 ),
@@ -743,8 +743,8 @@ class _CloseButton extends StatelessWidget {
         width: 40,
         height: 40,
         child: Center(
-          child: Icon(
-            LucideIcons.x,
+          child: MyazaIcon(
+            MyazaIcons.x,
             size: 20,
             color: enabled
                 ? colors.textDark.withValues(alpha: 0.8)
@@ -776,8 +776,8 @@ class _ThemeToggleButton extends StatelessWidget {
         width: 40,
         height: 40,
         child: Center(
-          child: Icon(
-            isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded,
+          child: MyazaIcon(
+            isDark ? MyazaIcons.sun : MyazaIcons.moon,
             size: 20,
             color: colors.textDark.withValues(alpha: 0.8),
           ),

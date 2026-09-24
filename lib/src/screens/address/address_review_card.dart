@@ -1,7 +1,6 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../config/address_collection.dart';
 import '../../config/address_flow.dart';
@@ -11,6 +10,7 @@ import '../../widgets/line_skeleton.dart';
 import '../../widgets/presence_milestones.dart';
 import 'address_review_map.dart';
 import 'address_review_thumb.dart';
+import '../../widgets/icons/icons.dart';
 
 // ─── The confirmation card ───────────────────────────────────────────────────
 //
@@ -137,7 +137,7 @@ class AddressReviewCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             PresenceBadge(
-                              leading: Icon(LucideIcons.mapPin, size: 12, color: colors.primary),
+                              leading: MyazaIcon(MyazaIcons.mapPin, size: 12, color: colors.primary),
                               label: isBusiness ? 'Pinned premises' : 'Pinned address',
                             ),
                             const SizedBox(height: MyazaSpacing.xs),

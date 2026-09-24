@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/id_types.dart';
 import '../config/multi_id.dart';
 import '../providers/kyc_provider.dart';
 import '../config/theme.dart';
+import 'icons/icons.dart';
 
 /// The multi-ID run's position strip: one chip per check, filling in with the
 /// picked ID's name as each check commits, the current one highlighted.
@@ -122,7 +122,7 @@ class _Chip extends StatelessWidget {
                 ),
         ),
         child: committed
-            ? Icon(LucideIcons.check, size: 12, color: colors.onPrimary)
+            ? MyazaIcon(MyazaIcons.check, size: 12, color: colors.onPrimary)
             : Text(
                 '${index + 1}',
                 style: MyazaTypography.bodySmall.copyWith(

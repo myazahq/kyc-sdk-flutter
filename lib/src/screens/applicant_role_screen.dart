@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/business.dart';
 import '../config/business_application.dart';
@@ -11,6 +10,7 @@ import '../widgets/dashed_border.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Applicant role screen ────────────────────────────────────────────────────
 //
@@ -165,7 +165,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
                   color: colors.primary100,
                   borderRadius: BorderRadius.circular(MyazaRadius.sm),
                 ),
-                child: Icon(LucideIcons.scanFace,
+                child: MyazaIcon(MyazaIcons.scanFace,
                     size: 18, color: colors.primary),
               ),
               const SizedBox(width: MyazaSpacing.md),
@@ -222,7 +222,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child:
-                        Icon(LucideIcons.check, size: 14, color: colors.primary),
+                        MyazaIcon(MyazaIcons.check, size: 14, color: colors.primary),
                   ),
                   const SizedBox(width: MyazaSpacing.xs + 2),
                   Expanded(
@@ -359,7 +359,7 @@ class _SelfTile extends StatelessWidget {
                         ),
                         alignment: Alignment.center,
                         child: other
-                            ? Icon(LucideIcons.userRoundPlus,
+                            ? MyazaIcon(MyazaIcons.userRoundPlus,
                                 size: 18,
                                 color: isSelected
                                     ? colors.primary
@@ -430,7 +430,7 @@ class _SelfTile extends StatelessWidget {
                     ),
                   ),
                   child: isSelected
-                      ? Icon(LucideIcons.check,
+                      ? MyazaIcon(MyazaIcons.check,
                           size: 12, color: colors.background)
                       : null,
                 ),

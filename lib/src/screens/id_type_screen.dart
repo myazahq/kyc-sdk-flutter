@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../config/country_id_types.dart';
 import '../config/id_types.dart';
@@ -9,6 +8,7 @@ import '../providers/kyc_provider.dart';
 import '../providers/kyc_state.dart';
 import '../providers/step_order.dart';
 import '../widgets/myaza_pulse_loader.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── ID type selection screen ─────────────────────────────────────────────────
 
@@ -143,14 +143,14 @@ class _IdTypeCard extends StatelessWidget {
 
   // Same lucide icons as the web SDK's IdTypeStep (ID_TYPE_ICONS). Keyed by the
   // server ID key so Global-Document IDs get a sensible default icon.
-  static IconData _iconFor(String key) => switch (key) {
-        'bvn' || 'bvn-premium' => LucideIcons.landmark, // Bank Verification
-        'tax-id' => LucideIcons.receiptText, // Tax ID (NIN-keyed)
-        'nin' || 'vnin' => LucideIcons.fingerprint,
-        'passport' => LucideIcons.bookUser,
-        'drivers-license' => LucideIcons.idCard,
-        'pvc' || 'voters' => LucideIcons.contact, // Voter's Card
-        _ => LucideIcons.idCard,
+  static MyazaIconData _iconFor(String key) => switch (key) {
+        'bvn' || 'bvn-premium' => MyazaIcons.landmark, // Bank Verification
+        'tax-id' => MyazaIcons.receiptText, // Tax ID (NIN-keyed)
+        'nin' || 'vnin' => MyazaIcons.fingerprint,
+        'passport' => MyazaIcons.bookUser,
+        'drivers-license' => MyazaIcons.idCard,
+        'pvc' || 'voters' => MyazaIcons.contact, // Voter's Card
+        _ => MyazaIcons.idCard,
       };
 
   @override
@@ -199,7 +199,7 @@ class _IdTypeCard extends StatelessWidget {
                     color: isSelected ? colors.primary100 : colors.primary50,
                     borderRadius: BorderRadius.circular(MyazaRadius.sm),
                   ),
-                  child: Icon(
+                  child: MyazaIcon(
                     _iconFor(config.key),
                     size: 22,
                     color: isSelected ? colors.primary : colors.textSecondary,
@@ -221,8 +221,8 @@ class _IdTypeCard extends StatelessWidget {
                 // Tapping a row ADVANCES immediately (no Continue button), so
                 // the affordance is a "go to next step" chevron — not a radio,
                 // which would imply a select-then-confirm the flow doesn't have.
-                Icon(
-                  LucideIcons.chevronRight,
+                MyazaIcon(
+                  MyazaIcons.chevronRight,
                   size: 20,
                   color: isSelected ? colors.primary : colors.gray400,
                 ),

@@ -9,7 +9,6 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
@@ -48,6 +47,7 @@ import '../widgets/liveness_avatar.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/native_camera_preview.dart';
 import '../widgets/myaza_button.dart';
+import '../widgets/icons/icons.dart';
 
 // ─── Liveness screen ──────────────────────────────────────────────────────────
 
@@ -1427,7 +1427,7 @@ class _LoadingView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(LucideIcons.videoOff,
+            const MyazaIcon(MyazaIcons.videoOff,
                 size: 48, color: MyazaColors.error),
             const SizedBox(height: MyazaSpacing.md),
             Text(title,
@@ -1825,7 +1825,7 @@ class _SelfieReviewView extends StatelessWidget {
               child: MyazaButton.outline(
                 label: 'Retake',
                 onPressed: isUploading ? null : onRetake,
-                leadingIcon: const Icon(LucideIcons.rotateCcw),
+                leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
               ),
             ),
             const SizedBox(width: MyazaSpacing.md),
@@ -1833,10 +1833,10 @@ class _SelfieReviewView extends StatelessWidget {
               child: MyazaButton(
                 label: uploadError != null ? 'Try Again' : 'Continue',
                 onPressed: isUploading ? null : onContinue,
-                leadingIcon: Icon(
+                leadingIcon: MyazaIcon(
                   uploadError != null
-                      ? LucideIcons.rotateCcw
-                      : LucideIcons.check,
+                      ? MyazaIcons.rotateCcw
+                      : MyazaIcons.check,
                 ),
               ),
             ),
@@ -2117,8 +2117,8 @@ class _CameraCircle extends StatelessWidget {
                             shape: BoxShape.circle,
                             color: MyazaColors.success,
                           ),
-                          child: const Icon(
-                            LucideIcons.check,
+                          child: const MyazaIcon(
+                            MyazaIcons.check,
                             color: Colors.white,
                             size: 42,
                           ),
@@ -2190,7 +2190,7 @@ class _CameraPlaceholder extends StatelessWidget {
       color: colors.primary50,
       child: Center(
         child: phase == LivenessPhase.complete
-            ? const Icon(LucideIcons.circleCheck,
+            ? const MyazaIcon(MyazaIcons.circleCheck,
                     size: 56, color: MyazaColors.success)
                 .animate()
                 .scale(
@@ -2452,7 +2452,7 @@ class _StepDot extends StatelessWidget {
     if (isCompleted) {
       bg = MyazaColors.success;
       border = MyazaColors.success;
-      child = const Icon(LucideIcons.check, size: 14, color: Colors.white);
+      child = const MyazaIcon(MyazaIcons.check, size: 14, color: Colors.white);
     } else if (isActive) {
       bg = Colors.transparent;
       border = MyazaColors.success;
@@ -2543,8 +2543,8 @@ class _LightingWarningBanner extends StatelessWidget {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(
-                    LucideIcons.lightbulb,
+                  const MyazaIcon(
+                    MyazaIcons.lightbulb,
                     size: 16,
                     color: Color(0xFF92400E), // amber-800
                   ),
