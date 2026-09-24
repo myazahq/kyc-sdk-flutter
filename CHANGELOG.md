@@ -1,3 +1,21 @@
+## 3.2.2
+
+A multi-region workflow no longer has its ID types narrowed by the host app.
+
+- **A consumer's `idTypes` prop can no longer narrow a multi-region flow.** Such
+  a flow declares its offering inside `countries[]`, where a country pinning
+  nothing already means "every granted ID for that country", and leaves the
+  top-level list unset. The merge read that unset value as "the flow did not
+  define it" and kept the prop, which the picker then falls back to for any
+  country pinning none of its own — so a hardcoded `['bvn','nin','passport']`
+  reduced a 58-country flow to three Nigerian types, on every country. The prop
+  is now dropped at the merge, so a flow that sets its OWN top-level list still
+  wins and single-country flows are unchanged.
+- **Retake draws a circular arrow, not a rotating hand.** Lucide's `rotateCcw`
+  is a circular arrow; Hugeicons reuses the name for a hand rotating an object,
+  so every Retake and retry control drew a hand. The fourth name collision in
+  this set found by comparing path data rather than names.
+
 ## 3.2.1
 
 Icon and dark-mode corrections found after 3.2.0.

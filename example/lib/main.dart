@@ -1,6 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
 
+// Credentials come from --dart-define so no real key is ever committed here.
+// Against a local kyc-core, pass all three:
+//
+//   flutter run \
+//     --dart-define=MYAZA_API_KEY=pk_dev_... \
+//     --dart-define=MYAZA_DEV_SERVER=http://$(ipconfig getifaddr en0):3001 \
+//     --dart-define=MYAZA_WORKFLOW_ID=wf_...
+//
+// The key prefix picks the environment, so MYAZA_DEV_SERVER is read only by a
+// `pk_dev_*` key. A `pk_test_*` key targets staging and ignores it, which is
+// why the placeholder default below cannot reach a machine on your desk.
+const String kApiKey = String.fromEnvironment(
+  'MYAZA_API_KEY',
+  defaultValue: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxx',
+);
+const String kDevServer = String.fromEnvironment('MYAZA_DEV_SERVER');
+const String kWorkflowId = String.fromEnvironment('MYAZA_WORKFLOW_ID');
+
 void main() => runApp(const ExampleApp());
 
 class ExampleApp extends StatelessWidget {
@@ -25,20 +43,27 @@ class HomeScreen extends StatelessWidget {
     // the verification result is delivered asynchronously via webhook.
     MyazaKYC.show(
       context: context,
-      config: const MyazaKYCConfig(
+      config: MyazaKYCConfig(
         // The environment is derived from the key prefix — a `pk_test_*` key
         // targets staging automatically (no `environment` parameter).
-        apiKey: 'pk_test_xxxxxxxxxxxxxxxxxxxxxxxx',
-        country: 'NG',
-        idTypes: ['bvn', 'nin', 'passport'],
+        apiKey: kApiKey,
+        devUrl: kDevServer.isEmpty ? null : kDevServer,
+        workflowId: kWorkflowId.isEmpty ? null : kWorkflowId,
+        // A workflow declares its own countries and ID types, so these are
+        // omitted when one is set. Passing them anyway narrows a multi-region
+        // flow to this hardcoded list: such a flow keeps its ID types per
+        // country and leaves the top-level list unset, and the merge treats
+        // "unset" as "the flow did not define it" and keeps the prop.
+        country: kWorkflowId.isEmpty ? 'NG' : null,
+        idTypes: kWorkflowId.isEmpty ? const ['bvn', 'nin', 'passport'] : null,
         enableSelfie: true,
         enableDocumentCapture: true,
         enableLiveness: true,
-        appearance: MyazaKYCAppearance(
+        appearance: const MyazaKYCAppearance(
           companyName: 'Myaza',
           theme: MyazaThemeMode.light,
         ),
-        metadata: {'userId': 'usr_123'},
+        metadata: const {'userId': 'usr_123'},
       ),
       onSubmit: (KYCSubmission submission) {
         // Fires once the server accepts the submission. `status` is always

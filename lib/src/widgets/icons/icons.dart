@@ -89,7 +89,11 @@ class MyazaIcons {
   static const MyazaIconData receiptText = HugeIcons.strokeRoundedReceiptText;
   static const MyazaIconData refreshCcw = HugeIcons.strokeRoundedRefresh;
   static const MyazaIconData refreshCw = HugeIcons.strokeRoundedRefreshCw;
-  static const MyazaIconData rotateCcw = HugeIcons.strokeRoundedRotateLeft01;
+  // Lucide's `rotateCcw` is a circular arrow. Hugeicons' RotateLeft01 is a
+  // HAND rotating an object, so every Retake and retry control drew a hand.
+  // Same drawing as `refreshCcw`, which is the plain circular arrow, and the
+  // same fix the web SDK takes.
+  static const MyazaIconData rotateCcw = HugeIcons.strokeRoundedRefresh;
   static const MyazaIconData scan = HugeIcons.strokeRoundedScan;
   static const MyazaIconData scanFace = HugeIcons.strokeRoundedFaceId;
   static const MyazaIconData scanLine = HugeIcons.strokeRoundedScan;

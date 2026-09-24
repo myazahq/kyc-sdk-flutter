@@ -690,6 +690,13 @@ class MyazaKYCConfig {
     List<WorkflowCountryOption>? countries,
     MultiIdConfig? multiId,
     List<String>? idTypes,
+    /// Set `idTypes` to null instead of keeping the current value.
+    ///
+    /// The workflow merge needs it: a multi-region flow declares its ID types
+    /// PER COUNTRY and leaves the top-level list unset, so the consumer's prop
+    /// has to be dropped — and `idTypes: null` cannot say that in a copyWith,
+    /// where null means "keep".
+    bool clearIdTypes = false,
     bool? enableSelfie,
     bool? enableDocumentCapture,
     bool? allowDocumentUpload,
@@ -729,7 +736,7 @@ class MyazaKYCConfig {
         devUrl: devUrl,
         countries: countries ?? this.countries,
         multiId: multiId ?? this.multiId,
-        idTypes: idTypes ?? this.idTypes,
+        idTypes: clearIdTypes ? null : (idTypes ?? this.idTypes),
         enableSelfie: enableSelfie ?? this.enableSelfie,
         enableDocumentCapture:
             enableDocumentCapture ?? this.enableDocumentCapture,

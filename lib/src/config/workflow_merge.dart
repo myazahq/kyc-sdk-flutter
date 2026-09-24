@@ -122,8 +122,16 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     biometric: biometric,
     // Flow-defined idTypes win wholesale (an empty list means "all granted",
     // the same "unset = all" semantic the id-type picker applies). Null = the
-    // flow didn't define it, so the consumer's prop is kept.
+    // flow didn't define it, so the consumer's prop is kept — EXCEPT on a
+    // multi-region flow, which declares its offering inside countries[] and
+    // leaves the top-level list unset on purpose. Keeping a prop there narrows
+    // every country the flow offers: a hardcoded ['bvn','nin','passport']
+    // reduced a 58-country flow to three NG types, because the picker falls
+    // back to the top-level list for a country that pins none of its own.
+    // A flow that sets its OWN top-level list still wins, so single-country
+    // flows are untouched.
     idTypes: flow.idTypes,
+    clearIdTypes: flow.idTypes == null && countries != null && countries.isNotEmpty,
     // Multi-ID policy comes from the FLOW only — there is no consumer prop for
     // it, and the server is the authority on how many checks a run carries.
     multiId: MultiIdConfig.fromJson(
