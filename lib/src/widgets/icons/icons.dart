@@ -1,6 +1,7 @@
 import 'package:hugeicons/hugeicons.dart';
 
 import 'app_icon.dart';
+import 'glyphs.dart';
 
 export 'app_icon.dart';
 
@@ -66,11 +67,20 @@ class MyazaIcons {
       HugeIcons.strokeRoundedLocationCheck01;
   static const MyazaIconData mapPinHouse = HugeIcons.strokeRoundedMapPinHouse;
   static const MyazaIconData mapPinned = HugeIcons.strokeRoundedLocation02;
-  static const MyazaIconData maximize2 = HugeIcons.strokeRoundedMaximize02;
+  // Hugeicons' Maximize02 is a PINCH GESTURE glyph (a hand), not the corner
+  // arrows Lucide's `maximize2` describes. `strokeRoundedExpand` is the same
+  // drawing the web SDK and the dashboard use for this.
+  static const MyazaIconData maximize2 = HugeIcons.strokeRoundedExpand;
   static const MyazaIconData messageSquare = HugeIcons.strokeRoundedMessage01;
   static const MyazaIconData minus = HugeIcons.strokeRoundedMinusSign;
   static const MyazaIconData moon = HugeIcons.strokeRoundedMoon;
-  static const MyazaIconData moveLeft = HugeIcons.strokeRoundedMoveLeft;
+  // Lucide's `moveLeft` is a LONG arrow: a full-width shaft with a small head.
+  // Hugeicons has no equivalent — its MoveLeft is a MOVE affordance (an arrow
+  // trailing a dot), ArrowLeft/ArrowLeft01 are bare chevrons with no shaft,
+  // ArrowLeft03/05 run into a vertical bar, and the longest true arrow,
+  // ArrowLeft02, spans only 13.5 of 24 units against Lucide's 20. So this one
+  // glyph is drawn locally, exactly as the web SDK draws it.
+  static const MyazaIconData moveLeft = kLongArrowLeft;
   static const MyazaIconData nfc = HugeIcons.strokeRoundedNfc;
   static const MyazaIconData pencil = HugeIcons.strokeRoundedPencil;
   static const MyazaIconData pencilLine = HugeIcons.strokeRoundedPencilEdit01;

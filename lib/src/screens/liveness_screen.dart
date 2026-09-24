@@ -1758,7 +1758,13 @@ class _SelfieReviewView extends StatelessWidget {
                         child: Text(
                           'Selfie already captured',
                           textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
+                          // The SDK's own tokens, not the ambient Material
+                          // theme: Material's bodySmall is a dark grey meant
+                          // for light backgrounds, so on this near-black
+                          // circle the line was effectively invisible.
+                          style: context.myazaText.bodySmall.copyWith(
+                            color: context.myazaColors.textSecondary,
+                          ),
                         ),
                       ),
                     ),

@@ -68,7 +68,11 @@ class SupportingDocumentCard extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
       child: Container(
         decoration: BoxDecoration(
-          color: done ? colors.primary50 : colors.background,
+          // The card is the LIFTED surface and the wells inside it are the page
+          // colour — the web SDK's arrangement (`bg-secondary` card over a
+          // `bg-background` well). These were the other way round here, so the
+          // card read as the page and its wells floated above it.
+          color: done ? colors.primary50 : colors.backgroundSecondary,
           border: Border.all(color: done ? colors.primary200 : colors.border),
           borderRadius: BorderRadius.circular(MyazaRadius.md),
         ),

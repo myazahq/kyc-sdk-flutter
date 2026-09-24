@@ -1,3 +1,23 @@
+## 3.2.1
+
+Icon and dark-mode corrections found after 3.2.0.
+
+- **The back control draws a long arrow.** 3.2.0 mapped it to Hugeicons'
+  `MoveLeft`, which is a move affordance — an arrow trailing a dot — so it drew
+  a stray circle. The set has no long-tailed arrow (its longest spans 13.5 of
+  the 24-unit viewBox against Lucide's 20), so the glyph is drawn locally in
+  `widgets/icons/glyphs.dart`, path for path with the web SDK.
+- **The fullscreen toggle draws a real expand icon.** `Maximize02` is a pinch
+  gesture in this set, not corner arrows; it now uses `Expand`, the glyph the
+  dashboard and the web SDK draw.
+- **The supporting-documents card is the lifted surface.** The card and the
+  wells inside it were the wrong way round against the web SDK, in both light
+  and dark. Four surfaces are corrected: the card, the "what we read from it"
+  well, the read chips and the Optional pill.
+- **The restored-selfie note is readable in dark mode.** It was the only string
+  styled from Flutter's ambient Material theme, whose `bodySmall` is a dark grey
+  meant for light backgrounds.
+
 ## 3.2.0
 
 ### One icon set across the product

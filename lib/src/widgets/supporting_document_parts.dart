@@ -62,7 +62,7 @@ class DocumentStatePill extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: MyazaSpacing.sm, vertical: 2),
       decoration: BoxDecoration(
-        color: required ? colors.errorBg : colors.backgroundSecondary,
+        color: required ? colors.errorBg : colors.background,
         borderRadius: BorderRadius.circular(MyazaRadius.full),
       ),
       child: Text(
@@ -90,7 +90,7 @@ class DocumentReads extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(MyazaSpacing.sm + 4),
       decoration: BoxDecoration(
-        color: colors.backgroundSecondary,
+        color: colors.background,
         borderRadius: BorderRadius.circular(MyazaRadius.sm),
       ),
       child: Column(
@@ -116,7 +116,7 @@ class DocumentReads extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: colors.background,
+                    color: colors.backgroundSecondary,
                     border: Border.all(color: colors.border),
                     borderRadius: BorderRadius.circular(MyazaRadius.full),
                   ),
