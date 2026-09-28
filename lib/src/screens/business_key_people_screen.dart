@@ -9,6 +9,7 @@ import '../widgets/myaza_button.dart';
 import 'key_people_add_edit.dart';
 import 'key_people_footer.dart';
 import 'key_people_sections_list.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Business key-people screen ───────────────────────────────────────────────
 //
@@ -68,9 +69,7 @@ class BusinessKeyPeopleScreen extends ConsumerWidget {
         if (rows.isEmpty && minEntries == 0)
           KeyPeopleHint(
             child: Text(
-              "You can skip this if you're unsure. We'll identify directors "
-              'and owners from the official registry. Adding them here speeds '
-              'up the review.',
+              context.kycText('keyPeople.hints.skippable'),
               style: text.bodyMedium.copyWith(color: colors.textSecondary),
             ),
           )
@@ -87,7 +86,7 @@ class BusinessKeyPeopleScreen extends ConsumerWidget {
           const SizedBox(height: MyazaSpacing.md),
 
         KeyPeopleSectionsList(
-          sections: keyPeopleSectionList(business, threshold),
+          sections: keyPeopleSectionList(business, threshold, context.kycText),
           rows: rows,
           threshold: threshold,
           emailRequiredFor: emailRequiredFor,
@@ -118,7 +117,7 @@ class BusinessKeyPeopleScreen extends ConsumerWidget {
         KeyPeopleTotals(totalPct: totalPct),
         const SizedBox(height: MyazaSpacing.md),
         MyazaButton(
-          label: 'Continue',
+          label: context.kycText('common.continue'),
           onPressed: meetsMinimum && !hasInvalid && !overAllocated
               ? onContinue
               : null,

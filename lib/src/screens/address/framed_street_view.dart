@@ -13,6 +13,7 @@ import '../../utils/map_tiles.dart' show MapLatLng, mapSurfaceHeight;
 import '../../widgets/myaza_button.dart';
 import '../../widgets/sticky_actions.dart';
 import 'street_view_chrome.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── Framed Street View ──────────────────────────────────────────────────────
 //
@@ -186,7 +187,7 @@ class _FramedStreetViewState extends State<FramedStreetView> {
             if (_ready) ...[
               const SizedBox(height: MyazaSpacing.sm),
               Text(
-                'Drag to look around until your gate or front door sits inside the frame.',
+                context.kycText('address.entrance.frameHint'),
                 textAlign: TextAlign.center,
                 style: text.bodySmall.copyWith(color: colors.textSecondary),
               ),
@@ -196,13 +197,14 @@ class _FramedStreetViewState extends State<FramedStreetView> {
         actions: Row(children: [
           if (!widget.hideSkip) ...[
             Expanded(
-              child: MyazaButton.outline(label: 'Skip', onPressed: widget.onSkip),
+              child: MyazaButton.outline(
+                  label: context.kycText('common.skip'), onPressed: widget.onSkip),
             ),
             const SizedBox(width: MyazaSpacing.sm),
           ],
           Expanded(
             child: MyazaButton(
-              label: 'Use this view',
+              label: context.kycText('address.entrance.useView'),
               onPressed: _ready ? () => _capture(viewport) : null,
             ),
           ),

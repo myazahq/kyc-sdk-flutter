@@ -4,17 +4,15 @@
 // the verification is decided on: the person is verified against the government
 // database, and a downstream process still wants a document on record.
 //
-// MIRROR of the server's `requestedSupportingDocuments`
-// (kyc-core src/lib/workflows/supporting-documents-config.ts), the web SDK's
-// lib/supporting-documents.ts and the React Native SDK's
-// config/supportingDocuments.ts. Four copies of one rule, because the mobile
-// SDKs cannot import the web package — change it in one and change it in all,
-// in the same commit. The server VALIDATES what the client produced, so a
-// client that resolved differently just builds submissions the server refuses.
+// MIRROR of the server's `requestedSupportingDocuments` and the web and React
+// Native SDKs' copies: change all four in one commit (the server validates).
+// A client that resolved differently builds submissions the server refuses.
 //
 // There is no catalogue to mirror: a document is whatever the ORG named it, so
 // the SDK renders the title and guidance the workflow sent rather than
 // captioning a key it recognises.
+
+import '../i18n/translate.dart' show TextFn, defaultTextFn;
 
 /// One requested supporting document, as the workflow configures it.
 class SupportingDocumentRequest {
@@ -187,6 +185,27 @@ List<String> verifiedIdsFor({
   return ids.map((id) => idComposite(country, id)).toSet().toList();
 }
 
+/// Whether the flow may ask for a supporting document AT ALL.
+///
+/// The CONSENT screen's question, deliberately not the step order's.
+/// [hasSupportingDocumentsStep] resolves against the VERIFIED IDS, and consent
+/// runs before an ID is picked — so every SCOPED document answers "nothing to
+/// ask for" there, and a slip scoped to one ID (the commonest case there is)
+/// would go undisclosed.
+///
+/// Consent is a DISCLOSURE of what MAY be collected: an applicant seeing a
+/// bullet for paperwork they are never asked for is the cheap error, and being
+/// asked for undisclosed paperwork is the real one.
+///
+/// Still not a raw field check — a disabled step and a nameless entry each
+/// promise nothing, the same two gates the resolver applies. (A nameless entry
+/// is already dropped at parse time here; the check is kept so the rule reads
+/// identically in all three SDKs.)
+bool mayAskSupportingDocuments(SupportingDocumentsConfig? config) {
+  if (config == null || !config.enabled) return false;
+  return config.types.any((entry) => entry.label.trim().isNotEmpty);
+}
+
 /// Whether the step has anything to ask for on this attempt.
 bool hasSupportingDocumentsStep(
   SupportingDocumentsConfig? config,
@@ -250,20 +269,22 @@ class SupportingDocumentUpload {
 /// person wants: how many they have to produce before they can go on.
 ///
 /// MIRRORS the web SDK's supportingDocumentsIntro. Keep the wording in step.
-String supportingDocumentsIntro(List<ResolvedSupportingDocument> slots) {
+/// The three lines with no count in them are catalogue texts ([t]).
+String supportingDocumentsIntro(List<ResolvedSupportingDocument> slots,
+    [TextFn t = defaultTextFn]) {
   final total = slots.length;
   final required = slots.where((s) => s.required).length;
 
   // Nothing is compulsory, so the honest line is that the step can be skipped.
   if (required == 0) {
-    return total == 1
-        ? 'Upload this document if you have it, so we can keep it on file. You can skip it.'
-        : 'Upload any of these you have, so we can keep them on file. You can skip the rest.';
+    return t(total == 1
+        ? 'supportingDocuments.intro.optional.one'
+        : 'supportingDocuments.intro.optional.many');
   }
 
   if (required == total) {
     return total == 1
-        ? 'We need this document to continue. Upload it below.'
+        ? t('supportingDocuments.intro.required.one')
         : 'We need all $total of these documents to continue. Upload one for each item below.';
   }
 

@@ -7,6 +7,7 @@ import '../widgets/myaza_input.dart';
 import '../widgets/otp_input.dart';
 import '../widgets/phone_number_input.dart';
 import 'contact_verification_channel.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Contact verification — presentational parts ──────────────────────────────
 //
@@ -45,7 +46,8 @@ class ContactDestinationField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(isPhone ? 'Phone number' : 'Email address', style: text.label),
+        Text(context.kycText(isPhone ? 'contact.phone.label' : 'contact.email.label'),
+            style: text.label),
         const SizedBox(height: MyazaSpacing.xs),
         if (isPhone)
           PhoneNumberInput(
@@ -137,7 +139,7 @@ class ContactCodePanel extends StatelessWidget {
             TextButton(
               onPressed: onResend == null ? null : () => onResend!(null),
               child: Text(
-                'Resend code',
+                context.kycText('contact.code.resend'),
                 style: hint.copyWith(
                   fontWeight: FontWeight.w600,
                   color:

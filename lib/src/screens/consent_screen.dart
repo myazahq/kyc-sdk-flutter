@@ -1,13 +1,13 @@
-import 'package:flutter/gestures.dart';
 import '../config/scope.dart';
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/theme.dart';
-import '../config/brand.dart';
 import '../config/business_application.dart';
+import '../i18n/text_scope.dart';
 import '../providers/step_resubmit.dart';
+import 'consent_legal_notice.dart';
+import 'consent_process_steps.dart';
 import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
@@ -20,16 +20,6 @@ class ConsentScreen extends ConsumerStatefulWidget {
   @override
   ConsumerState<ConsentScreen> createState() => _ConsentScreenState();
 }
-
-class _ProcessStep {
-  final MyazaIconData icon;
-  final String label;
-  const _ProcessStep(this.icon, this.label);
-}
-
-const String _kDefaultConsentDescription =
-    'We need to verify your identity to comply with regulatory '
-    'requirements. This process is quick and secure.';
 
 const String _kDefaultBusinessConsentDescription =
     'We need to verify your business to comply with regulatory '
@@ -56,53 +46,7 @@ const Map<String, String> _kScopeDescriptions = {
       'We need to re-confirm the email address and phone number on your account. This takes a minute and is secure.',
 };
 
-/// Replaces `{firstName}` / `{lastName}` / `{businessName}` tokens with the
-/// user's data (or ''). `{businessName}` is the KYB consent-copy token —
-/// registration details aren't collected until after consent, so it resolves
-/// only when the integrator passes it in via userData.
-String _fillTokens(
-  String template,
-  String firstName,
-  String lastName,
-  String businessName,
-) =>
-    template
-        .replaceAll('{firstName}', firstName)
-        .replaceAll('{lastName}', lastName)
-        .replaceAll('{businessName}', businessName)
-        .trim();
-
 class _ConsentScreenState extends ConsumerState<ConsentScreen> {
-  // One recognizer per link, owned by the State so they can be disposed.
-  // Building them inline in `build` leaks a recognizer on every rebuild.
-  late final TapGestureRecognizer _termsTap;
-  late final TapGestureRecognizer _privacyTap;
-
-  @override
-  void initState() {
-    super.initState();
-    _termsTap = TapGestureRecognizer()..onTap = () => _open(kTermsUrl);
-    _privacyTap = TapGestureRecognizer()..onTap = () => _open(kPrivacyUrl);
-  }
-
-  @override
-  void dispose() {
-    _termsTap.dispose();
-    _privacyTap.dispose();
-    super.dispose();
-  }
-
-  /// Opens in the platform browser. A failure is swallowed: not being able to
-  /// show the terms must never block someone from verifying, and there is no
-  /// useful recovery to offer them mid-flow.
-  Future<void> _open(String url) async {
-    try {
-      await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    } catch (_) {
-      // no-op
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
@@ -110,30 +54,32 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     final config = ref.watch(kycConfigProvider);
     final notifier = ref.read(kYCNotifierProvider.notifier);
     final firstName = config.userData?.firstName ?? '';
-    final lastName = config.userData?.lastName ?? '';
-    final businessName = config.userData?.businessName ?? '';
     final isBusiness = config.subjectType == 'business';
     final scope = isBusiness ? null : configScope(config.scope);
     final faceScope = isFaceScope(scope);
     final business = config.business;
 
-    final defaultTitle = firstName.isNotEmpty
-        ? 'Welcome, $firstName'
+    // The shared copy is a catalogue text; the named, business and scope
+    // variants keep this SDK's wording. An older consent.title/description
+    // (tokens filled) wins over every variant, as it always did.
+    final t = ref.watch(kycTextProvider);
+    final variantTitle = firstName.isNotEmpty
+        ? 'Welcome, {firstName}'
         : isBusiness
             ? 'Business Verification'
-            : _kScopeTitles[scope] ?? 'Identity Verification';
-    final title = config.consent?.title != null
-        ? _fillTokens(config.consent!.title!, firstName, lastName, businessName)
-        : defaultTitle;
-    final description = config.consent?.description != null
-        ? _fillTokens(
-            config.consent!.description!, firstName, lastName, businessName)
-        : isBusiness
-            ? _kDefaultBusinessConsentDescription
-            : _kScopeDescriptions[scope] ?? _kDefaultConsentDescription;
+            : _kScopeTitles[scope];
+    final title = t(variantTitle == null ? 'welcome.title' : 'welcome.title.variant',
+        legacy: config.consent?.title, fallback: variantTitle);
+    final variantDescription = isBusiness
+        ? _kDefaultBusinessConsentDescription
+        : _kScopeDescriptions[scope];
+    final description = t(
+        variantDescription == null
+            ? 'welcome.description'
+            : 'welcome.description.variant',
+        legacy: config.consent?.description,
+        fallback: variantDescription);
 
-    // Reflect the actually-enabled features so the list matches the real flow.
-    // Same lucide icons as the web SDK's ConsentStep.
     // What this flow ACTUALLY does — the notice must not overclaim
     // (facial recognition with no selfie step) or underclaim (recording
     // video without saying so, which is the one that carries risk). A business
@@ -145,136 +91,8 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
     final recordsVideo = capturesFace ||
         (!isBusiness && scope == null && config.enableDocumentCapture);
 
-    final hasEmail = config.emailVerification?.enabled ?? false;
-    final hasPhone = config.phoneVerification?.enabled ?? false;
-    final hasContactStep = hasEmail || hasPhone;
-    final contactWhat = hasEmail && hasPhone
-        ? 'email and phone number'
-        : hasEmail
-            ? 'email'
-            : 'phone number';
-
-    // A KYB flow lists its application steps — never the identity rows, which
-    // would claim steps a registry-lookup flow does not run.
-    final steps = <_ProcessStep>[
-      if (isBusiness) ...[
-        const _ProcessStep(
-          MyazaIcons.building2,
-          'Collect your business registration details',
-        ),
-        const _ProcessStep(
-          MyazaIcons.badgeCheck,
-          'Verify your business against the official registry',
-        ),
-      ] else if (scope == 'address') ...[
-        // NOT a fixed pair: the scope verifies an address by the pin, by a
-        // document, or by both, so promising a map on a flow that only asks
-        // for a document is a promise the flow never keeps. The document's own
-        // bullet is appended by the shared post-capture block below.
-        if (config.addressCollection?.enabled ?? false) ...[
-          const _ProcessStep(
-            MyazaIcons.mapPinHouse,
-            'Pin your home address on a map',
-          ),
-          const _ProcessStep(
-            MyazaIcons.badgeCheck,
-            'Confirm the details only you can know',
-          ),
-        ],
-      ] else if (faceScope) ...[
-        const _ProcessStep(
-          MyazaIcons.scanFace,
-          'Take a quick selfie with liveness checks',
-        ),
-        _ProcessStep(
-          MyazaIcons.badgeCheck,
-          scope == 'biometric-authentication'
-              ? 'We match it against your enrolled face'
-              : 'It becomes your face check for next time',
-        ),
-      ] else if (scope == 'questionnaire') ...[
-        const _ProcessStep(
-          MyazaIcons.badgeCheck,
-          'Answer a few short questions',
-        ),
-      ] else if (scope == 'contact') ...[
-        const _ProcessStep(
-          MyazaIcons.lock,
-          'Confirm your contact details with a one-time code',
-        ),
-      ] else ...[
-        const _ProcessStep(
-          MyazaIcons.badgeCheck,
-          'Verify your government-issued ID',
-        ),
-        const _ProcessStep(
-          MyazaIcons.userRound,
-          'Collect basic personal information',
-        ),
-      ],
-      // On the CONTACT scope the catalogue bullet already says this —
-      // appending the generic line showed "confirm your contact details"
-      // twice the moment both channels were on.
-      if (scope != 'contact' && hasContactStep)
-        _ProcessStep(
-          MyazaIcons.lock,
-          'Confirm your $contactWhat with a one-time code',
-        ),
-      if (!isBusiness && scope == null && config.enableDocumentCapture)
-        const _ProcessStep(
-          MyazaIcons.scanLine,
-          'Capture a photo of your ID document',
-        ),
-      // Chip-capable IDs (e-passports, some eID cards) additionally read the
-      // document's NFC chip. Shown when the flow enables NFC so the user knows
-      // to have the physical document to hand — same "what may happen" spirit as
-      // the document/selfie rows (a non-chip ID simply skips it).
-      if (!isBusiness && scope == null && (config.nfc?.enabled ?? false))
-        const _ProcessStep(
-          MyazaIcons.nfc,
-          'Scan your document’s security chip (NFC)',
-        ),
-      if (!isBusiness && scope == null && config.enableSelfie)
-        const _ProcessStep(
-          MyazaIcons.scanFace,
-          'Take a selfie for facial verification',
-        ),
-      // Post-capture features, in the order the flow runs them. Each is gated
-      // on the flow that actually asks for it, and skipped where a scope's own
-      // catalogue bullet already covers the same step.
-      if (!isBusiness && (config.proofOfAddress?.enabled ?? false))
-        const _ProcessStep(
-          MyazaIcons.fileText,
-          'Upload a proof of address document',
-        ),
-      if (scope != 'address' && (config.addressCollection?.enabled ?? false))
-        const _ProcessStep(
-          MyazaIcons.mapPinHouse,
-          'Pin your address on a map',
-        ),
-      // The step-order predicate, not a raw fields check: a questionnaire with
-      // questions but enabled: false never runs, so it must not be promised.
-      if (scope != 'questionnaire' && (config.questionnaire?.isActive ?? false))
-        const _ProcessStep(
-          MyazaIcons.badgeCheck,
-          'Answer a few short questions',
-        ),
-      if (isBusiness && hasKeyPeopleCollection(business))
-        const _ProcessStep(
-          MyazaIcons.usersRound,
-          "List the company's directors and owners",
-        ),
-      if (isBusiness && hasBusinessDocumentsStep(business))
-        const _ProcessStep(
-          MyazaIcons.fileText,
-          'Upload supporting business documents',
-        ),
-      if (isBusiness && hasApplicantVerification(business))
-        const _ProcessStep(
-          MyazaIcons.scanFace,
-          'Verify your own identity',
-        ),
-    ];
+    final steps = consentProcessSteps(config,
+        isBusiness: isBusiness, scope: scope, t: t);
 
     // A reviewer sent this applicant back. Say so, and say why — the note is
     // the only thing on screen that explains a flow which has silently lost
@@ -339,7 +157,12 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         const SizedBox(height: MyazaSpacing.lg),
 
         // ── Process steps card ───────────────────────────────────────────────
-        _ProcessStepsCard(colors: colors, text: text, steps: steps),
+        _ProcessStepsCard(
+          colors: colors,
+          text: text,
+          heading: t('welcome.process.heading').toUpperCase(),
+          steps: steps,
+        ),
         const SizedBox(height: MyazaSpacing.lg),
 
         // ── Consent notice ───────────────────────────────────────────────────
@@ -348,54 +171,16 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
         // biometric sentence is DERIVED: claiming facial recognition on a flow
         // with no selfie step would be false, and recording video without
         // saying so is the failure that actually matters.
-        Text.rich(
-          TextSpan(
-            style: text.bodySmall,
-            children: [
-              const TextSpan(text: 'By tapping Continue, you agree to the '),
-              TextSpan(
-                text: 'End User Terms',
-                // Web: `font-medium text-foreground underline`, as RN draws.
-                style: TextStyle(
-                  color: colors.textDark,
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.underline,
-                  decorationColor: colors.textDark,
-                ),
-                recognizer: _termsTap,
-              ),
-              const TextSpan(text: ' and '),
-              TextSpan(
-                text: 'Privacy Policy',
-                style: TextStyle(
-                  color: colors.textDark,
-                  fontWeight: FontWeight.w500,
-                  decoration: TextDecoration.underline,
-                  decorationColor: colors.textDark,
-                ),
-                recognizer: _privacyTap,
-              ),
-              TextSpan(
-                text: isBusiness
-                    ? ', and consent to your business and personal data being '
-                        'processed to verify your identity.'
-                    : ', and consent to your personal data being processed to '
-                        'verify your identity.',
-              ),
-              if (capturesFace)
-                const TextSpan(
-                  text: ' This includes facial recognition and recording this session.',
-                )
-              else if (recordsVideo)
-                const TextSpan(text: ' This includes recording this session.'),
-            ],
-          ),
+        ConsentLegalNotice(
+          isBusiness: isBusiness,
+          capturesFace: capturesFace,
+          recordsVideo: recordsVideo,
         ),
         const SizedBox(height: MyazaSpacing.lg),
 
         // ── Continue ─────────────────────────────────────────────────────────
         MyazaButton(
-          label: 'Continue',
+          label: t('common.continue'),
           onPressed: notifier.nextStep,
         ),
         const SizedBox(height: MyazaSpacing.sm),
@@ -406,10 +191,7 @@ class _ConsentScreenState extends ConsumerState<ConsentScreen> {
           children: [
             MyazaIcon(MyazaIcons.lock, size: 13, color: colors.textMuted),
             const SizedBox(width: 6),
-            Text(
-              'Your data is encrypted and securely processed',
-              style: text.bodySmall,
-            ),
+            Text(t('welcome.secureNote'), style: text.bodySmall),
           ],
         ),
       ],
@@ -479,11 +261,13 @@ class _ShieldHero extends StatelessWidget {
 class _ProcessStepsCard extends StatelessWidget {
   final MyazaColorScheme colors;
   final MyazaThemeText text;
-  final List<_ProcessStep> steps;
+  final String heading;
+  final List<ConsentProcessStep> steps;
 
   const _ProcessStepsCard({
     required this.colors,
     required this.text,
+    required this.heading,
     required this.steps,
   });
 
@@ -499,7 +283,7 @@ class _ProcessStepsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'DURING THIS PROCESS WE WILL',
+            heading,
             style: text.bodySmall.copyWith(
               fontWeight: FontWeight.w600,
               letterSpacing: 0.5,
@@ -518,7 +302,7 @@ class _ProcessStepsCard extends StatelessWidget {
 }
 
 class _StepRow extends StatelessWidget {
-  final _ProcessStep step;
+  final ConsentProcessStep step;
   final MyazaColorScheme colors;
   final MyazaThemeText text;
 

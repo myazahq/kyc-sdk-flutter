@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import 'dashed_border.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The upload-only tap target ───────────────────────────────────────────────
 //
@@ -94,7 +95,7 @@ class DocumentUploadTarget extends StatelessWidget {
                   Text(
                     isBusy
                         ? 'Preparing your photo…'
-                        : 'A clear, well-lit photo from your device',
+                        : context.kycText('uploadDocument.upload.hint'),
                     style: text.bodySmall.copyWith(color: colors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
@@ -112,7 +113,7 @@ class DocumentUploadTarget extends StatelessWidget {
                             size: 16, color: colors.primary),
                         const SizedBox(width: 6),
                         Text(
-                          'Tap to choose a photo',
+                          context.kycText('uploadDocument.upload.tapToChoose'),
                           style: text.label.copyWith(
                             color: colors.primary,
                             fontWeight: FontWeight.w600,

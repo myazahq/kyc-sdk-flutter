@@ -13,6 +13,7 @@ import 'address_flow_scaffold.dart';
 import 'address_photo_dropzone.dart';
 import 'address_photo_picker.dart';
 import 'framed_street_view.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The entrance step ───────────────────────────────────────────────────────
 //
@@ -154,7 +155,9 @@ class _AddressEntranceStepState extends ConsumerState<AddressEntranceStep>
         // A photo is optional unless the workflow says otherwise, and the
         // button says which: pressing on without one is a choice the
         // applicant should be able to read, not guess at.
-        label: uploaded || required ? 'Continue' : 'Continue without a photo',
+        label: context.kycText(uploaded || required
+            ? 'common.continue'
+            : 'address.entrance.continueWithoutPhoto'),
         onPressed: canContinue ? flow.goNext : null,
       ),
     ).animate().fadeIn(duration: 250.ms);

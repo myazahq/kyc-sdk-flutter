@@ -14,6 +14,7 @@ import '../config/country_id_types.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/silent_capture.dart';
 import '../config/supporting_documents.dart';
 import 'session_progress.dart';
 import 'session_restore.dart';
@@ -24,6 +25,7 @@ import '../services/fingerprint_service.dart';
 import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
 import '../services/retry.dart';
+import '../services/silent_capture_session.dart';
 import '../services/validators.dart';
 import '../utils/address_current_location.dart';
 import '../utils/resolve_url.dart';
@@ -34,6 +36,7 @@ import 'resubmit_kept_id.dart';
 import 'step_order.dart';
 import 'step_resubmit.dart' show carriesIdEvidence;
 import '../config/multi_id.dart';
+import '../config/resumed_application.dart';
 
 part 'kyc_provider.g.dart';
 
@@ -129,6 +132,7 @@ class KYCNotifier extends _$KYCNotifier {
           : KYCState(currentStep: opening),
     );
     StepLog.record(start.currentStep);
+    _silent.reset();
     // A second run of the SDK in one app process is a new attempt, possibly by
     // a different person somewhere else, so the shared location fix starts
     // empty rather than answering with the last applicant's coordinates.
@@ -563,6 +567,42 @@ class KYCNotifier extends _$KYCNotifier {
 
   /// Retake: drop the selfie preview and its uploaded media ids in one set
   /// (the upload's record goes with them, see [setSelfieUpload]).
+  // ── Silent capture (config/silent_capture.dart) ──────────────────────────
+  //
+  // Held here, not on the document screen: a retake or a second ID remounts
+  // the screen, and the frames already taken must survive it without
+  // exceeding the cap.
+  final SilentCaptureSession _silent = SilentCaptureSession();
+
+  /// Whether this flow takes silent frames at all.
+  bool get silentCaptureOn =>
+      silentCaptureApplies(flag: _config.silentCapture, scope: _config.scope);
+
+  /// Whether another silent frame would be taken now (on, and under the cap).
+  bool get canCaptureSilently => silentCaptureOn && _silent.canTake;
+
+  /// Takes one silent frame with [grab] and uploads it in the background.
+  /// Returns whether a frame was grabbed. Silent: never throws, never waits
+  /// on the upload, and does nothing when off or at the cap.
+  Future<bool> captureSilently({
+    required Future<Uint8List?> Function() grab,
+    required String moment,
+  }) {
+    if (!silentCaptureOn || !_silent.canTake) return Future.value(false);
+    final client = api;
+    return _silent.capture(
+      grab: grab,
+      moment: moment,
+      upload: (jpeg) => withRetry(
+        () => client.upload(jpeg, 'image/jpeg', MediaType.silentCapture),
+      ),
+    );
+  }
+
+  /// The silent frames to submit (empty when off or none uploaded).
+  List<SilentCaptureFrame> get _silentFrames =>
+      silentCaptureOn ? _silent.frames : const [];
+
   void clearSelfie() {
     state = state.copyWith(
       clearSelfieImage: true,
@@ -644,6 +684,17 @@ class KYCNotifier extends _$KYCNotifier {
   /// Stores the liveness step's capture-integrity claim (mode + flash result).
   void setLivenessIntegrity(Map<String, dynamic> liveness) {
     state = state.copyWith(integrity: {...state.integrity, 'liveness': liveness});
+  }
+
+  /// Whether the liveness recording reached the server (and why not), merged
+  /// into the claim set at capture. Nothing when no claim exists.
+  void setLivenessVideoReport(Map<String, dynamic> report) {
+    final liveness = state.integrity['liveness'];
+    if (liveness is! Map) return;
+    state = state.copyWith(integrity: {
+      ...state.integrity,
+      'liveness': {...Map<String, dynamic>.from(liveness), 'video': report},
+    });
   }
 
   /// Stores the eMRTD chip data read in the NFC step. Submitted under `nfc`.
@@ -938,7 +989,10 @@ class KYCNotifier extends _$KYCNotifier {
     final product =
         state.businessProduct ?? (biz?.offeredProducts.first ?? 'business');
     final regNumber = state.registrationNumber?.trim();
-    if (regNumber == null || regNumber.isEmpty) {
+    final resumed = state.resumedApplication;
+    // A replay of an application that already committed is answered from the
+    // row that exists, whatever the restored form still holds.
+    if (resumed == null && (regNumber == null || regNumber.isEmpty)) {
       throw const KYCApiException(
         statusCode: 0,
         error: 'invalid_state',
@@ -968,7 +1022,9 @@ class KYCNotifier extends _$KYCNotifier {
             : null;
 
     state = state.copyWith(isLoading: true);
-    final requestId = _uuid.v4();
+    // A resumed application replays the business submission's own request id:
+    // a new one is a second application, refused on the spent session.
+    final requestId = businessRequestId(resumed, _uuid.v4);
     final request = VerifyRequest(
       sessionId: state.sessionId,
       country: country,
@@ -977,7 +1033,7 @@ class KYCNotifier extends _$KYCNotifier {
       userId: _config.userId,
       subjectType: 'business',
       business: VerifyBusiness(
-        registrationNumber: regNumber,
+        registrationNumber: regNumber ?? '',
         registrationName: state.registrationName,
         product: product,
         contactEmail: state.businessContactEmail,
@@ -1104,6 +1160,8 @@ class KYCNotifier extends _$KYCNotifier {
     final lastName = resolved?.lastName ?? split?.lastName;
 
     final mediaIds = state.mediaIds;
+    // The applicant's own selfie leg is where the front camera ran.
+    final silentFrames = _silentFrames;
     // Deliberately NO sessionId: a session carries ONE submitted verification
     // and the business application has already claimed this one. The applicant
     // leg links back through metadata.userId instead.
@@ -1120,7 +1178,7 @@ class KYCNotifier extends _$KYCNotifier {
               email: resolved?.email,
             )
           : null,
-      mediaIds: mediaIds.hasAny
+      mediaIds: (mediaIds.hasAny || silentFrames.isNotEmpty)
           ? VerifyMediaIds(
               documentFront: mediaIds.documentFront,
               documentBack: mediaIds.documentBack,
@@ -1128,6 +1186,7 @@ class KYCNotifier extends _$KYCNotifier {
               documentFrontVideo: mediaIds.documentFrontVideo,
               documentBackVideo: mediaIds.documentBackVideo,
               livenessVideo: mediaIds.livenessVideo,
+              silentCaptures: silentCaptureMediaIds(silentFrames),
             )
           : null,
       deviceIntelligence: _config.deviceIntelligence,
@@ -1144,7 +1203,7 @@ class KYCNotifier extends _$KYCNotifier {
         // The link back to the application. Written AFTER the consumer's
         // metadata so nothing they passed can clobber it.
         extra: {...?_extraMetadata(), 'userId': applicantKeyPersonId},
-        device: await _collectDeviceMetadata(),
+        device: withSilentCaptureDevice(await _collectDeviceMetadata(), silentFrames),
       ),
     );
 
@@ -1223,7 +1282,10 @@ class KYCNotifier extends _$KYCNotifier {
       if ((state.addressSandboxOutcome ?? '').isNotEmpty)
         'sandboxOutcome': state.addressSandboxOutcome!,
     };
-    final deviceMetadata = await _collectDeviceMetadata();
+    // Only frames the server accepted are submitted, numbered without gaps.
+    final silentFrames = _silentFrames;
+    final deviceMetadata =
+        withSilentCaptureDevice(await _collectDeviceMetadata(), silentFrames);
 
     final mediaIds = state.mediaIds;
 
@@ -1264,8 +1326,9 @@ class KYCNotifier extends _$KYCNotifier {
       // the server had nothing to compare the document against, and `dataMatch`
       // came back null with no indication why.
       userData: resolveVerifyUserData(_config.userData, state.userData),
-      mediaIds: mediaIds.hasAny
+      mediaIds: (mediaIds.hasAny || silentFrames.isNotEmpty)
           ? VerifyMediaIds(
+              silentCaptures: silentCaptureMediaIds(silentFrames),
               // Multi-ID: the slot documents ride idChecks; only the RUN-level
               // media (the one selfie and its video) sit at the top level.
               // Sending a slot's document here too would file the last ID's
@@ -1374,6 +1437,22 @@ class KYCNotifier extends _$KYCNotifier {
           addressExit: _addressExitFor(state),
         );
       }
+      // A KYB application whose business half already committed. The business
+      // submission replays its request id (the server answers from the row it
+      // has), and the applicant picks up at their own capture leg rather than
+      // walking the application again (config/resumed_application.dart).
+      final resumed = resumedApplicationFrom(
+        applicantKeyPersonId: res.applicantKeyPersonId,
+        parentVerificationId: res.parentVerificationId,
+        parentRequestId: res.parentRequestId,
+      );
+      if (resumed != null) {
+        final legStart = applicantLegStart(buildStepOrder(_config, state));
+        state = state.copyWith(
+          resumedApplication: resumed,
+          currentStep: legStart ?? state.currentStep,
+        );
+      }
     } catch (_) {
       // Resuming is a convenience; verifying is not conditional on it.
     }
@@ -1403,6 +1482,8 @@ class KYCNotifier extends _$KYCNotifier {
     StepLog.reset();
     StepLog.record(start.currentStep);
     resetCurrentFix();
+    // A reset is a new verification: its silent frames start from none.
+    _silent.reset();
     _progressTimer?.cancel();
     _lastSavedProgress = '';
     state = start;

@@ -15,6 +15,7 @@ import '../config/document_capture_methods.dart';
 import '../config/document_guide.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
+import '../config/silent_capture.dart';
 import '../config/theme.dart';
 import '../providers/camera_provider.dart';
 import '../providers/step_order.dart' show effectiveCountry;
@@ -31,6 +32,7 @@ import '../services/image_service.dart';
 import '../services/kyc_error_mapper.dart';
 import '../services/media_compress_service.dart';
 import '../services/retry.dart';
+import '../services/silent_front_camera.dart';
 import '../utils/permissions.dart';
 import '../widgets/document_capture_check_notice.dart';
 import '../widgets/document_review.dart';
@@ -45,6 +47,7 @@ import '../widgets/document_viewfinder.dart';
 import '../widgets/myaza_button.dart';
 import '../services/model_readiness.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Scan phase ───────────────────────────────────────────────────────────────
 //
@@ -171,6 +174,12 @@ class _DocumentCaptureScreenState
   // Ensures the camera_permission_denied error is reported to onError once.
   bool _cameraPermissionReported = false;
 
+  // Silent capture (config/silent_capture.dart): the front-camera grab running
+  // behind the review, and whether it has been told to stop (a retake needs
+  // the camera back, or the screen is going).
+  Future<void>? _silentGrab;
+  bool _silentCancelled = false;
+
   @override
   void initState() {
     super.initState();
@@ -209,6 +218,7 @@ class _DocumentCaptureScreenState
 
   @override
   void dispose() {
+    _silentCancelled = true;
     WidgetsBinding.instance.removeObserver(this);
     // The plugin controller is released by the camera provider's onDispose; the
     // native camera is ours to tear down.
@@ -380,6 +390,14 @@ class _DocumentCaptureScreenState
   Future<void> _resumeCaptureForSide() async {
     // Upload-only: the next side is another pick, never a camera.
     if (_uploadOnly) return;
+    // A silent front-camera grab still running from the review holds the
+    // camera: stop it and wait for it to close before the rear one reopens.
+    final grab = _silentGrab;
+    if (grab != null) {
+      _silentCancelled = true;
+      await grab;
+      if (!mounted) return;
+    }
     final native = _nativeCamera;
     if (native == null) {
       await _restartCamera();
@@ -674,6 +692,58 @@ class _DocumentCaptureScreenState
       _ScanPhase.review       => 'review',
     };
     ref.read(kYCNotifierProvider.notifier).setDocReviewPhase(phaseStr);
+    if (phase == _ScanPhase.review) unawaited(_takeSilentFrontFrame());
+  }
+
+  // ── Silent capture ─────────────────────────────────────────────────────────
+  //
+  // One unposed frame per review: every side is captured, so the rear camera
+  // is released and the front one opened headless (services/
+  // silent_front_camera.dart) while the person looks at their photo. A retake
+  // reopens the rear camera through _resumeCaptureForSide, which waits for this
+  // to finish first. Best-effort throughout: a lost frame costs a photo only.
+
+  Future<void> _takeSilentFrontFrame() async {
+    final notifier = ref.read(kYCNotifierProvider.notifier);
+    if (_uploadOnly || _silentGrab != null || !notifier.canCaptureSilently) return;
+    _silentCancelled = false;
+    bool cancelled() => _silentCancelled || !mounted;
+    final grab = () async {
+      await _releaseRearCamera();
+      if (cancelled()) return;
+      await notifier.captureSilently(
+        grab: () => grabSilentFrontFrame(cancelled: cancelled),
+        moment: SilentCaptureMoment.document,
+      );
+    }();
+    _silentGrab = grab;
+    try {
+      await grab;
+    } catch (_) {
+      // Silent by contract.
+    } finally {
+      if (identical(_silentGrab, grab)) _silentGrab = null;
+    }
+  }
+
+  /// Closes the rear camera for the review. The next camera phase reopens it
+  /// (_resumeCaptureForSide finds no native camera and restarts).
+  Future<void> _releaseRearCamera() async {
+    final native = _nativeCamera;
+    if (native != null) {
+      if (mounted) {
+        setState(() {
+          _nativeCamera = null;
+          _nativeTextureId = null;
+          _torchOn = false;
+        });
+      }
+      await native.dispose();
+      return;
+    }
+    if (!mounted) return;
+    await ref.read(cameraNotifierProvider.notifier).release();
+    if (mounted && _torchOn) setState(() => _torchOn = false);
   }
 
   // ── Capture (still photo, then crop to card region) ───────────────────────
@@ -876,16 +946,16 @@ class _DocumentCaptureScreenState
     if (!mounted) return;
     if (_pickError != null) setState(() => _pickError = null);
 
-    // Show the interactive ID-card cropper and wait for the user to confirm.
-    // The route is built under the app's navigator, outside the flow's own
-    // Theme, so without this the cropper could not see the workflow's colours.
+    // The cropper's route sits outside the flow, so it is handed the flow's
+    // Theme (the workflow's colours) and scope (its texts).
     final flowTheme = Theme.of(context);
+    final flowScope = flowScopeOf(context);
     final cropped = await Navigator.of(context).push<Uint8List>(
       MaterialPageRoute(
         fullscreenDialog: true,
-        builder: (_) => Theme(
-          data: flowTheme,
-          child: DocumentCropperScreen(imageBytes: rawBytes),
+        builder: (_) => inFlowScope(
+          flowScope,
+          Theme(data: flowTheme, child: DocumentCropperScreen(imageBytes: rawBytes)),
         ),
       ),
     );
@@ -1217,8 +1287,7 @@ class _DocumentCaptureScreenState
     // Camera-access primer — shown before the OS prompt (camera not yet started).
     if (_showPrimer && inCameraPhase) {
       return CameraPermissionPrimingView(
-        message:
-            'When prompted, allow camera access to photograph your document.',
+        message: context.kycText('primer.camera.bodyDocument'),
         onGrant: () {
           setState(() => _showPrimer = false);
           _init();
@@ -1244,7 +1313,7 @@ class _DocumentCaptureScreenState
                 _restartCamera();
               },
         secondaryAction: MyazaButton.ghost(
-          label: 'Upload a photo instead',
+          label: context.kycText('uploadDocument.camera.uploadInstead'),
           onPressed: _onUpload,
         ),
       );
@@ -1409,7 +1478,7 @@ class _DocumentCaptureScreenState
             // and the back will be another pick.
             final uploadOnly = _uploadOnly;
             final nextLabel = uploadOnly ? 'Next: Back Side' : 'Next: Scan Back';
-            final retakeLabel = uploadOnly ? 'Replace' : 'Retake';
+            final retakeLabel = uploadOnly ? 'Replace' : context.kycText('common.retake');
             if (narrow) {
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1528,7 +1597,7 @@ class _DocumentCaptureScreenState
           )
         else if (!_isUploading)
           MyazaButton(
-            label: _uploadError != null ? 'Try Again' : 'Continue',
+            label: _uploadError != null ? 'Try Again' : context.kycText('common.continue'),
             onPressed: _onContinue,
             leadingIcon: MyazaIcon(
               _uploadError != null ? MyazaIcons.rotateCcw : MyazaIcons.check,

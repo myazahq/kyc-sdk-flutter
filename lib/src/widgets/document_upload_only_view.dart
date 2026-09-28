@@ -4,6 +4,7 @@ import '../config/theme.dart';
 import 'document_upload_target.dart';
 import 'myaza_alert.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Upload-only document side ────────────────────────────────────────────────
 //
@@ -89,9 +90,9 @@ class DocumentUploadOnlyView extends StatelessWidget {
                   onPick: onPick,
                 ),
                 const SizedBox(height: MyazaSpacing.lg),
-                const _Tip(MyazaIcons.scan, 'All four corners are in the photo'),
-                const _Tip(MyazaIcons.sun, 'No glare, shadows or blur'),
-                const _Tip(MyazaIcons.type, 'Every word is easy to read'),
+                const _Tip(MyazaIcons.scan, 'uploadDocument.upload.tip1'),
+                const _Tip(MyazaIcons.sun, 'uploadDocument.upload.tip2'),
+                const _Tip(MyazaIcons.type, 'uploadDocument.upload.tip3'),
               ],
             ),
           ),
@@ -103,6 +104,8 @@ class DocumentUploadOnlyView extends StatelessWidget {
 
 class _Tip extends StatelessWidget {
   final MyazaIconData icon;
+
+  /// Text key of the tip (a catalogue text).
   final String label;
 
   const _Tip(this.icon, this.label);
@@ -118,7 +121,7 @@ class _Tip extends StatelessWidget {
           const SizedBox(width: MyazaSpacing.sm),
           Expanded(
             child: Text(
-              label,
+              context.kycText(label),
               style: context.myazaText.bodySmall
                   .copyWith(color: colors.textSecondary),
             ),

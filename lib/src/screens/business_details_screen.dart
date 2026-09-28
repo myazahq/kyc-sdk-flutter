@@ -15,6 +15,7 @@ import 'business_check_panel.dart';
 import 'business_details_fields.dart';
 import 'business_picked_section.dart';
 import 'business_search.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Business (KYB) registry details — two screens in one step ────────────────
 //
@@ -170,7 +171,7 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         if (countries.length > 1) ...[
-          Text('Country of registration', style: text.label),
+          Text(context.kycText('business.details.countryLabel'), style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           CountryField(
             country: country,
@@ -263,8 +264,8 @@ class _BusinessDetailsScreenState extends ConsumerState<BusinessDetailsScreen> {
           label: checking
               ? 'Checking…'
               : _phase == 'details'
-                  ? 'Confirm details & continue'
-                  : 'Continue',
+                  ? context.kycText('business.details.confirm')
+                  : context.kycText('common.continue'),
           isLoading: checking,
           onPressed:
               !isFormValid || checking ? null : () => _persistAndContinue(country, product),

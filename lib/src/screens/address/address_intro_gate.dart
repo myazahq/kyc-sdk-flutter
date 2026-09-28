@@ -7,6 +7,8 @@ import '../../widgets/presence_milestone_track.dart';
 import '../../widgets/presence_milestones.dart';
 import 'address_intro_disclosures.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
+import '../../i18n/translate.dart' show TextFn;
 
 // ─── The presence primer ─────────────────────────────────────────────────────
 //
@@ -21,14 +23,8 @@ import '../../widgets/icons/icons.dart';
 // RN SDKs' AddressIntroGate — keep the copy in lockstep.
 
 // The second milestone's caption depends on which tier the org runs. With
-// background geofencing on, the "allow all the time" prompt is coming, and
-// OkHi's integration guidance is to say so ONCE, up front, beside the
-// education, not to surprise the person with it after capture.
-const _kCheckInForeground =
-    'Keep location on; your phone confirms it over the coming days.';
-const _kCheckInBackground =
-    'Allow location all the time when asked. Your phone then confirms it on '
-    'its own, even with the app closed.';
+// background geofencing on, the "allow all the time" prompt is coming, and it
+// is said ONCE, up front, beside the education. All catalogue texts.
 
 class AddressIntroGate extends StatelessWidget {
   final VoidCallback onAcknowledge;
@@ -42,31 +38,34 @@ class AddressIntroGate extends StatelessWidget {
     this.background = false,
   });
 
-  List<PresenceMilestone> get _milestones => [
-        const PresenceMilestone(
+  List<PresenceMilestone> _milestones(TextFn t) => [
+        PresenceMilestone(
           icon: MyazaIcons.mapPinHouse,
-          stage: 'Your part',
-          title: 'Pin your address',
-          caption: 'Put the pin right on your building. Takes a minute.',
+          stage: t('address.intro.step1.stage'),
+          title: t('address.intro.step1.title'),
+          caption: t('address.intro.step1.caption'),
           active: true,
         ),
         PresenceMilestone(
           icon: MyazaIcons.radar,
-          stage: 'After that',
-          title: 'Quiet check-ins',
-          caption: background ? _kCheckInBackground : _kCheckInForeground,
+          stage: t('address.intro.step2.stage'),
+          title: t('address.intro.step2.title'),
+          caption: t(background
+              ? 'address.intro.step2.caption.background'
+              : 'address.intro.step2.caption'),
         ),
-        const PresenceMilestone(
+        PresenceMilestone(
           icon: MyazaIcons.bellRing,
-          stage: 'Then',
-          title: 'Confirmed',
-          caption: "You’ll be notified. That is it.",
+          stage: t('address.intro.step3.stage'),
+          title: t('address.intro.step3.title'),
+          caption: t('address.intro.step3.caption'),
         ),
       ];
 
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
+    final t = context.kycText;
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(vertical: MyazaSpacing.sm),
       child: Column(
@@ -77,14 +76,13 @@ class AddressIntroGate extends StatelessWidget {
               badge: PresenceBadge(
                 leading: MyazaIcon(MyazaIcons.mapPinCheck,
                     size: 12, color: colors.primary),
-                label: 'Address verification',
+                label: t('address.intro.badge'),
               ),
-              title: "Let’s confirm your address",
-              body: 'This address will be verified over the coming days. Your '
-                  'part takes a minute; the rest happens on its own.',
+              title: t('address.intro.title'),
+              body: t('address.intro.description'),
             ),
             track: PresenceMilestoneTrack(
-              milestones: _milestones,
+              milestones: _milestones(t),
               numbered: true,
             ),
           ),
@@ -92,7 +90,7 @@ class AddressIntroGate extends StatelessWidget {
           AddressIntroDisclosures(background: background),
           const SizedBox(height: MyazaSpacing.md),
           MyazaButton(
-            label: "Got it, let’s go",
+            label: t('address.intro.start'),
             onPressed: onAcknowledge,
           ),
         ],

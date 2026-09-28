@@ -6,6 +6,7 @@ import '../../providers/kyc_provider.dart';
 import '../../providers/kyc_state.dart';
 import 'address_flow_controller.dart';
 import 'address_intro_gate.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── What every address step shares ──────────────────────────────────────────
 //
@@ -60,7 +61,7 @@ mixin AddressFlowScaffold<T extends ConsumerStatefulWidget> on ConsumerState<T> 
       child: Center(
         child: Semantics(
           button: true,
-          label: 'Skip for now',
+          label: context.kycText('address.skip'),
           child: InkWell(
             onTap: flow.exitForward,
             borderRadius: BorderRadius.circular(MyazaRadius.xs),
@@ -68,7 +69,7 @@ mixin AddressFlowScaffold<T extends ConsumerStatefulWidget> on ConsumerState<T> 
               padding: const EdgeInsets.symmetric(
                   vertical: MyazaSpacing.sm, horizontal: MyazaSpacing.sm),
               child: Text(
-                'Skip for now',
+                context.kycText('address.skip'),
                 style: context.myazaText.bodyMedium.copyWith(
                   color: colors.textSecondary,
                   decoration: TextDecoration.underline,

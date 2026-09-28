@@ -8,6 +8,19 @@ import 'liveness_types.dart';
 // tracks which have been completed. Timing is intentionally NOT owned here —
 // the liveness provider holds the dart:async Timer and calls
 // currentTimeoutSeconds to know how long each challenge gets.
+//
+// Selection mirrors the web SDK's liveness/challenge-manager.ts: a head TURN is
+// always one of the prompts (in a random position), gestures that can trigger
+// each other never appear together, and no prompt appears twice.
+
+/// Gestures within a group never appear together, because one can
+/// accidentally trigger the other (head movement overlaps).
+const List<Set<LivenessChallenge>> _similarityGroups = [
+  {LivenessChallenge.nod, LivenessChallenge.turn},
+];
+
+bool _areSimilar(LivenessChallenge a, LivenessChallenge b) =>
+    _similarityGroups.any((g) => g.contains(a) && g.contains(b));
 
 class ChallengeManager {
   final List<ChallengeConfig> pool;
@@ -36,6 +49,24 @@ class ChallengeManager {
   /// to be asked for explicitly.
   factory ChallengeManager.none() =>
       ChallengeManager._(pool: const [], count: 0);
+
+  /// Passive Liveness (`livenessMode: 'passive'`): the single hold prompt. No
+  /// gestures and no flash; the server's liveness model does the judging.
+  factory ChallengeManager.passive() =>
+      ChallengeManager._(pool: const [kHoldChallenge], count: 1);
+
+  /// The prompts the workflow's liveness method asks for. The flash is not a
+  /// prompt here: the screen runs it at the capture seam.
+  factory ChallengeManager.forMode(
+    String livenessMode, {
+    List<ChallengeConfig>? pool,
+    int count = 2,
+  }) =>
+      switch (livenessMode) {
+        'flash' => ChallengeManager.none(),
+        'passive' => ChallengeManager.passive(),
+        _ => ChallengeManager(pool: pool, count: count),
+      };
 
   ChallengeManager._({required this.pool, required this.count}) {
     _selected = _pickRandom();
@@ -85,7 +116,57 @@ class ChallengeManager {
   // ── Internal ─────────────────────────────────────────────────────────────────
 
   List<ChallengeConfig> _pickRandom() {
-    final shuffled = List<ChallengeConfig>.from(pool)..shuffle(Random());
-    return shuffled.take(count).toList();
+    if (count <= 0) return <ChallengeConfig>[];
+    final random = Random();
+    final shuffled = List<ChallengeConfig>.from(pool)..shuffle(random);
+    final picked = <ChallengeConfig>[];
+    bool taken(ChallengeConfig c) => picked.any((p) => p.type == c.type);
+
+    // A head TURN is always one of the prompts, because the server's
+    // shape-from-movement test needs one: a turn swings the nose across the
+    // face, which a flat picture cannot do. The rest stay random.
+    for (final c in shuffled) {
+      if (c.type == LivenessChallenge.turn) {
+        picked.add(c);
+        break;
+      }
+    }
+
+    // Greedily add challenges that aren't similar to those already picked.
+    for (final c in shuffled) {
+      if (picked.length >= count) break;
+      if (taken(c) || picked.any((p) => _areSimilar(p.type, c.type))) continue;
+      picked.add(c);
+    }
+
+    // The similarity rule was too strict for this pool: fill the rest.
+    for (final c in shuffled) {
+      if (picked.length >= count) break;
+      if (!taken(c)) picked.add(c);
+    }
+
+    // The turn went first to guarantee it; shuffle so its position is random.
+    return picked..shuffle(random);
   }
+}
+
+/// The prompts a run used, in order, as wire names for the liveness claim
+/// (`integrity.liveness.challenges`): 'nod', 'turn', 'blink', 'smile',
+/// 'flash', 'hold'.
+///
+/// [gestures] are the prompts the manager ran. The flash runs at the capture
+/// seam, so it is placed here: after the gestures in 'both', alone in 'flash',
+/// and FIRST when a flash-only check fell back to gestures.
+List<String> livenessClaimChallenges({
+  required String mode,
+  required List<LivenessChallenge> gestures,
+  bool fellBackToGestures = false,
+}) {
+  final names = [for (final g in gestures) g.name];
+  if (fellBackToGestures) return ['flash', ...names];
+  return switch (mode) {
+    'flash' => const ['flash'],
+    'both' => [...names, 'flash'],
+    _ => names,
+  };
 }

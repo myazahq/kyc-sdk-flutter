@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/screen_corners.dart';
 import '../config/theme.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Themed bottom sheet ──────────────────────────────────────────────────────
 //
@@ -138,13 +139,13 @@ Future<T?> showMyazaSheet<T>(
   final theme = Theme.of(context);
   final colors = context.myazaColors;
 
-  // A tall sheet must stop BELOW the status bar. `isScrollControlled` lets one
-  // grow to the full screen, and a full-height panel on a notched phone runs
-  // its own header under the Dynamic Island: the close button was behind the
-  // island and the title sat in the status bar. The same 8 that detaches the
-  // card at the sides and bottom detaches it at the top.
+  // A tall sheet must stop BELOW the status bar (a full-height panel on a
+  // notched phone ran its header under the Dynamic Island). The same 8 that
+  // detaches the card at the sides and bottom detaches it at the top. The
+  // flow's scope rides along so the sheet reads the flow's texts.
   final media = MediaQuery.of(context);
   final maxHeight = media.size.height - media.padding.top - kMyazaSheetInset;
+  final scope = flowScopeOf(context);
 
   return showModalBottomSheet<T>(
     context: context,
@@ -181,7 +182,7 @@ Future<T?> showMyazaSheet<T>(
           child: MediaQuery.removePadding(
             context: sheetContext,
             removeBottom: true,
-            child: Theme(
+            child: inFlowScope(scope, Theme(
               data: theme,
               child: showHeader
                   ? Column(
@@ -193,7 +194,7 @@ Future<T?> showMyazaSheet<T>(
                       ],
                     )
                   : Builder(builder: builder),
-            ),
+            )),
           ),
         ),
       );

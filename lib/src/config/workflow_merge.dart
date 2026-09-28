@@ -10,6 +10,7 @@ import 'questionnaire.dart';
 import 'supporting_documents.dart';
 import '../providers/step_resubmit.dart';
 import 'multi_id.dart';
+import '../i18n/translate.dart' show parseWorkflowTexts;
 
 /// Merges a resolved workflow's config over the consumer's [base] config —
 /// **flow wins** on every key it defines; props fill the gaps (so a dev can
@@ -119,6 +120,10 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     deviceIntelligence: flow.raw['deviceIntelligence'] as bool?,
     keyPeopleLinkRecovery: flow.raw['keyPeopleLinkRecovery'] as bool?,
     consentStep: flow.raw['consentStep'] as bool?,
+    // Absent = the flow says nothing (the prop, on by default, stands).
+    silentCapture: flow.raw['silentCapture'] as bool?,
+    // Same: absent leaves the prop (on by default); only false turns it off.
+    livenessBrightScreen: flow.raw['livenessBrightScreen'] as bool?,
     biometric: biometric,
     // Flow-defined idTypes win wholesale (an empty list means "all granted",
     // the same "unset = all" semantic the id-type picker applies). Null = the
@@ -156,6 +161,8 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
         ? KYCSuccessContent.fromJson(flow.success!)
         : null,
     voiceGuidance: VoiceGuidanceConfig.fromDynamic(flow.voiceGuidance),
+    // Custom copy, replaced wholesale like consent (web: WORKFLOW_KEYS).
+    texts: parseWorkflowTexts(flow.raw['texts']),
   );
 }
 
@@ -205,6 +212,10 @@ MyazaKYCConfig overlayApplicantWorkflow(
     enableLiveness: flow.enableLiveness,
     livenessMode: flow.raw['livenessMode'] as String?,
     flashSequenceLength: (flow.raw['flashSequenceLength'] as num?)?.toInt(),
+    // The applicant leg's front-camera capture follows its own workflow.
+    silentCapture: flow.raw['silentCapture'] as bool?,
+    // So does the bright screen that lights the applicant's selfie.
+    livenessBrightScreen: flow.raw['livenessBrightScreen'] as bool?,
     nfc: nfc,
   );
 }

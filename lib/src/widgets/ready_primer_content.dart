@@ -7,29 +7,31 @@ import 'icons/icons.dart';
 // per platform so the document and liveness screens can't drift from each
 // other, and so the two SDKs can be diffed string-for-string.
 //
-// Any change here must be mirrored in
-// kyc-sdk-react/src/components/ready-primer-content.ts — a user who starts on
-// the hosted web flow and finishes in the native app should read the same words.
+// The words are catalogue texts (a workflow may reword them); this file holds
+// their KEYS, and each key's default lives in i18n/defaults_welcome.dart.
 
 @immutable
 class ReadyChecklistItem {
-  const ReadyChecklistItem(this.icon, this.label);
+  const ReadyChecklistItem(this.icon, this.labelKey);
   final MyazaIconData icon;
-  final String label;
+
+  /// Text key of the line (see i18n/).
+  final String labelKey;
 }
 
 @immutable
 class ReadyContent {
   const ReadyContent({
     required this.icon,
-    required this.title,
-    required this.body,
+    required this.titleKey,
+    required this.bodyKey,
     required this.checklist,
   });
 
   final MyazaIconData icon;
-  final String title;
-  final String body;
+  /// Text keys of the heading and the paragraph (see i18n/).
+  final String titleKey;
+  final String bodyKey;
 
   /// What to expect. Three at most; past that nobody reads it.
   final List<ReadyChecklistItem> checklist;
@@ -37,24 +39,40 @@ class ReadyContent {
 
 const readyDocument = ReadyContent(
   icon: MyazaIcons.scanLine,
-  title: "You're about to scan your ID",
-  body: "We'll photograph your document and read it automatically. "
-      'Nothing is shared until you submit.',
+  titleKey: 'primer.document.title',
+  bodyKey: 'primer.document.body',
   checklist: [
-    ReadyChecklistItem(MyazaIcons.idCard, 'Have your physical document with you'),
-    ReadyChecklistItem(MyazaIcons.sun, 'Find even lighting, avoid glare'),
-    ReadyChecklistItem(MyazaIcons.timer, 'Takes about a minute'),
+    ReadyChecklistItem(MyazaIcons.idCard, 'primer.document.checklist1'),
+    ReadyChecklistItem(MyazaIcons.sun, 'primer.document.checklist2'),
+    ReadyChecklistItem(MyazaIcons.timer, 'primer.document.checklist3'),
   ],
 );
 
 const readyLiveness = ReadyContent(
   icon: MyazaIcons.scanFace,
-  title: "Let's confirm you're really here",
-  body: "You'll follow a few short prompts on screen. This proves a real person "
-      'is present, not a photo or a recording.',
+  titleKey: 'primer.selfie.title',
+  bodyKey: 'primer.selfie.body',
   checklist: [
-    ReadyChecklistItem(MyazaIcons.userRound, 'Put your face in the circle'),
-    ReadyChecklistItem(MyazaIcons.sun, 'Find even lighting, remove sunglasses'),
-    ReadyChecklistItem(MyazaIcons.timer, 'Takes about 10 seconds'),
+    ReadyChecklistItem(MyazaIcons.userRound, 'primer.selfie.checklist1'),
+    ReadyChecklistItem(MyazaIcons.glasses, 'primer.selfie.checklist2'),
+    ReadyChecklistItem(MyazaIcons.sun, 'primer.selfie.checklist4'),
+    ReadyChecklistItem(MyazaIcons.sparkles, 'primer.selfie.checklist5'),
   ],
 );
+
+/// Passive Liveness asks for no prompts, so its description says so.
+const readyLivenessPassive = ReadyContent(
+  icon: MyazaIcons.scanFace,
+  titleKey: 'primer.selfie.title',
+  bodyKey: 'primer.selfie.bodyPassive',
+  checklist: [
+    ReadyChecklistItem(MyazaIcons.userRound, 'primer.selfie.checklist1'),
+    ReadyChecklistItem(MyazaIcons.glasses, 'primer.selfie.checklist2'),
+    ReadyChecklistItem(MyazaIcons.sun, 'primer.selfie.checklist4'),
+    ReadyChecklistItem(MyazaIcons.sparkles, 'primer.selfie.checklist5'),
+  ],
+);
+
+/// The primer for the workflow's liveness method.
+ReadyContent readyLivenessFor(String livenessMode) =>
+    livenessMode == 'passive' ? readyLivenessPassive : readyLiveness;

@@ -7,6 +7,7 @@ import '../config/result_copy.dart';
 import '../config/scope.dart';
 import '../providers/kyc_provider.dart';
 import 'submitted_waiting_view.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Handing over without the review ────────────────────────────────────────
 //
@@ -31,6 +32,7 @@ class LivenessHandover extends ConsumerWidget {
       scope: configScope(config.scope),
       waitsForResult: config.waitsForResultOption,
       override: config.biometricCopy.waiting,
+      t: textFnFor(config),
     );
     return SubmittedWaitingView(title: copy.title, description: copy.description);
   }

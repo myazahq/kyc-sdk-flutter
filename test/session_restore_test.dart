@@ -24,11 +24,22 @@ void main() {
     });
     expect(s.currentStep, KYCStep.idInput);
     expect(s.mediaIds.documentFront, 'med_1');
-    expect(s.mediaIds.selfie, 'med_2');
+    // A restored selfie is taken again: its liveness claim cannot be restored.
+    expect(s.mediaIds.selfie, isNull);
     expect(s.selectedCountry, 'NG');
     expect(s.selectedIdType?.key, 'bvn');
     expect(s.idNumber, '12345678901');
     expect(s.questionnaireAnswers['source_of_funds'], 'salary');
+  });
+
+  test('a saved step past liveness goes back to it when a selfie was restored', () {
+    final s = restoredState(const KYCState(), {
+      'step': 'questionnaire',
+      'mediaIds': {'selfie': 'med_2'},
+      'data': {'selectedCountry': 'NG', 'selectedIdType': 'bvn'},
+    });
+    expect(s.currentStep, KYCStep.liveness);
+    expect(s.mediaIds.selfie, isNull);
   });
 
   test('restores a KYB application including key people', () {

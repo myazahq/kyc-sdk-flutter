@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import 'myaza_button.dart';
 import 'pulse_ring.dart';
 import 'ready_primer_content.dart';
+import '../i18n/text_scope.dart';
 import 'icons/icons.dart';
 
 /// "Here's what happens next" screen, shown once before a capture step opens
@@ -25,17 +26,20 @@ class ReadyPrimer extends StatelessWidget {
     super.key,
     required this.content,
     required this.onReady,
-    this.buttonLabel = "I'm ready",
+    this.buttonLabel,
   });
 
   final ReadyContent content;
   final VoidCallback onReady;
-  final String buttonLabel;
+
+  /// Null = the `primer.readyButton` text.
+  final String? buttonLabel;
 
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final text = context.myazaText;
+    final t = context.kycText;
 
     // TOP-ALIGNED, like the web. The sheet body guarantees the child at least
     // the viewport height, so a Center here parked the whole primer in the
@@ -80,11 +84,11 @@ class ReadyPrimer extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: MyazaSpacing.md), // gap-4
-                  Text(content.title,
+                  Text(t(content.titleKey),
                       style: text.heading3, textAlign: TextAlign.center),
                   const SizedBox(height: 6), // space-y-1.5
                   Text(
-                    content.body,
+                    t(content.bodyKey),
                     style: text.bodySmall.copyWith(color: colors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
@@ -109,7 +113,7 @@ class ReadyPrimer extends StatelessWidget {
                   ),
                   const SizedBox(width: 12), // gap-3
                   Expanded(
-                    child: Text(item.label, style: text.bodyMedium),
+                    child: Text(t(item.labelKey), style: text.bodyMedium),
                   ),
                 ],
               ),
@@ -118,7 +122,9 @@ class ReadyPrimer extends StatelessWidget {
 
             const SizedBox(height: 8),
             // One primary action. MyazaButton already clears the 44pt minimum.
-            MyazaButton(label: buttonLabel, onPressed: onReady),
+            MyazaButton(
+                label: buttonLabel ?? t('primer.readyButton'),
+                onPressed: onReady),
           ],
         ),
     ).animate().fadeIn(duration: 250.ms);

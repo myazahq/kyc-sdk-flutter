@@ -12,6 +12,7 @@ import '../providers/kyc_provider.dart';
 import '../widgets/myaza_button.dart';
 import 'submitted_waiting_view.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The result screen (a flow that waits for its verdict) ──────────────────
 //
@@ -102,6 +103,7 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
         waitsForResult: true,
         retry: widget.retryInfo,
         override: words.waiting,
+        t: textFnFor(config),
       );
       return SubmittedWaitingView(
         title: copy.title,
@@ -110,7 +112,8 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
       );
     }
 
-    final copy = describeOutcome(outcome, verified: words.verified, declined: words.declined);
+    final copy = describeOutcome(outcome,
+        verified: words.verified, declined: words.declined, t: textFnFor(config));
     final colors = context.myazaColors;
     final text = context.myazaText;
     final (bg, fg, icon) = switch (copy.tone) {
@@ -169,7 +172,7 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
           ],
         ),
         if (widget.showDone)
-          MyazaButton(label: 'Done', onPressed: widget.onDone)
+          MyazaButton(label: context.kycText('common.done'), onPressed: widget.onDone)
               .animate(delay: 600.ms)
               .fadeIn(duration: 300.ms)
               .moveY(begin: 8, end: 0, duration: 300.ms)

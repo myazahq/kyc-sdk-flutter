@@ -10,6 +10,10 @@ import 'supporting_documents.dart';
 import '../providers/step_resubmit.dart';
 import 'multi_id.dart';
 import 'biometric_options.dart';
+import '../i18n/translate.dart' show WorkflowTexts;
+import 'screen_content.dart';
+
+export 'screen_content.dart';
 
 // ─── Environment ────────────────────────────────────────────────────────────
 
@@ -199,50 +203,6 @@ Color? parseHexColor(Object? value) {
   if (hex.length != 8) return null;
   final n = int.tryParse(hex, radix: 16);
   return n == null ? null : Color(n);
-}
-
-// ─── Consent screen content ──────────────────────────────────────────────────
-
-/// Overrides for the consent (welcome) screen copy. Both fields support
-/// `{firstName}` / `{lastName}` tokens, replaced with the values from
-/// [MyazaKYCConfig.userData] (empty string when absent).
-class KYCConsentContent {
-  /// Heading. Defaults to `Welcome, {firstName}` when a first name is known,
-  /// otherwise `Identity Verification`.
-  final String? title;
-
-  /// Sub-text under the heading. Defaults to the built-in regulatory copy.
-  final String? description;
-
-  const KYCConsentContent({this.title, this.description});
-
-  factory KYCConsentContent.fromJson(Map<String, dynamic> json) =>
-      KYCConsentContent(
-        title: json['title'] as String?,
-        description: json['description'] as String?,
-      );
-}
-
-// ─── Success screen content ──────────────────────────────────────────────────
-
-/// Overrides for the success (submitted) screen copy. Both fields support
-/// `{firstName}` / `{lastName}` tokens, replaced with the values from
-/// [MyazaKYCConfig.userData] (empty string when absent).
-class KYCSuccessContent {
-  /// Heading. Defaults to `Verification Submitted!`.
-  final String? title;
-
-  /// Sub-text under the heading. Defaults to the built-in "submitted for
-  /// review" copy.
-  final String? description;
-
-  const KYCSuccessContent({this.title, this.description});
-
-  factory KYCSuccessContent.fromJson(Map<String, dynamic> json) =>
-      KYCSuccessContent(
-        title: json['title'] as String?,
-        description: json['description'] as String?,
-      );
 }
 
 // ─── Liveness config ────────────────────────────────────────────────────────
@@ -480,7 +440,9 @@ class MyazaKYCConfig {
   final bool enableLiveness;
 
   /// Presence Intelligence liveness method: `'gestures'` (default, randomized
-  /// head-gesture challenges), `'flash'` (screen-reflection), or `'both'`.
+  /// head-gesture challenges, always including a head turn), `'flash'`
+  /// (screen-reflection), `'both'`, or `'passive'` (Passive Liveness: hold
+  /// still for a moment while the server's liveness model decides).
   /// Affects billing (flash is priced lower than gestures; `both` charges both).
   /// Normally set by a resolved workflow. Sent on the verify body.
   final String livenessMode;
@@ -572,6 +534,24 @@ class MyazaKYCConfig {
   /// does not change what the organisation attests to the provider.
   final bool consentStep;
 
+  /// Silent capture: up to three unposed photos of the applicant, taken from
+  /// the front camera while it is already open for the selfie. On by default;
+  /// `false` switches it off. Normally set by a workflow (`silentCapture`,
+  /// where an absent key means on). Never runs on a scoped flow other than the
+  /// two biometric scopes. See config/silent_capture.dart.
+  final bool silentCapture;
+
+  /// Bright screen during liveness: from the moment the selfie camera screen
+  /// shows until the liveness step is left (the selfie review included, the
+  /// ready and camera-permission primers before it excluded), the flow renders
+  /// in the light theme (the organisation's light palette) and raises this
+  /// app's screen brightness to full, so the phone's screen lights the
+  /// person's face. Both are put back when the step is left. On by default;
+  /// `false` switches off both. Normally set by a workflow
+  /// (`livenessBrightScreen`, where an absent key means on). The flash check's
+  /// black baseline between colours is not governed by this: it always runs.
+  final bool livenessBrightScreen;
+
   /// The biometric scopes' flow options (workflow-driven, or passed here on a
   /// prop-configured mount): `selfieReview` shows the captured selfie with
   /// Retake and Continue before submitting (off by default on both biometric
@@ -637,6 +617,14 @@ class MyazaKYCConfig {
   /// KYB registry config — present when [subjectType] is `'business'`.
   final WorkflowBusinessConfig? business;
 
+  /// Custom copy by language then key, e.g. `{'en': {'common.continue':
+  /// 'Next'}}`. Keys are the shared catalogue's (see lib/src/i18n/); unset or
+  /// blank texts keep the SDK default. Normally set by a resolved workflow.
+  final WorkflowTexts? texts;
+
+  /// The language [texts] are shown in (BCP-47, e.g. `en`, `fr`). Default `en`.
+  final String? language;
+
   const MyazaKYCConfig({
     required this.apiKey,
     this.country,
@@ -667,6 +655,8 @@ class MyazaKYCConfig {
     this.deviceIntelligence = true,
     this.keyPeopleLinkRecovery = true,
     this.consentStep = true,
+    this.silentCapture = true,
+    this.livenessBrightScreen = true,
     this.biometric,
     this.questionnaire,
     this.resubmit,
@@ -679,6 +669,8 @@ class MyazaKYCConfig {
     this.subjectType = 'individual',
     this.scope,
     this.business,
+    this.texts,
+    this.language,
   });
 
   /// Returns a copy with the given fields replaced. Used by the workflow merge
@@ -714,6 +706,8 @@ class MyazaKYCConfig {
     bool? deviceIntelligence,
     bool? keyPeopleLinkRecovery,
     bool? consentStep,
+    bool? silentCapture,
+    bool? livenessBrightScreen,
     BiometricFlowConfig? biometric,
     QuestionnaireConfig? questionnaire,
     ResubmitConfig? resubmit,
@@ -727,6 +721,7 @@ class MyazaKYCConfig {
     String? scope,
     WorkflowBusinessConfig? business,
     String? applicantWorkflowId,
+    WorkflowTexts? texts,
   }) =>
       MyazaKYCConfig(
         apiKey: apiKey,
@@ -759,6 +754,8 @@ class MyazaKYCConfig {
         deviceIntelligence: deviceIntelligence ?? this.deviceIntelligence,
         keyPeopleLinkRecovery: keyPeopleLinkRecovery ?? this.keyPeopleLinkRecovery,
         consentStep: consentStep ?? this.consentStep,
+        silentCapture: silentCapture ?? this.silentCapture,
+        livenessBrightScreen: livenessBrightScreen ?? this.livenessBrightScreen,
         biometric: biometric ?? this.biometric,
         questionnaire: questionnaire ?? this.questionnaire,
         resubmit: resubmit ?? this.resubmit,
@@ -771,6 +768,8 @@ class MyazaKYCConfig {
         subjectType: subjectType ?? this.subjectType,
         scope: scope ?? this.scope,
         business: business ?? this.business,
+        texts: texts ?? this.texts,
+        language: language,
       );
 }
 

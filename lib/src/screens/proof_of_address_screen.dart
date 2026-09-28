@@ -17,6 +17,7 @@ import '../widgets/myaza_button.dart';
 import 'proof_of_address_kinds.dart';
 import 'proof_of_address_parts.dart';
 import 'proof_of_address_pick.dart';
+import '../i18n/text_scope.dart';
 
 part 'proof_of_address_upload.dart';
 
@@ -69,7 +70,8 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
     _type = offered.isNotEmpty ? offered.first : PoaDocumentType.other;
   }
 
-  String get _typeLabel => _cfg.labelFor(_type ?? PoaDocumentType.other);
+  String get _typeLabel =>
+      _cfg.labelFor(_type ?? PoaDocumentType.other, context.kycText);
 
   /// `setState` for the upload ops in the part file: a protected member may
   /// only be called from the State itself, so the extension goes through this.
@@ -136,13 +138,13 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
         // Locked once a file is attached: switching the kind afterwards would
         // mislabel the document already uploaded.
         if (offered.length > 1) ...[
-          Text('Document type', style: text.label),
+          Text(context.kycText('proofOfAddress.documentType'), style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           PoaDocumentTypeList(
             options: offered,
             value: _type,
             enabled: !uploaded && !_uploading,
-            labelFor: _cfg.labelFor,
+            labelFor: (kind) => _cfg.labelFor(kind, context.kycText),
             onChanged: (v) => setState(() => _type = v),
           ),
           const SizedBox(height: MyazaSpacing.lg),
@@ -151,7 +153,7 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
         // ── Drop zone / uploaded row ─────────────────────────────────────────
         if (uploaded && !_uploading)
           PoaUploadedRow(
-            fileName: _fileName ?? 'Document uploaded',
+            fileName: _fileName ?? context.kycText('proofOfAddress.uploaded'),
             typeLabel: _typeLabel,
             previewBytes: _previewBytes,
             isPdf: _previewIsPdf,
@@ -174,7 +176,7 @@ class _ProofOfAddressScreenState extends ConsumerState<ProofOfAddressScreen> {
 
         const SizedBox(height: MyazaSpacing.xl),
         MyazaButton(
-          label: 'Continue',
+          label: context.kycText('common.continue'),
           onPressed: uploaded && !_uploading && countryDeclared
               ? () => ref.read(kYCNotifierProvider.notifier).nextStep()
               : null,

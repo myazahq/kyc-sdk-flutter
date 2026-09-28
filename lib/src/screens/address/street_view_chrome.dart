@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The framing chrome over the Street View panorama ────────────────────────
 //
@@ -52,9 +53,9 @@ class StreetViewChrome extends StatelessWidget {
                     color: Colors.black.withValues(alpha: 0.65),
                     borderRadius: BorderRadius.circular(999),
                   ),
-                  child: const Text(
-                    'Fit your entrance in the frame',
-                    style: TextStyle(
+                  child: Text(
+                    context.kycText('address.entrance.framePill'),
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 12,
                       fontWeight: FontWeight.w600,

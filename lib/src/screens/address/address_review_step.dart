@@ -13,6 +13,7 @@ import '../../providers/kyc_state.dart';
 import '../../widgets/myaza_button.dart';
 import 'address_flow_scaffold.dart';
 import 'address_review_card.dart';
+import '../../i18n/text_scope.dart';
 
 /// The commit point: one composed card carrying a read-only map, the entrance
 /// imagery clipped to it, and the address as the card's own heading.
@@ -122,7 +123,7 @@ class _AddressReviewStepState extends ConsumerState<AddressReviewStep>
           const AddressSandboxTabs(),
           const SizedBox(height: MyazaSpacing.md),
           MyazaButton(
-            label: 'Confirm address',
+            label: context.kycText('address.review.confirm'),
             isLoading: flow.confirming,
             onPressed: pin == null || flow.confirming || missing.isNotEmpty
                 ? null

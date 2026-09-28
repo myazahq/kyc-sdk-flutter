@@ -13,10 +13,15 @@ void main() {
       expect('gestures'.runsFlash, isFalse);
     });
 
-    test('only flash-only mode skips the gesture challenges', () {
+    test('flash-only and passive skip the gesture challenges', () {
       expect('flash'.runsGestures, isFalse);
+      expect('passive'.runsGestures, isFalse);
       expect('both'.runsGestures, isTrue);
       expect('gestures'.runsGestures, isTrue);
+    });
+
+    test('passive runs no flash', () {
+      expect('passive'.runsFlash, isFalse);
     });
   });
 
@@ -63,6 +68,16 @@ void main() {
 
     test('omits flash entirely when it did not run', () {
       expect(livenessIntegrityClaim(mode: 'gestures'), isNot(contains('flash')));
+    });
+
+    test('lists the prompts that ran, when given', () {
+      final claim = livenessIntegrityClaim(
+        mode: 'passive',
+        challenges: const ['hold'],
+      );
+      expect(claim['mode'], 'passive');
+      expect(claim['challenges'], ['hold']);
+      expect(livenessIntegrityClaim(mode: 'gestures'), isNot(contains('challenges')));
     });
   });
 

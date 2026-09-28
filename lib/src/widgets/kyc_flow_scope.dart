@@ -45,4 +45,6 @@ List<Override> kycFlowOverrides(
       cameraNotifierProvider.overrideWith(CameraNotifier.new),
       livenessNotifierProvider.overrideWith(LivenessNotifier.new),
       kycThemeModeProvider.overrideWith((ref) => initialThemeMode(config.appearance)),
+      // Per flow, so one flow's selfie camera never lights another's screen.
+      livenessCameraOnProvider.overrideWith((ref) => false),
     ];

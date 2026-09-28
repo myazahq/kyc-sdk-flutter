@@ -7,6 +7,7 @@ import '../config/theme.dart';
 import '../services/api_service.dart';
 import 'key_people_await_card.dart';
 import 'key_people_await_row.dart';
+import '../i18n/text_scope.dart';
 
 export 'key_people_pending.dart';
 
@@ -91,11 +92,9 @@ class KeyPeopleAwaitList extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            outstanding == 0
-                ? 'Everyone on this application has completed their identity check.'
-                : 'To complete the review, the people below must verify their '
-                    'identity with a KYC check. Anyone with an email on file has '
-                    'already been sent their link.',
+            context.kycText(outstanding == 0
+                ? 'keyPeople.await.allDone'
+                : 'keyPeople.await.intro'),
             textAlign: TextAlign.center,
             style: text.bodySmall.copyWith(color: colors.textMuted),
           ),
@@ -125,7 +124,7 @@ class KeyPeopleAwaitList extends StatelessWidget {
                 bottom: MyazaSpacing.lg,
               ),
               child: Text(
-                'Links are valid for 14 days.',
+                context.kycText('keyPeople.await.linkValidity'),
                 textAlign: TextAlign.center,
                 style: text.bodySmall.copyWith(color: colors.textMuted),
               ),

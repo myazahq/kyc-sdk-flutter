@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
 
 /// "Use my current location" as a proper ROW, not a button pretending to be
 /// two: a medallion showing the fix's state, a title with the RESOLVED ADDRESS
@@ -71,7 +72,7 @@ class CurrentLocationRow extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Use my current location',
+                    Text(context.kycText('address.currentLocation.title'),
                         style:
                             text.label.copyWith(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
@@ -80,7 +81,7 @@ class CurrentLocationRow extends StatelessWidget {
                           ? resolved
                           : (locating
                               ? 'Finding your location…'
-                              : 'Lands the pin right where you are'),
+                              : context.kycText('address.currentLocation.hint')),
                       style:
                           text.bodySmall.copyWith(color: colors.textSecondary),
                       maxLines: 1,
@@ -152,7 +153,7 @@ class LocateOnMapButton extends StatelessWidget {
                       size: 16, color: colors.primary),
                 const SizedBox(width: MyazaSpacing.sm),
                 Text(
-                  locating ? 'Finding you…' : 'Use my location',
+                  locating ? 'Finding you…' : context.kycText('address.locate.button'),
                   style: text.bodySmall.copyWith(
                       fontWeight: FontWeight.w600, color: colors.textDark),
                 ),

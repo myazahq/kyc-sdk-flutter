@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Contact verification — footer actions ────────────────────────────────────
 //
@@ -41,6 +42,7 @@ class ContactActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = context.myazaText;
     final colors = context.myazaColors;
+    final t = context.kycText;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -52,7 +54,7 @@ class ContactActions extends StatelessWidget {
         ],
         const SizedBox(height: MyazaSpacing.xl),
         MyazaButton(
-          label: hasChallenge ? 'Verify code' : 'Send code',
+          label: t(hasChallenge ? 'contact.verifyCode' : 'contact.sendCode'),
           isLoading: isBusy,
           onPressed: onSubmit,
         ),
@@ -61,7 +63,7 @@ class ContactActions extends StatelessWidget {
           Center(
             child: TextButton(
               onPressed: isBusy ? null : onSkip,
-              child: Text('Skip for now',
+              child: Text(t('contact.skip'),
                   style: text.bodyMedium.copyWith(color: colors.textSecondary)),
             ),
           ),
@@ -80,9 +82,7 @@ class ContactActions extends StatelessWidget {
             const SizedBox(width: MyazaSpacing.xs),
             Flexible(
               child: Text(
-                isPhone
-                    ? 'Standard message rates may apply.'
-                    : 'We only use this to verify your identity.',
+                t(isPhone ? 'contact.phone.footer' : 'contact.email.footer'),
                 style: text.bodySmall.copyWith(color: colors.textSecondary),
               ),
             ),

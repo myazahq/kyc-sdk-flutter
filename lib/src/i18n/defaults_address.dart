@@ -1,0 +1,81 @@
+// This SDK's own defaults for the customisable texts on the address screens:
+// the presence primer, the search, the pin, the entrance, the review and the
+// "check active" card at the end. Each is the wording the screen showed before
+// the texts became customisable.
+
+const Map<String, String> kAddressTextDefaults = {
+  'address.intro.badge': 'Address verification',
+  'address.intro.title': 'Let’s confirm your address',
+  'address.intro.description':
+      'This address will be verified over the coming days. Your part takes a minute; the rest happens on its own.',
+  'address.intro.step1.stage': 'Your part',
+  'address.intro.step1.title': 'Pin your address',
+  'address.intro.step1.caption': 'Put the pin right on your building. Takes a minute.',
+  'address.intro.step2.stage': 'After that',
+  'address.intro.step2.title': 'Quiet check-ins',
+  'address.intro.step2.caption': 'Keep location on; your phone confirms it over the coming days.',
+  'address.intro.step2.caption.background':
+      'Allow location all the time when asked. Your phone then confirms it on its own, even with the app closed.',
+  'address.intro.step3.stage': 'Then',
+  'address.intro.step3.title': 'Confirmed',
+  'address.intro.step3.caption': 'You’ll be notified. That is it.',
+  'address.intro.howItWorks.title': 'How it works',
+  'address.intro.howItWorks.body':
+      'After you finish, your device periodically confirms it is at this address over the coming days. Only day-level summaries ever leave your phone, never your movements.',
+  'address.intro.howItWorks.body.background':
+      'After you finish, your phone confirms it is at this address over the coming days, even when the app is closed. Only day-level summaries ever leave your phone, never your movements.',
+  'address.intro.control.title': 'You stay in control',
+  'address.intro.control.body':
+      'You can turn location off at any time in your device settings. An unfinished check simply expires. It never counts against you.',
+  'address.intro.privacy.title': 'Your data is protected',
+  'address.intro.privacy.body':
+      "Location summaries are used only to confirm this address and are handled under your country's data protection rules.",
+  'address.intro.start': 'Got it, let’s go',
+  'address.search.title': 'Find your address',
+  'address.search.description': 'Search it, use your current location, or place a pin on the map.',
+  'address.currentLocation.title': 'Use my current location',
+  'address.currentLocation.hint': 'Lands the pin right where you are',
+  'address.search.pinInstead': 'Place a pin on the map instead',
+  'address.skip': 'Skip for now',
+  'address.pin.title': 'Is the pin on your building?',
+  'address.pin.title.business': 'Is the pin on the premises?',
+  'address.pin.description':
+      'Drag the map until the pin sits exactly on it. You can add details for whoever needs to find it.',
+  'address.pin.detailsHint': 'A house number and directions help someone find it',
+  'address.pin.editDetails': 'Edit details',
+  'address.locate.button': 'Use my location',
+  'address.labelDecision.title': 'You moved the pin',
+  'address.labelDecision.keep': 'Keep this address',
+  'address.labelDecision.adopt': 'Use the pin’s address',
+  'address.details.title': 'Edit your address',
+  'address.details.hint':
+      'Correct anything the map got wrong. Every field is optional, and it all helps someone find the door.',
+  'address.entrance.title': 'Show the entrance',
+  'address.entrance.description.framing': 'Frame your entrance in the street imagery. No camera needed.',
+  'address.entrance.description.photo': 'A picture of the gate or front door makes the address findable.',
+  'address.entrance.framePill': 'Fit your entrance in the frame',
+  'address.entrance.frameHint': 'Drag to look around until your gate or front door sits inside the frame.',
+  'address.entrance.useView': 'Use this view',
+  'address.photo.cta': 'Take or upload a photo',
+  'address.photo.hint': 'The gate, front door or the building itself.',
+  'address.entrance.continueWithoutPhoto': 'Continue without a photo',
+  'address.review.title': 'Confirm your address',
+  'address.review.title.business': 'Confirm the premises',
+  'address.review.description': 'Check everything is right before you continue.',
+  'address.review.badge': 'Pinned address',
+  'address.review.badge.business': 'Pinned premises',
+  'address.review.edit': 'Edit',
+  'address.review.confirm': 'Confirm address',
+  'address.presence.badge': 'Address check active',
+  'address.presence.title': 'Your address confirms itself from here',
+  'address.presence.description': 'Nothing else for you to do. Carry on as normal.',
+  'address.presence.step1.stage': 'Today',
+  'address.presence.step1.title': 'Check started',
+  'address.presence.step1.caption': 'Your pin is saved. Keep location on.',
+  'address.presence.step2.stage': 'Next few days',
+  'address.presence.step2.title': 'Quiet check-ins',
+  'address.presence.step2.caption': 'Your phone confirms it is at your address now and then.',
+  'address.presence.step3.stage': 'Then',
+  'address.presence.step3.title': 'Confirmed',
+  'address.presence.step3.caption': 'You get a notification. That is it.',
+};

@@ -4,6 +4,7 @@ import '../config/document_capture_check.dart';
 import '../config/theme.dart';
 import 'myaza_button.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── "Check your photos", on the document review ──────────────────────────────
 //
@@ -85,7 +86,7 @@ class DocumentCaptureCheckNotice extends StatelessWidget {
           ),
         const SizedBox(height: MyazaSpacing.sm),
         MyazaButton.outline(
-          label: kCaptureCheckContinueAnyway,
+          label: context.kycText('common.continueAnyway'),
           onPressed: onContinueAnyway,
           leadingIcon: const MyazaIcon(MyazaIcons.arrowRight),
         ),
@@ -154,7 +155,7 @@ class _Notice extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(kCaptureCheckTitle,
+                            Text(context.kycText('uploadDocument.check.title'),
                                 style: text.label.copyWith(color: ink)),
                             for (final line in lines) ...[
                               const SizedBox(height: MyazaSpacing.xs),

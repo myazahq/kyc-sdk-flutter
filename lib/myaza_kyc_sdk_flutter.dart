@@ -45,6 +45,11 @@ export 'src/config/biometric_copy.dart'
         biometricCopyFor;
 export 'src/config/copy_tokens.dart' show fillCopyTokens;
 
+// Custom texts: a workflow's (or the host's) copy by language then key; the
+// keys are the shared catalogue's (see test/customisable_texts_vectors.json).
+export 'src/i18n/translate.dart' show WorkflowTexts, kBaseTextLanguage;
+export 'src/i18n/customisable_texts.dart' show kCustomisableTextKeys;
+
 export 'src/config/id_types.dart'
     show
         ScanSides,

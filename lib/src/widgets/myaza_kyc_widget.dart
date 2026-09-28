@@ -5,10 +5,9 @@ import 'package:flutter/services.dart' show SystemUiOverlayStyle;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../config/document_capture_methods.dart';
 import '../config/kyc_config.dart';
-import '../config/proof_of_address.dart';
 import '../config/appearance_scheme.dart';
+import '../config/bright_screen.dart';
 import '../config/theme.dart';
 import '../liveness/liveness_types.dart';
 import '../providers/kyc_provider.dart';
@@ -18,24 +17,22 @@ import '../providers/step_order.dart';
 import '../providers/theme_provider.dart';
 import '../utils/portrait_lock.dart';
 import 'kyc_flow_scope.dart';
+import 'flow_step_meta.dart';
+import '../i18n/text_scope.dart';
 
 export 'kyc_flow_scope.dart' show kycFlowOverrides;
 import '../screens/applicant_role_screen.dart';
 import '../screens/business_details_screen.dart';
 import '../screens/business_documents_screen.dart';
-import '../config/supporting_documents.dart';
 import '../screens/supporting_documents_screen.dart';
 import '../screens/business_key_people_screen.dart';
 import '../screens/consent_screen.dart';
-import '../screens/contact_verification_channel.dart';
 import '../screens/contact_verification_screen.dart';
 import '../screens/country_select_screen.dart';
 import '../screens/document_capture_screen.dart';
 import '../screens/id_input_screen.dart';
 import '../screens/id_type_screen.dart';
 import '../screens/nfc_screen.dart';
-import '../config/address_flow.dart';
-import '../providers/address_step_order.dart';
 import '../screens/address/address_entrance_step.dart';
 import '../screens/address/address_pin_step.dart';
 import '../screens/address/address_review_step.dart';
@@ -48,112 +45,13 @@ import 'workflow_gate.dart';
 import '../screens/liveness_screen.dart';
 import '../screens/submitted_screen.dart';
 import '../utils/resolve_url.dart';
+import 'bright_screen_boost.dart';
 import 'kyc_bottom_sheet.dart';
 import 'sandbox_banner.dart';
 import 'myaza_button.dart';
 import '../config/kyc_result.dart';
 import '../services/model_readiness.dart';
 import 'icons/icons.dart';
-
-// ─── Step metadata ────────────────────────────────────────────────────────────
-
-class _StepMeta {
-  final String title;
-  final String? description;
-
-  const _StepMeta(this.title, [this.description]);
-}
-
-const Map<KYCStep, _StepMeta> _kStepMeta = {
-  // Consent has no header title — the screen renders its own greeting.
-  KYCStep.consent: _StepMeta(''),
-  KYCStep.idType: _StepMeta(
-    'Select ID Type',
-    "Choose the type of identification document you'd like to use.",
-  ),
-  // documentCapture title/description are computed dynamically below.
-  KYCStep.documentCapture: _StepMeta('Capture Document'),
-  // idInput title is computed dynamically from selectedIdType; this is the
-  // fallback before one is picked.
-  KYCStep.idInput: _StepMeta(
-    'Enter your ID number',
-    'We’ll check this against the official record.',
-  ),
-  KYCStep.liveness: _StepMeta(
-    'Face Verification',
-    'Follow the on-screen instructions',
-  ),
-  // Optional steps (populated with real copy by their workstreams). Present
-  // here so the `_kStepMeta[step]!` lookup never misses once a step is enabled.
-  // Wording matches the web and React Native SDKs so the same flow reads
-  // identically on every platform.
-  KYCStep.contactEmail: _StepMeta(
-    'Verify your email',
-    "We'll send a one-time code to confirm this email belongs to you.",
-  ),
-  KYCStep.contactPhone: _StepMeta(
-    'Verify your phone number',
-    "We'll send a one-time code to confirm this number belongs to you.",
-  ),
-  KYCStep.countrySelect: _StepMeta(
-    'Where was your ID issued?',
-    'Choose the country that issued your identity document.',
-  ),
-  KYCStep.nfc: _StepMeta(
-    'Scan Document Chip',
-    'Hold your document to the back of your phone.',
-  ),
-  // proofOfAddress description is computed dynamically from maxAgeDays.
-  KYCStep.proofOfAddress: _StepMeta('Proof of address'),
-  // The pin and review steps re-title themselves for a KYB premises, and the
-  // flow's first step drops its title entirely while the presence primer is
-  // showing — see the build overrides below.
-  KYCStep.addressSearch: _StepMeta(
-    'Find your address',
-    'Search it, use your current location, or place a pin on the map.',
-  ),
-  KYCStep.addressCollection: _StepMeta(
-    'Is the pin on your building?',
-    'Drag the map until the pin sits exactly on it. You can add details for whoever needs to find it.',
-  ),
-  KYCStep.addressEntrance: _StepMeta(
-    'Show the entrance',
-    'A picture of the gate or front door makes the address findable.',
-  ),
-  KYCStep.addressReview: _StepMeta(
-    'Confirm your address',
-    'Check everything is right before you continue.',
-  ),
-  KYCStep.supportingDocuments: _StepMeta(
-    'Supporting documents',
-    'Upload the documents below so we can keep them on file. Required documents are marked with *.',
-  ),
-  KYCStep.questionnaire: _StepMeta(
-    'A Few More Questions',
-    'Please answer the following to complete your verification.',
-  ),
-  KYCStep.businessDetails: _StepMeta(
-    'Business Details',
-    'Provide your business registration details for verification against the official registry.',
-  ),
-  KYCStep.businessKeyPeople: _StepMeta(
-    'Directors & Owners',
-    "List the company's directors and owners. Each person will receive a link "
-        'to verify their identity; a shareholder that is itself a company is '
-        'recorded rather than asked to verify.',
-  ),
-  KYCStep.businessDocuments: _StepMeta(
-    'Business documents',
-    'Upload the supporting documents for your business. Each one must clearly show the registered business name and registration number. Required documents are marked with *.',
-  ),
-  KYCStep.applicantRole: _StepMeta(
-    'Now verify your own identity',
-    'Tell us your role at the business, then verify your identity with a government-issued ID.',
-  ),
-  // submitted has no title — the screen owns its layout.
-  KYCStep.submitted: _StepMeta(''),
-};
-
 
 /// Maps the appearance's initial theme to a ThemeMode. Null appearance/theme
 /// and the explicit `system` value both follow the device setting.
@@ -487,190 +385,41 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
     final config = ref.read(kycConfigProvider);
 
     final step = state.currentStep;
-    var meta = _kStepMeta[step]!;
-
-    // The entrance step framing street imagery describes THAT, not a camera.
-    if (step == KYCStep.addressEntrance &&
-        ref.watch(
-            kYCNotifierProvider.select((s) => s.addressEntranceFraming))) {
-      meta = const _StepMeta(
-        'Show the entrance',
-        'Frame your entrance in the street imagery. No camera needed.',
-      );
-    }
-
-    // The ID input step names the ID it wants. The step asks for the number and
-    // nothing else: the applicant's name comes from the integrator, through the
-    // config or the session, never typed here.
-    if (step == KYCStep.idInput && state.selectedIdType != null) {
-      meta = _StepMeta(
-        'Enter your ${state.selectedIdType!.label}',
-        meta.description,
-      );
-    }
-
-    // Supporting documents: the line follows the COUNTS, so it says how many
-    // have to be produced rather than how to read an asterisk. Resolved the
-    // same way the screen resolves its slots, or the header could name a
-    // number the body does not show.
-    if (step == KYCStep.supportingDocuments) {
-      meta = _StepMeta(
-        meta.title,
-        supportingDocumentsIntro(
-          resolveSupportingDocuments(
-            config.supportingDocuments,
-            verifiedIdComposites(config, state),
-          ),
-        ),
-      );
-    }
-
-    // A KYB flow's pin is the BUSINESS PREMISES, so the step introduces itself
-    // as that rather than as the applicant's home address.
-    if (config.subjectType == 'business') {
-      if (step == KYCStep.addressCollection) {
-        meta = _StepMeta('Is the pin on the premises?', meta.description);
-      } else if (step == KYCStep.addressReview) {
-        meta = _StepMeta('Confirm the premises', meta.description);
-      }
-    }
-
-    // The presence primer carries its own heading, so the step's title would
-    // sit above it saying something else. Blanked the way the consent step's
-    // is, which is the same situation: a screen that introduces itself.
-    if (kAddressFlowOrder.contains(step) &&
-        addressIntroGateShowing(config, state, step)) {
-      meta = const _StepMeta('');
-    }
-
-    // Proof of address states its own recency window, so the description has to
-    // carry the workflow's maxAgeDays rather than say "recent".
-    if (step == KYCStep.proofOfAddress) {
-      final poa = config.proofOfAddress;
-      final days = poa?.maxAgeDays ?? 90;
-      // Ask for what the server will check: where the workflow's name rule is
-      // off for the picked kind in this country (a Nigerian utility bill names
-      // the meter, not the tenant), asking for "your name" sends people hunting
-      // for a document they do not have. Mirrors the web and RN headers.
-      final kind = state.poaDocumentType == null
-          ? null
-          : PoaDocumentType.tryFromKey(state.poaDocumentType!);
-      final nameNeeded = poa == null ||
-          poa.namePolicyFor(state.selectedCountry ?? config.country, kind) !=
-              PoaNameRule.off;
-      meta = _StepMeta(
-        meta.title,
-        'Upload a document that shows your '
-        '${nameNeeded ? 'name and home address' : 'home address'}, issued '
-        'within the last $days days.',
-      );
-    }
-
-    // The contact steps turn their description from a promise ("we'll send a
-    // code…") into an instruction ("enter the code we sent to…") once a code is
-    // out, and name the delivery channel the user picked — matching the web
-    // SDK. The screen publishes that via contactChannel/Via/Destination,
-    // because the header lives out here and cannot see its state.
-    if (step == KYCStep.contactEmail || step == KYCStep.contactPhone) {
-      final isPhone = step == KYCStep.contactPhone;
-      // Only trust state raised by THIS step: both contact steps are the same
-      // screen, so a leftover email entry must never caption the phone step.
-      final live = state.contactChannel == (isPhone ? 'phone' : 'email');
-      final by = isPhone && live && state.contactVia.isNotEmpty
-          ? ' by ${kChannelLabels[state.contactVia] ?? state.contactVia}'
-          : '';
-
-      if (live && state.contactDestination.isNotEmpty) {
-        final length = (isPhone
-                ? config.phoneVerification?.codeLength
-                : config.emailVerification?.codeLength) ??
-            6;
-        meta = _StepMeta(
-          meta.title,
-          'Enter the $length-digit code we sent to '
-          '${state.contactDestination}$by.',
-        );
-      } else if (isPhone) {
-        meta = _StepMeta(
-          meta.title,
-          "We'll send a one-time code$by to confirm this number belongs to you.",
-        );
-      }
-    }
-
-    // For document capture, swap title/description based on the review phase
-    // communicated by DocumentCaptureScreen via docReviewPhase.
-    if (step == KYCStep.documentCapture) {
-      final docPhase = ref.watch(
-        kYCNotifierProvider.select((s) => s.docReviewPhase),
-      );
-      final idTypeLabel = state.selectedIdType?.label ?? 'Document';
-      // Camera off on this workflow: every side is a picked photo, so the
-      // header must not talk about framing or scanning.
-      final uploadOnly = documentCaptureMethodsFor(config).uploadOnly;
-      meta = uploadOnly
-          ? switch (docPhase) {
-              'front_preview' => const _StepMeta(
-                  'Front Side Added',
-                  'Looks good? Tap Next to add a photo of the back.',
-                ),
-              'camera_back' => _StepMeta(
-                  'Upload Back Side',
-                  'Now choose a clear photo of the back of your $idTypeLabel.',
-                ),
-              'review' => _StepMeta(
-                  'Review Your $idTypeLabel',
-                  'Tap Continue to upload and submit your document.',
-                ),
-              _ => _StepMeta(
-                  'Upload Your $idTypeLabel',
-                  'Choose a clear photo of your $idTypeLabel from your device.',
-                ),
-            }
-          : switch (docPhase) {
-        'front_preview' => const _StepMeta(
-            'Front Side Captured',
-            'Looks good? Tap Next to flip the card and scan the back side.',
-          ),
-        'camera_back' => _StepMeta(
-            'Scan Back Side',
-            'Now place the BACK of your $idTypeLabel within the frame.',
-          ),
-        'review' => _StepMeta(
-            'Review Your $idTypeLabel',
-            'Tap Continue to upload and submit your document.',
-          ),
-        _ => _StepMeta(
-            'Capture Your $idTypeLabel',
-            'Photograph your $idTypeLabel — position it within the frame and hold steady.',
-          ),
-      };
-    }
-
-    // For the liveness step in selfie-review phase, swap to the review title.
-    if (step == KYCStep.liveness) {
-      final livenessPhase = ref.watch(
-        livenessNotifierProvider.select((s) => s.phase),
-      );
-      if (livenessPhase == LivenessPhase.complete) {
-        meta = const _StepMeta(
-          'Selfie Captured',
-          'Review your selfie before continuing.',
-        );
-      }
-    }
+    final meta = flowStepMeta(
+      step,
+      config: config,
+      state: state,
+      t: ref.watch(kycTextProvider),
+      selfieComplete: step == KYCStep.liveness &&
+          ref.watch(livenessNotifierProvider.select((s) => s.phase)) ==
+              LivenessPhase.complete,
+    );
 
     // ── Resolve theme ──────────────────────────────────────────────────────
     final themeMode = ref.watch(kycThemeModeProvider);
     final systemBrightness = MediaQuery.platformBrightnessOf(context);
-    final isDark = themeMode == ThemeMode.dark ||
+    final userIsDark = themeMode == ThemeMode.dark ||
         (themeMode == ThemeMode.system && systemBrightness == Brightness.dark);
-    final baseScheme = isDark ? MyazaColorScheme.dark : MyazaColorScheme.light;
+    final baseScheme =
+        userIsDark ? MyazaColorScheme.dark : MyazaColorScheme.light;
     // Fold in the dark overrides FIRST: the appearance is applied on top of the
     // active base scheme, so a light background would otherwise overwrite the
     // dark one and the toggle would do nothing on a branded flow.
-    final colorScheme =
-        applyAppearance(baseScheme, config.appearance?.forBrightness(isDark));
+    final userScheme = applyAppearance(
+        baseScheme, config.appearance?.forBrightness(userIsDark));
+
+    // ── Bright screen during liveness ──────────────────────────────────────
+    // From the selfie camera screen to the end of the step, the screen is the
+    // light on the face: the flow crosses into the organisation's LIGHT palette
+    // and the screen is held at full brightness (config/bright_screen.dart).
+    // The primers before the camera keep the normal theme. The person's own
+    // theme comes back when the step is left; their toggle is hidden meanwhile.
+    final brightScreen = livenessBrightScreenActive(
+      enabled: config.livenessBrightScreen,
+      onLivenessStep: step == KYCStep.liveness,
+      cameraOn: ref.watch(livenessCameraOnProvider),
+    );
+    final litScheme = brightScreenScheme(config.appearance);
 
     // ── Resolve org branding for the persistent header ─────────────────────
     // `appearance.logo = 'default'` pulls the org logo from the server config
@@ -775,119 +524,151 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
         ? effectiveCountry(config, state)
         : null;
 
-    final sheet = KycBottomSheet(
-      environment: state.serverConfig.environment,
-      title: configError != null ? '' : meta.title,
-      description: configError != null ? null : meta.description,
-      progress: configError != null ? null : progress,
-      stepCount: configError != null ? null : stepInfo?.stepCount,
-      onBack: configError != null ? null : onBack,
-      onClose: widget.onClose,
-      canDismiss: canDismiss,
-      isFullScreen: widget.isFullScreen,
-      isDark: isDark,
-      // Only wire the toggle when the consumer opted in; a null callback hides
-      // the button and keeps the flow on the appearance theme.
-      onToggleTheme: config.showThemeToggle ? onToggleTheme : null,
-      progressStyle: config.progressStyle,
-      // Hide the brand bar on a fatal config error — show a clean, chrome-free
-      // error screen (just the theme/fullscreen controls), like the web SDK.
-      logoUrl: configError != null ? null : logoUrl,
-      logoAsset: configError != null ? null : appearance?.logoAsset,
-      companyName: configError != null ? null : companyName,
-      country: headerCountry,
-      // Which steps get the whole body instead of the shared scroll view: see
-      // _fillsViewport.
-      fillsViewport: configError == null && _fillsViewport(step),
-      child: keyedScreen,
-    );
+    // The whole shell, painted in [colorScheme]: the person's own theme, the
+    // lit one, or a frame of the crossing between them.
+    Widget shell(
+      MyazaColorScheme colorScheme,
+      bool isDark,
+      Color headerSurface,
+    ) {
+      final sheet = KycBottomSheet(
+        environment: state.serverConfig.environment,
+        title: configError != null ? '' : meta.title,
+        description: configError != null ? null : meta.description,
+        progress: configError != null ? null : progress,
+        stepCount: configError != null ? null : stepInfo?.stepCount,
+        onBack: configError != null ? null : onBack,
+        onClose: widget.onClose,
+        canDismiss: canDismiss,
+        isFullScreen: widget.isFullScreen,
+        isDark: isDark,
+        headerSurface: headerSurface,
+        // Only wire the toggle when the consumer opted in; a null callback hides
+        // the button and keeps the flow on the appearance theme. Hidden too
+        // while the bright screen holds the flow light: it could not act.
+        onToggleTheme:
+            config.showThemeToggle && !brightScreen ? onToggleTheme : null,
+        progressStyle: config.progressStyle,
+        // Hide the brand bar on a fatal config error — show a clean, chrome-free
+        // error screen (just the theme/fullscreen controls), like the web SDK.
+        logoUrl: configError != null ? null : logoUrl,
+        logoAsset: configError != null ? null : appearance?.logoAsset,
+        companyName: configError != null ? null : companyName,
+        trustAttribution: configError != null ? null : branding?.trustAttribution,
+        country: headerCountry,
+        // Which steps get the whole body instead of the shared scroll view: see
+        // _fillsViewport.
+        fillsViewport: configError == null && _fillsViewport(step),
+        child: keyedScreen,
+      );
 
-    // ── Immersive capture ─────────────────────────────────────────────────
-    // A camera step asks for the whole screen (state.immersiveCapture). The
-    // sheet's header, padding and scroll view are what force a small viewfinder
-    // on a short phone — and a camera you have to SCROLL to is a broken camera.
-    // So the sheet is bypassed entirely: the screen owns the display, edge to
-    // edge and behind the system bars, and draws its own back/close controls.
-    // Scoped to the document step as well as the flag: if that step unmounts
-    // while the flag is still raised, the NEXT step must not inherit a
-    // chrome-free shell.
-    final immersive = configError == null &&
-        state.immersiveCapture &&
-        step == KYCStep.documentCapture;
+      // ── Immersive capture ─────────────────────────────────────────────────
+      // A camera step asks for the whole screen (state.immersiveCapture). The
+      // sheet's header, padding and scroll view are what force a small viewfinder
+      // on a short phone — and a camera you have to SCROLL to is a broken camera.
+      // So the sheet is bypassed entirely: the screen owns the display, edge to
+      // edge and behind the system bars, and draws its own back/close controls.
+      // Scoped to the document step as well as the flag: if that step unmounts
+      // while the flag is still raised, the NEXT step must not inherit a
+      // chrome-free shell.
+      final immersive = configError == null &&
+          state.immersiveCapture &&
+          step == KYCStep.documentCapture;
 
-    final overlayStyle = SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
-      statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
-      // Bottom system-nav / gesture area uses the body background (not the
-      // tinted header that the Scaffold paints behind the status bar).
-      systemNavigationBarColor: colorScheme.background,
-      systemNavigationBarIconBrightness:
-          isDark ? Brightness.light : Brightness.dark,
-    );
+      final overlayStyle = SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: isDark ? Brightness.light : Brightness.dark,
+        statusBarBrightness: isDark ? Brightness.dark : Brightness.light,
+        // Bottom system-nav / gesture area uses the body background (not the
+        // tinted header that the Scaffold paints behind the status bar).
+        systemNavigationBarColor: colorScheme.background,
+        systemNavigationBarIconBrightness:
+            isDark ? Brightness.light : Brightness.dark,
+      );
 
-    Widget themed(Widget child) => Theme(
-          data: Theme.of(context).copyWith(extensions: [colorScheme]),
-          child: child,
-        );
+      Widget themed(Widget child) => Theme(
+            data: Theme.of(context).copyWith(extensions: [colorScheme]),
+            child: child,
+          );
 
-    if (immersive) {
-      return themed(AnnotatedRegion<SystemUiOverlayStyle>(
-        // Light icons: the camera feed behind the status bar is dark.
-        value: overlayStyle.copyWith(
-          statusBarIconBrightness: Brightness.light,
-          statusBarBrightness: Brightness.dark,
-          systemNavigationBarColor: Colors.black,
-          systemNavigationBarIconBrightness: Brightness.light,
-        ),
-        child: Scaffold(
-          backgroundColor: Colors.black,
-          // No SafeArea: the feed runs under the bars on purpose. The screen
-          // insets its own controls.
-          body: keyedScreen,
-        ),
-      ));
-    }
+      if (immersive) {
+        return themed(AnnotatedRegion<SystemUiOverlayStyle>(
+          // Light icons: the camera feed behind the status bar is dark.
+          value: overlayStyle.copyWith(
+            statusBarIconBrightness: Brightness.light,
+            statusBarBrightness: Brightness.dark,
+            systemNavigationBarColor: Colors.black,
+            systemNavigationBarIconBrightness: Brightness.light,
+          ),
+          child: Scaffold(
+            backgroundColor: Colors.black,
+            // No SafeArea: the feed runs under the bars on purpose. The screen
+            // insets its own controls.
+            body: keyedScreen,
+          ),
+        ));
+      }
 
-    if (widget.isFullScreen) {
+      if (widget.isFullScreen) {
+        return themed(AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlayStyle,
+          child: Scaffold(
+            // Body background fills the bottom system-nav/gesture inset, keeping
+            // it the dark body colour. The status-bar inset is painted with the
+            // header tint below so the top matches the header band.
+            backgroundColor: colorScheme.background,
+            body: Column(
+              children: [
+                // Strip behind the status bar. Normally the header tint so the
+                // top matches the header band — but when the environment banner
+                // is showing, the banner is what sits directly below, so the
+                // strip takes ITS amber instead and the warning reads as one
+                // unbroken band from the top of the screen (matching RN). Both
+                // are translucent over the same Scaffold background, so the
+                // composite is identical to the banner's own.
+                Container(
+                  height: MediaQuery.of(context).padding.top,
+                  color: SandboxBanner.showsFor(state.serverConfig.environment)
+                      ? SandboxBanner.tint
+                      : headerSurface,
+                ),
+                Expanded(child: SafeArea(top: false, child: sheet)),
+              ],
+            ),
+          ),
+        ));
+      }
+
       return themed(AnnotatedRegion<SystemUiOverlayStyle>(
         value: overlayStyle,
-        child: Scaffold(
-          // Body background fills the bottom system-nav/gesture inset, keeping
-          // it the dark body colour. The status-bar inset is painted with the
-          // header tint below so the top matches the header band.
-          backgroundColor: colorScheme.background,
-          body: Column(
-            children: [
-              // Strip behind the status bar. Normally the header tint so the
-              // top matches the header band — but when the environment banner
-              // is showing, the banner is what sits directly below, so the
-              // strip takes ITS amber instead and the warning reads as one
-              // unbroken band from the top of the screen (matching RN). Both
-              // are translucent over the same Scaffold background, so the
-              // composite is identical to the banner's own.
-              Container(
-                height: MediaQuery.of(context).padding.top,
-                color: SandboxBanner.showsFor(state.serverConfig.environment)
-                    ? SandboxBanner.tint
-                    : kycHeaderSurface(colorScheme, isDark: isDark),
-              ),
-              Expanded(child: SafeArea(top: false, child: sheet)),
-            ],
-          ),
+        child: LayoutBuilder(
+          builder: (ctx, _) {
+            final sheetHeight = MediaQuery.of(context).size.height * 0.92;
+            return SizedBox(height: sheetHeight, child: sheet);
+          },
         ),
       ));
     }
 
-    return themed(AnnotatedRegion<SystemUiOverlayStyle>(
-      value: overlayStyle,
-      child: LayoutBuilder(
-        builder: (ctx, _) {
-          final sheetHeight = MediaQuery.of(context).size.height * 0.92;
-          return SizedBox(height: sheetHeight, child: sheet);
+    return BrightScreenBoost(
+      active: brightScreen,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween<double>(end: brightScreen ? 1 : 0),
+        duration: brightScreenTransition(
+          disableAnimations: MediaQuery.disableAnimationsOf(context),
+        ),
+        curve: Curves.easeInOut,
+        builder: (context, t, _) {
+          final lit = blendBrightScreen(
+            userScheme: userScheme,
+            userIsDark: userIsDark,
+            litScheme: litScheme,
+            t: t,
+          );
+          return shell(lit.scheme, lit.isDark, lit.headerSurface);
         },
       ),
-    ));
+    );
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────

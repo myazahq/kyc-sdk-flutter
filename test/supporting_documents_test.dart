@@ -37,6 +37,8 @@ MyazaKYCConfig _config({SupportingDocumentsConfig? docs}) => MyazaKYCConfig(
     );
 
 void main() {
+  _mayAskGroup();
+
   _readsTests();
 
   group('resolveSupportingDocuments', () {
@@ -275,6 +277,49 @@ void _readsTests() {
         ],
       });
       expect(resolveSupportingDocuments(stored, [nin]).single.reads, isEmpty);
+    });
+  });
+}
+
+void _mayAskGroup() {
+  group("mayAskSupportingDocuments (the consent screen's question)", () {
+    test('discloses a SCOPED document that the step order cannot yet see', () {
+      // The whole reason the second predicate exists. Consent runs before an ID
+      // is picked, so the step order has no verified IDs to resolve against and
+      // answers "nothing to ask for" — while the flow will certainly ask a NIN
+      // verifier for their slip.
+      expect(hasSupportingDocumentsStep(_ninSlipOnly(), const []), isFalse);
+      expect(mayAskSupportingDocuments(_ninSlipOnly()), isTrue);
+    });
+
+    test('promises nothing when the step is off', () {
+      expect(mayAskSupportingDocuments(null), isFalse);
+      expect(
+        mayAskSupportingDocuments(SupportingDocumentsConfig.fromJson({
+          'types': [
+            {'key': 'nin_slip', 'label': 'NIN slip'},
+          ],
+        })),
+        isFalse,
+      );
+    });
+
+    test('promises nothing when there is no document to ask for', () {
+      expect(
+        mayAskSupportingDocuments(
+            SupportingDocumentsConfig.fromJson({'enabled': true, 'types': []})),
+        isFalse,
+      );
+      // A nameless entry renders no slot, so it must not put a bullet on consent.
+      expect(
+        mayAskSupportingDocuments(SupportingDocumentsConfig.fromJson({
+          'enabled': true,
+          'types': [
+            {'key': 'draft', 'label': '  '},
+          ],
+        })),
+        isFalse,
+      );
     });
   });
 }

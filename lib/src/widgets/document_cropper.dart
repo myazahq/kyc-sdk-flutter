@@ -9,6 +9,7 @@ import 'package:image/image.dart' as img;
 import '../config/theme.dart';
 import 'myaza_button.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Gallery-photo cropper ────────────────────────────────────────────────────
 //
@@ -270,14 +271,14 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              'Crop to ID Card',
+              context.kycText('uploadDocument.crop.title'),
               style: text.bodyMedium.copyWith(
                 fontWeight: FontWeight.w600,
                 color: colors.textDark,
               ),
             ),
             Text(
-              'Drag to reposition · handles to resize',
+              context.kycText('uploadDocument.crop.description'),
               style: text.bodySmall.copyWith(color: colors.textMuted),
             ),
           ],
@@ -346,7 +347,7 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
                 // The flow's own button: primary fill and label from the
                 // workflow, its loading state while the crop runs.
                 child: MyazaButton(
-                  label: 'Crop & Use',
+                  label: context.kycText('uploadDocument.crop.confirm'),
                   leadingIcon: const MyazaIcon(MyazaIcons.check, size: 18),
                   isLoading: _isProcessing,
                   onPressed: _cropInitialized ? _onConfirm : null,

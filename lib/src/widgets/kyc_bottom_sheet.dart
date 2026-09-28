@@ -7,18 +7,16 @@ import 'sandbox_banner.dart';
 import 'step_window.dart';
 import 'kyc_progress_bar.dart';
 import '../config/kyc_config.dart';
+import '../config/trust_attribution.dart';
 import 'powered_by.dart';
 import 'step_header.dart';
 import 'icons/icons.dart';
 
 // ─── Bottom sheet container ───────────────────────────────────────────────────
 //
-// Presentational wrapper used by both presentation modes:
-//   isFullScreen = false  →  iOS bottom sheet (drag handle, rounded top)
-//   isFullScreen = true   →  Android full-screen page (no handle, flat edges)
-//
-// The parent (_KycFlowWidget) owns routing logic and passes title / progress /
-// navigation callbacks down as parameters.
+// Presentational wrapper: an iOS bottom sheet (isFullScreen false) or an
+// Android full-screen page (true). The parent owns routing and passes title,
+// progress and navigation callbacks down.
 
 class KycBottomSheet extends StatelessWidget {
   /// Server-reported environment, for the sandbox strip. Null hides it.
@@ -49,6 +47,11 @@ class KycBottomSheet extends StatelessWidget {
   /// Whether the current theme is dark (used to show correct toggle icon).
   final bool isDark;
 
+  /// The header tint, when the host has already worked it out (the flow does,
+  /// so the tint blends with the rest of the palette while the bright screen
+  /// crosses into the light theme). Null derives it from [isDark].
+  final Color? headerSurface;
+
   /// Called when the user taps the theme-toggle button.
   final VoidCallback? onToggleTheme;
 
@@ -61,6 +64,9 @@ class KycBottomSheet extends StatelessWidget {
 
   /// Org/company name shown beside the logo in the brand bar.
   final String? companyName;
+
+  /// Footer attribution (`branding.trustAttribution`); null means Myaza.
+  final SdkTrustAttribution? trustAttribution;
 
   /// When set (ISO-3166 alpha-2 code), a country flag is shown beside the step
   /// title.
@@ -122,10 +128,12 @@ class KycBottomSheet extends StatelessWidget {
     this.isFullScreen = false,
     this.progressStyle = MyazaProgressStyle.steps,
     this.isDark = false,
+    this.headerSurface,
     this.onToggleTheme,
     this.logoUrl,
     this.logoAsset,
     this.companyName,
+    this.trustAttribution,
     this.country,
     this.fillsViewport = false,
     required this.child,
@@ -190,7 +198,7 @@ class KycBottomSheet extends StatelessWidget {
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: kycHeaderSurface(colors, isDark: isDark),
+                  color: headerSurface ?? kycHeaderSurface(colors, isDark: isDark),
                   border: Border(
                     // The bar sits ON this edge and paints its own track, so
                     // the border would double it.
@@ -309,8 +317,7 @@ class KycBottomSheet extends StatelessWidget {
                   child: LayoutBuilder(
                     builder: (context, constraints) {
                       const topPad = MyazaSpacing.md;
-                      // viewInsets is handled above; padding.bottom is already 0
-                      // while the keyboard covers the home indicator.
+                      // viewInsets is handled above.
                       // The bottom safe-area inset is NOT added here: PoweredBy
                       // sits below this viewport and owns the home-indicator
                       // clearance for the whole sheet. Adding it here too would
@@ -366,9 +373,8 @@ class KycBottomSheet extends StatelessWidget {
                 ),
               ),
 
-              // Vendor attribution — a sibling of the Expanded body, so it stays
-              // pinned while a long step scrolls under it.
-              const PoweredBy(),
+              // Vendor attribution, pinned while a long step scrolls under it.
+              PoweredBy(attribution: trustAttribution, dark: isDark),
             ],
           ),
         ),

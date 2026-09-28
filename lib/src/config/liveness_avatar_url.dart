@@ -27,25 +27,29 @@ const List<LivenessChallenge> livenessAvatarGestures = <LivenessChallenge>[
   LivenessChallenge.smile,
 ];
 
-String _gestureName(LivenessChallenge challenge) => switch (challenge) {
+// The passive hold has no gesture to demonstrate, so it has no animation.
+String? _gestureName(LivenessChallenge challenge) => switch (challenge) {
       LivenessChallenge.nod => 'nod',
       LivenessChallenge.turn => 'turn',
       LivenessChallenge.blink => 'blink',
       LivenessChallenge.smile => 'smile',
+      LivenessChallenge.hold => null,
     };
 
-/// The served URL for one gesture's animation, or null when the key is
-/// malformed — which is a real error everywhere else in the SDK and merely a
+/// The served URL for one gesture's animation, or null when the challenge has
+/// no gesture (the passive hold) or the key is malformed — which is a real error everywhere else in the SDK and merely a
 /// missing cartoon here, so it must never reach a build().
 String? livenessAvatarUrl(
   LivenessChallenge challenge,
   String apiKey, {
   String? devUrl,
 }) {
+  final gesture = _gestureName(challenge);
+  if (gesture == null) return null;
   try {
     final base = resolveBaseUrl(apiKey, devUrl: devUrl);
     return '$base/api/kyc/assets/liveness/'
-        '${_gestureName(challenge)}.$_livenessAvatarExtension';
+        '$gesture-transparent.$_livenessAvatarExtension';
   } catch (_) {
     return null;
   }

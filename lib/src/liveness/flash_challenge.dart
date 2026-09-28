@@ -3,6 +3,7 @@ import 'dart:ui' show Color;
 
 import 'flash_detector.dart';
 import 'flash_liveness_runner.dart';
+import 'flash_outcome.dart';
 import 'face_rgb_sampler.dart';
 
 // ─── Flash liveness challenge ─────────────────────────────────────────────────
@@ -25,7 +26,7 @@ const int kFlashSequenceLength = 4;
 /// How the workflow's `livenessMode` maps to what actually runs.
 extension LivenessModeFlash on String {
   bool get runsFlash => this == 'flash' || this == 'both';
-  bool get runsGestures => this != 'flash';
+  bool get runsGestures => this == 'gestures' || this == 'both';
 }
 
 /// Runs the sequence and returns the outcome, or null if it couldn't run.
@@ -75,19 +76,26 @@ Future<FlashResult?> runFlashChallenge({
 /// mismatch — quietly disabling the anti-spoof check it exists for.
 Map<String, dynamic> livenessIntegrityClaim({
   required String mode,
+  List<String>? challenges,
   FlashResult? flash,
   int faceGlitches = 0,
+  Map<String, dynamic>? video,
 }) {
   return {
     'mode': mode,
+    // The prompts this run used, in order (e.g. ['turn', 'blink', 'flash']).
+    if (challenges != null) 'challenges': challenges,
     'faceGlitches': faceGlitches,
+    // Whether the recording reached the server, and why not: add-only codes
+    // shared with the web and React Native SDKs.
+    if (video != null) 'video': video,
     if (flash != null)
       'flash': {
         'passed': flash.passed,
         'score': flash.score,
         'matched': flash.matched,
         'total': flash.total,
-        'inconclusive': flash.inconclusive >= flash.total,
+        'inconclusive': flashUnmeasurable(flash),
         'sequence': flash.sequence,
       },
   };

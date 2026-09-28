@@ -5,6 +5,8 @@
 // never changes the verification's own status). Mirrors the web SDK's
 // ProofOfAddressConfig. Document-type keys are a stable contract.
 
+import '../i18n/translate.dart' show TextFn, defaultTextFn;
+
 enum PoaDocumentType {
   utilityBill,
   bankStatement,
@@ -143,14 +145,11 @@ class ProofOfAddressConfig {
     return countries.contains(country.toUpperCase());
   }
 
-  /// Display label for [type], honouring the org's rename of `other`.
-  String labelFor(PoaDocumentType type) {
-    final custom = otherLabel?.trim();
-    if (type == PoaDocumentType.other && custom != null && custom.isNotEmpty) {
-      return custom;
-    }
-    return type.label;
-  }
+  /// Display label for [type]: a catalogue text, with the org's rename of
+  /// `other` ([otherLabel]) as its older dedicated field.
+  String labelFor(PoaDocumentType type, [TextFn t = defaultTextFn]) =>
+      t('proofOfAddress.kind.${type.name}',
+          legacy: type == PoaDocumentType.other ? otherLabel : null);
 
   factory ProofOfAddressConfig.fromJson(Map<String, dynamic> json) =>
       ProofOfAddressConfig(

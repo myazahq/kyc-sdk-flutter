@@ -12,6 +12,7 @@ import '../services/api_service.dart';
 import '../widgets/myaza_button.dart';
 import 'document_pick.dart';
 import 'supporting_document_card.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Supporting documents screen ──────────────────────────────────────────────
 //
@@ -171,7 +172,7 @@ class _SupportingDocumentsScreenState
 
         const SizedBox(height: MyazaSpacing.lg),
         MyazaButton(
-          label: optionalOnly && uploads.isEmpty ? 'Skip' : 'Continue',
+          label: context.kycText(optionalOnly && uploads.isEmpty ? 'common.skip' : 'common.continue'),
           onPressed: requiredComplete && _uploadingKey == null
               ? () => ref.read(kYCNotifierProvider.notifier).nextStep()
               : null,

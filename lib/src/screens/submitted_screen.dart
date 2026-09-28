@@ -1,10 +1,11 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/biometric_copy.dart';
 import '../config/biometric_options.dart';
-import '../config/copy_tokens.dart';
 import '../config/kyc_config.dart';
 import '../config/kyc_result.dart';
 import '../config/result_copy.dart';
@@ -24,13 +25,14 @@ import '../widgets/keep_links_sheet.dart';
 import '../widgets/key_people_await_list.dart';
 import '../widgets/presence_blocks.dart';
 import '../providers/awaiting_people.dart';
+import '../presence/presence_auto_report.dart';
 import '../widgets/myaza_button.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Submission status (local UI state) ──────────────────────────────────────
 
 enum _SubmitStatus { submitting, success, error }
 
-const String _kDefaultSuccessTitle = 'Verification Submitted!';
 /// The default description depends on WHAT was submitted. A KYB applicant told
 /// "your identity verification has been submitted" is being told about the
 /// wrong thing: they submitted a company, and an address-only applicant
@@ -48,19 +50,6 @@ const Map<String, String> _kScopeDescriptions = {
   'contact': "Your contact verification has been submitted. "
       "You'll be notified of the result.",
 };
-
-String _defaultSuccessDescription(bool isBusiness, String? scope) {
-  final scoped = scope == null ? null : _kScopeDescriptions[scope];
-  if (scoped != null) return scoped;
-  return isBusiness
-      ? "Your business verification has been submitted for review. "
-          "You'll be notified of the result."
-      : "Your identity verification has been submitted for review. "
-          "You'll be notified of the result.";
-}
-
-String _fillTokens(String template, String firstName, String lastName) =>
-    fillCopyTokens(template, firstName: firstName, lastName: lastName);
 
 // ─── Submitted screen ─────────────────────────────────────────────────────────
 //
@@ -176,6 +165,9 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       });
 
       widget.onSubmitted?.call(submission);
+      // The SDK's own first presence report (presence_auto_report.dart):
+      // fire-and-forget, so presence never waits on the host app's code.
+      unawaited(autoReportPresence(config));
     } on KYCApiException catch (e) {
       if (!mounted) return;
       // A refusal over stale contact proofs is recoverable in-flow: clear the
@@ -253,15 +245,20 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
   @override
   Widget build(BuildContext context) {
     final config = ref.watch(kycConfigProvider);
-    final firstName = config.userData?.firstName ?? '';
-    final lastName = config.userData?.lastName ?? '';
-    final successTitle = config.success?.title != null
-        ? _fillTokens(config.success!.title!, firstName, lastName)
-        : _kDefaultSuccessTitle;
-    final successDescription = config.success?.description != null
-        ? _fillTokens(config.success!.description!, firstName, lastName)
-        : _defaultSuccessDescription(
-            config.subjectType == 'business', configScope(config.scope));
+    // Catalogue texts; the org's success.title/description are their older
+    // fields and still win, tokens filled. A scope's own line keeps this
+    // SDK's wording (only the base descriptions are customisable).
+    final t = textFnFor(config);
+    final successTitle = t('result.success.title', legacy: config.success?.title);
+    final scoped = _kScopeDescriptions[configScope(config.scope)];
+    final successDescription = t(
+        scoped != null
+            ? 'result.success.description.scope'
+            : config.subjectType == 'business'
+                ? 'result.success.description.business'
+                : 'result.success.description.individual',
+        legacy: config.success?.description,
+        fallback: scoped);
 
     final scope = configScope(config.scope);
     final showDone = config.showsDoneButtonOption;
@@ -301,6 +298,7 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
                           waitsForResult: false,
                           retry: _retryInfo,
                           override: config.biometricCopy.waiting,
+                          t: textFnFor(config),
                         );
                         return SubmittedWaitingView(
                           title: copy.title,
@@ -441,7 +439,7 @@ class _SuccessViewState extends ConsumerState<_SuccessView> {
         ),
         if (widget.showDone)
           MyazaButton(
-            label: 'Done',
+            label: context.kycText('common.done'),
             onPressed: () => widget.onDone(
               awaiting != null
                   ? awaiting.any((p) => p.stillOwes)

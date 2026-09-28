@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
 
 /// The keep-or-update question after a pin move.
 ///
@@ -55,7 +56,7 @@ class AddressLabelDecision extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('You moved the pin',
+                    Text(context.kycText('address.labelDecision.title'),
                         style:
                             text.label.copyWith(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
@@ -96,7 +97,7 @@ class AddressLabelDecision extends StatelessWidget {
               children: [
                 Expanded(
                   child: _DecisionButton(
-                    label: 'Keep this address',
+                    label: context.kycText('address.labelDecision.keep'),
                     primary: true,
                     onTap: onKeep,
                   ),
@@ -104,7 +105,7 @@ class AddressLabelDecision extends StatelessWidget {
                 const SizedBox(width: MyazaSpacing.sm),
                 Expanded(
                   child: _DecisionButton(
-                    label: "Use the pin’s address",
+                    label: context.kycText('address.labelDecision.adopt'),
                     onTap: onAdopt,
                   ),
                 ),

@@ -11,6 +11,7 @@ import '../widgets/myaza_button.dart';
 import '../config/upload_limits.dart';
 import 'business_document_slot.dart';
 import 'document_pick.dart';
+import '../i18n/text_scope.dart';
 
 part 'business_documents_pick.dart';
 
@@ -153,7 +154,7 @@ class _BusinessDocumentsScreenState
 
         const SizedBox(height: MyazaSpacing.lg),
         MyazaButton(
-          label: 'Continue',
+          label: context.kycText('common.continue'),
           onPressed: requiredComplete && _uploadingKey == null
               ? () => ref.read(kYCNotifierProvider.notifier).nextStep()
               : null,

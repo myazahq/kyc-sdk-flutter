@@ -25,6 +25,7 @@ void main() {
     final src = File('lib/src/screens/proof_of_address_screen.dart').readAsStringSync();
     expect(src, contains('poaCountryDeclared('));
     // The gate sits on the button, not merely computed.
-    expect(src, matches(RegExp(r"label: 'Continue',[\s\S]{0,200}countryDeclared")));
+    // The label is the `common.continue` catalogue text.
+    expect(src, matches(RegExp(r"label: context\.kycText\('common\.continue'\),[\s\S]{0,200}countryDeclared")));
   });
 }

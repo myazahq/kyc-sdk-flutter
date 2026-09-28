@@ -19,6 +19,7 @@ import 'address_label_decision.dart';
 import 'address_location_row.dart';
 import 'address_map_stub.dart';
 import 'address_pin_summary.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The PIN step (wire name 'address-collection') ───────────────────────────
 //
@@ -137,7 +138,7 @@ class _AddressPinStepState extends ConsumerState<AddressPinStep>
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           MyazaButton(
-            label: 'Continue',
+            label: context.kycText('common.continue'),
             isLoading: flow.confirming,
             onPressed: pin == null || flow.confirming ? null : _continue,
           ),

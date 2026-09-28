@@ -4,6 +4,8 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../config/brand.dart';
 import '../config/theme.dart';
+import '../config/trust_attribution.dart';
+import 'powered_by_custom.dart';
 
 /// Vendor attribution, pinned to the bottom of the sheet on every screen.
 ///
@@ -37,8 +39,18 @@ import '../config/theme.dart';
 /// scroll padding and the fill-mode screens each used to add
 /// `MediaQuery.padding.bottom` themselves, which would now double up. Exactly
 /// one thing clears the home indicator, and it is this.
+///
+/// When the server says the workflow carries the org's own attribution
+/// ([attribution] custom), the footer reads "Protected by" and the org's logo
+/// instead, with no Myaza mark or link (see [CustomTrustMark]).
 class PoweredBy extends StatelessWidget {
-  const PoweredBy({super.key});
+  const PoweredBy({super.key, this.attribution, this.dark = false});
+
+  /// `branding.trustAttribution`; null (an older server) means Myaza.
+  final SdkTrustAttribution? attribution;
+
+  /// The flow is on its dark theme: the org's dark-theme logo is drawn then.
+  final bool dark;
 
   /// Rendered height of the wordmark. The asset is 648×200, so it is downscaled
   /// with headroom on every density; `cacheHeight` bounds the decode.
@@ -66,6 +78,7 @@ class PoweredBy extends StatelessWidget {
     // it. Keyed off markColor rather than the background so the two can never
     // diverge.
     final isDark = markColor.computeLuminance() > 0.5;
+    final resolved = resolveTrustAttribution(attribution, dark: dark);
 
     return Container(
       width: double.infinity,
@@ -84,7 +97,9 @@ class PoweredBy extends StatelessWidget {
             ? 0
             : MediaQuery.paddingOf(context).bottom),
       ),
-      child: Opacity(
+      child: resolved.custom
+          ? CustomTrustMark(resolved: resolved, markColor: markColor)
+          : Opacity(
         opacity: 0.9,
         // A failed launch is swallowed: the provenance mark is the point, and a
         // device with no browser has nothing useful to show instead.

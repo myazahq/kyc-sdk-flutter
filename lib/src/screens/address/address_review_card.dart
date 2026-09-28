@@ -11,6 +11,7 @@ import '../../widgets/presence_milestones.dart';
 import 'address_review_map.dart';
 import 'address_review_thumb.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The confirmation card ───────────────────────────────────────────────────
 //
@@ -138,7 +139,7 @@ class AddressReviewCard extends StatelessWidget {
                           children: [
                             PresenceBadge(
                               leading: MyazaIcon(MyazaIcons.mapPin, size: 12, color: colors.primary),
-                              label: isBusiness ? 'Pinned premises' : 'Pinned address',
+                              label: context.kycText(isBusiness ? 'address.review.badge.business' : 'address.review.badge'),
                             ),
                             const SizedBox(height: MyazaSpacing.xs),
                             // Never coordinates: an unread pin shows a skeleton
@@ -165,7 +166,7 @@ class AddressReviewCard extends StatelessWidget {
                       const SizedBox(width: MyazaSpacing.sm),
                       Semantics(
                         button: true,
-                        label: 'Edit',
+                        label: context.kycText('address.review.edit'),
                         child: InkWell(
                           onTap: onEdit,
                           borderRadius: BorderRadius.circular(MyazaRadius.xs),
@@ -173,7 +174,7 @@ class AddressReviewCard extends StatelessWidget {
                             // No side padding: every pixel of the row is the
                             // pill's on a 360dp phone.
                             padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text('Edit', style: text.bodyMedium.copyWith(color: colors.primary)),
+                            child: Text(context.kycText('address.review.edit'), style: text.bodyMedium.copyWith(color: colors.primary)),
                           ),
                         ),
                       ),

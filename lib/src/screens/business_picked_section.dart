@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import 'business_picked_card.dart';
 import 'business_sandbox_toggle.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The picked-company section ───────────────────────────────────────────────
 //
@@ -45,8 +46,7 @@ class BusinessPickedSection extends StatelessWidget {
         // organisation. "Continue" alone made a paid outbound call look like
         // moving to the next page.
         Text(
-          'Continue checks this business against the official register and '
-          'brings back its details.',
+          context.kycText('business.details.checkNote'),
           style: text.bodySmall.copyWith(color: colors.textSecondary),
         ),
         if (isSandbox) ...[

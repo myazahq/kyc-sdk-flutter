@@ -100,7 +100,8 @@ class AddressCollectionConfig {
       attestPresence: json['attestPresence'] as bool? ?? false,
       presenceEnabled: presence is Map && presence['enabled'] == true,
       presenceAlwaysOn: presence is Map && presence['alwaysOn'] == true,
-      presenceBackground: presence is Map && presence['background'] == true,
+      // Background monitoring is on unless the workflow turns it off.
+      presenceBackground: presence is Map && presence['background'] != false,
     );
   }
 }

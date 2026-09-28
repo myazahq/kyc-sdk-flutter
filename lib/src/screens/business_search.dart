@@ -10,6 +10,7 @@ import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
 import 'business_search_results.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Finding the company by name, because that is what people know ───────────
 //
@@ -229,7 +230,7 @@ class _BusinessSearchState extends ConsumerState<BusinessSearch> {
                         size: 14, color: colors.textSecondary),
                     const SizedBox(width: 6),
                     Text(
-                      'Enter the details myself',
+                      context.kycText('business.search.manualEntry'),
                       style: text.bodyMedium.copyWith(
                         fontWeight: FontWeight.w500,
                         color: colors.textSecondary,

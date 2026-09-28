@@ -6,6 +6,7 @@ import '../../widgets/dashed_border.dart';
 import '../../widgets/myaza_button.dart';
 import '../../widgets/sticky_actions.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The entrance step's SANDBOX stand-in ────────────────────────────────────
 //
@@ -67,10 +68,13 @@ class AddressEntrancePlaceholder extends StatelessWidget {
       ),
       actions: Row(children: [
         if (!hideSkip) ...[
-          Expanded(child: MyazaButton.outline(label: 'Skip', onPressed: onSkip)),
+          Expanded(
+              child: MyazaButton.outline(label: context.kycText('common.skip'), onPressed: onSkip)),
           const SizedBox(width: MyazaSpacing.sm),
         ],
-        Expanded(child: MyazaButton(label: 'Use this view', onPressed: onUse)),
+        Expanded(
+            child: MyazaButton(
+                label: context.kycText('address.entrance.useView'), onPressed: onUse)),
       ]),
     );
   }

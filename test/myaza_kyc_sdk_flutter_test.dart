@@ -642,13 +642,14 @@ void main() {
       expect(s.matched, isFalse); // shifted green, boost was red
     });
 
-    test('evaluateFlashSequence: all-inconclusive soft-passes; majority rules', () {
+    test('evaluateFlashSequence: all-inconclusive is not a pass; majority rules', () {
       final seq = generateFlashSequence(3, rng: Random(1));
       const inconclusive = FlashSample(inconclusive: true, matched: false, score: 0);
       const matched = FlashSample(inconclusive: false, matched: true, score: 1);
       const missed = FlashSample(inconclusive: false, matched: false, score: 0);
 
-      expect(evaluateFlashSequence(seq, [inconclusive, inconclusive, inconclusive]).passed, isTrue);
+      // Unmeasurable is retried, then handed to gestures (flash_outcome.dart).
+      expect(evaluateFlashSequence(seq, [inconclusive, inconclusive, inconclusive]).passed, isFalse);
       expect(evaluateFlashSequence(seq, [matched, matched, matched]).passed, isTrue);
       expect(evaluateFlashSequence(seq, [matched, missed, missed]).passed, isFalse);
     });

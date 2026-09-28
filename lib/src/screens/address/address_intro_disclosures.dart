@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../config/theme.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
+import '../../i18n/translate.dart' show TextFn;
 
 // ─── The presence disclosures ────────────────────────────────────────────────
 //
@@ -17,33 +19,19 @@ class _Disclosure {
   const _Disclosure(this.icon, this.title, this.body);
 }
 
-const _kHowItWorksForeground =
-    'After you finish, your device periodically confirms it is at this address '
-    'over the coming days. Only day-level summaries ever leave your phone, '
-    'never your movements.';
-const _kHowItWorksBackground =
-    'After you finish, your phone confirms it is at this address over the '
-    'coming days, even when the app is closed. Only day-level summaries ever '
-    'leave your phone, never your movements.';
-
-List<_Disclosure> _disclosuresFor(bool background) => [
+// Catalogue texts (a workflow may reword them); defaults in i18n/.
+List<_Disclosure> _disclosuresFor(bool background, TextFn t) => [
   _Disclosure(
     MyazaIcons.circleHelp,
-    'How it works',
-    background ? _kHowItWorksBackground : _kHowItWorksForeground,
+    t('address.intro.howItWorks.title'),
+    t(background
+        ? 'address.intro.howItWorks.body.background'
+        : 'address.intro.howItWorks.body'),
   ),
-  const _Disclosure(
-    MyazaIcons.slidersHorizontal,
-    'You stay in control',
-    'You can turn location off at any time in your device settings. An '
-        'unfinished check simply expires. It never counts against you.',
-  ),
-  const _Disclosure(
-    MyazaIcons.shieldCheck,
-    'Your data is protected',
-    "Location summaries are used only to confirm this address and are handled "
-        "under your country's data protection rules.",
-  ),
+  _Disclosure(MyazaIcons.slidersHorizontal, t('address.intro.control.title'),
+      t('address.intro.control.body')),
+  _Disclosure(MyazaIcons.shieldCheck, t('address.intro.privacy.title'),
+      t('address.intro.privacy.body')),
 ];
 
 class AddressIntroDisclosures extends StatefulWidget {
@@ -63,7 +51,7 @@ class _AddressIntroDisclosuresState extends State<AddressIntroDisclosures> {
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
-    final disclosures = _disclosuresFor(widget.background);
+    final disclosures = _disclosuresFor(widget.background, context.kycText);
     return Container(
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(

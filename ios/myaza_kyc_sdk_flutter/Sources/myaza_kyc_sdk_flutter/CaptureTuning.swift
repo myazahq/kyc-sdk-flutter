@@ -22,8 +22,19 @@ import UIKit
 ///
 /// Both are restored by `restore`, which is idempotent so the Dart side can
 /// call it from a `finally` without tracking whether locking succeeded.
+///
+/// The screen has a second holder: the bright-screen liveness
+/// (`setBrightness` / `restoreBrightness`) keeps the screen at full for as long
+/// as the selfie camera is on, around the flash. Each holder releases only
+/// itself; the person's own brightness comes back when the LAST one lets go,
+/// so a flash ending never dims the lit screen and vice versa.
 public class CaptureTuning: NSObject, FlutterPlugin {
+  private static let flashHolder = "flash"
+  private static let screenHolder = "screen"
+
+  /// The brightness before the first holder raised it; nil when none holds.
   private var previousBrightness: CGFloat?
+  private var brightnessHolders = Set<String>()
   private var lockedDevice: AVCaptureDevice?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
@@ -43,6 +54,13 @@ public class CaptureTuning: NSObject, FlutterPlugin {
     case "restore":
       restore()
       result(nil)
+    case "setBrightness":
+      let brightness = (call.arguments as? [String: Any])?["brightness"] as? Double
+      raiseBrightness(holder: Self.screenHolder, to: brightness ?? 1.0)
+      result(nil)
+    case "restoreBrightness":
+      releaseBrightness(holder: Self.screenHolder)
+      result(nil)
     default:
       result(FlutterMethodNotImplemented)
     }
@@ -52,12 +70,28 @@ public class CaptureTuning: NSObject, FlutterPlugin {
     // Screen brightness must be raised BEFORE sampling starts and then held
     // flat. Ramping it mid-sequence would make our own UI a luminance shift
     // inside the baseline-vs-lit comparison — measuring ourselves, not the face.
+    raiseBrightness(holder: Self.flashHolder, to: brightness)
+
+    lockCamera()
+  }
+
+  /// Raises the screen for [holder], saving the person's own value the first
+  /// time anyone raises it. App-scoped: UIScreen brightness, never Settings.
+  private func raiseBrightness(holder: String, to brightness: Double) {
     if previousBrightness == nil {
       previousBrightness = UIScreen.main.brightness
     }
+    brightnessHolders.insert(holder)
     UIScreen.main.brightness = CGFloat(max(0.0, min(1.0, brightness)))
+  }
 
-    lockCamera()
+  /// Lets go for [holder]; the saved value returns once nobody holds the
+  /// screen. Idempotent.
+  private func releaseBrightness(holder: String) {
+    brightnessHolders.remove(holder)
+    guard brightnessHolders.isEmpty, let previous = previousBrightness else { return }
+    UIScreen.main.brightness = previous
+    previousBrightness = nil
   }
 
   /// Locks white balance and exposure at their CURRENT (ambient) values, so the
@@ -81,10 +115,7 @@ public class CaptureTuning: NSObject, FlutterPlugin {
   }
 
   private func restore() {
-    if let previous = previousBrightness {
-      UIScreen.main.brightness = previous
-      previousBrightness = nil
-    }
+    releaseBrightness(holder: Self.flashHolder)
 
     guard let device = lockedDevice else { return }
     lockedDevice = nil

@@ -5,10 +5,13 @@ import 'package:dio/dio.dart';
 
 import '../nfc/emrtd_active_auth.dart';
 import '../utils/map_tiles.dart' show MapLatLng;
+import '../utils/resolve_url.dart' show rebaseServerAssets;
 import 'api_business.dart';
 
 // Re-exported so callers keep a single view of the HTTP contract.
 export 'api_business.dart';
+export 'sdk_branding.dart';
+import 'sdk_branding.dart';
 
 // The Address Intelligence surface. Parts rather than sibling libraries
 // because the calls need the private Dio client and error mapper.
@@ -21,7 +24,7 @@ part 'api_address_calls.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.2.2';
+const String kSdkVersion = '3.3.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -58,6 +61,10 @@ class MediaType {
   static const addressPhoto = 'address_photo';
   static const businessDocument = 'business_document';
   static const supportingDocument = 'supporting_document';
+
+  /// An unposed frame of the applicant taken silently while the front camera
+  /// was already open (config/silent_capture.dart). JPEG only.
+  static const silentCapture = 'silent_capture';
 }
 
 /// Response from `POST /api/kyc/upload` — the stored mediaId referenced later
@@ -127,7 +134,12 @@ class VerifyMediaIds {
   final String? proofOfAddress;
   final String? addressPhoto;
 
+  /// Silent-capture frames, keyed `silentCapture1..3` (1-based, capture
+  /// order, no gaps). Built by `silentCaptureMediaIds`.
+  final Map<String, String> silentCaptures;
+
   const VerifyMediaIds({
+    this.silentCaptures = const {},
     this.documentFront,
     this.documentBack,
     this.selfie,
@@ -147,9 +159,11 @@ class VerifyMediaIds {
         if (livenessVideo != null) 'livenessVideo': livenessVideo,
         if (proofOfAddress != null) 'proofOfAddress': proofOfAddress,
         if (addressPhoto != null) 'addressPhoto': addressPhoto,
+        ...silentCaptures,
       };
 
   bool get isEmpty =>
+      silentCaptures.isEmpty &&
       documentFront == null &&
       documentBack == null &&
       selfie == null &&
@@ -350,7 +364,7 @@ class VerifyRequest {
   /// validates-and-drops a stale/foreign id — it never fails the submission.
   final String? workflowId;
 
-  /// Liveness method (`gestures`/`flash`/`both`) — the server prices by it. Only
+  /// Liveness method (`gestures`/`flash`/`both`/`passive`) — the server prices by it. Only
   /// sent for prop-configured mounts; a resolved workflow wins server-side.
   final String? livenessMode;
 
@@ -570,11 +584,22 @@ class SessionStartResponse {
   /// applicant's way back to those links once the app closes.
   final String? url;
 
+  /// A KYB application whose business half already committed and whose
+  /// applicant has not verified yet: the applicant KeyPerson, the parent
+  /// business verification, and its request id, which the business submission
+  /// replays (config/resumed_application.dart).
+  final String? applicantKeyPersonId;
+  final String? parentVerificationId;
+  final String? parentRequestId;
+
   const SessionStartResponse({
     required this.sessionId,
     required this.resumed,
     this.progress,
     this.url,
+    this.applicantKeyPersonId,
+    this.parentVerificationId,
+    this.parentRequestId,
   });
 
   factory SessionStartResponse.fromJson(Map<String, dynamic> json) =>
@@ -583,6 +608,9 @@ class SessionStartResponse {
         resumed: json['resumed'] == true,
         progress: (json['progress'] as Map?)?.cast<String, dynamic>(),
         url: json['url'] as String?,
+        applicantKeyPersonId: json['applicantKeyPersonId'] as String?,
+        parentVerificationId: json['parentVerificationId'] as String?,
+        parentRequestId: json['parentRequestId'] as String?,
       );
 }
 
@@ -862,24 +890,6 @@ class SdkConfigIdType {
         requiresDocumentCapture: json['requiresDocumentCapture'] as bool?,
         scanSides: json['scanSides'] as String?,
         supportsNfc: json['supportsNfc'] as bool?,
-      );
-}
-
-/// Org branding returned by /api/kyc/config. Surfaced so the SDK can render the
-/// org's own logo when the consumer sets `appearance.logo = 'default'`. `logo`
-/// is an absolute, public URL (or null when the org has none configured).
-class SdkConfigBranding {
-  final String? logo;
-  final String? companyName;
-  final String? primaryColor;
-
-  const SdkConfigBranding({this.logo, this.companyName, this.primaryColor});
-
-  factory SdkConfigBranding.fromJson(Map<String, dynamic> json) =>
-      SdkConfigBranding(
-        logo: json['logo'] as String?,
-        companyName: json['companyName'] as String?,
-        primaryColor: json['primaryColor'] as String?,
       );
 }
 
@@ -1445,7 +1455,7 @@ class KYCApiService {
   Future<SdkConfigResponse> config() async {
     try {
       final response = await _dio.get<Map<String, dynamic>>('/api/kyc/config');
-      return SdkConfigResponse.fromJson(response.data!);
+      return SdkConfigResponse.fromJson(rebaseServerAssets(response.data!, baseUrl));
     } on DioException catch (e) {
       throw _mapDioError(e);
     }
@@ -1463,7 +1473,7 @@ class KYCApiService {
       final response = await _dio.get<Map<String, dynamic>>(
         '/api/kyc/workflows/${Uri.encodeComponent(workflowId)}',
       );
-      return WorkflowResolution.fromJson(response.data!);
+      return WorkflowResolution.fromJson(rebaseServerAssets(response.data!, baseUrl));
     } on DioException catch (e) {
       throw _mapDioError(e);
     }

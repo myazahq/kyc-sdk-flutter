@@ -11,6 +11,7 @@ import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Applicant role screen ────────────────────────────────────────────────────
 //
@@ -171,9 +172,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
               const SizedBox(width: MyazaSpacing.md),
               Expanded(
                 child: Text(
-                  'Regulations require the person submitting a business '
-                  'application to verify their own identity. This only takes '
-                  'a minute.',
+                  context.kycText('business.applicant.notice'),
                   style: text.bodySmall,
                 ),
               ),
@@ -183,7 +182,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
         const SizedBox(height: MyazaSpacing.lg),
 
         if (people.isNotEmpty) ...[
-          Text('Are you one of the people you listed?', style: text.label),
+          Text(context.kycText('business.applicant.whoLabel'), style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           for (final (index, row) in people) ...[
             _SelfTile(
@@ -200,7 +199,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
             const SizedBox(height: MyazaSpacing.sm),
           ],
           _SelfTile(
-            label: "I'm not one of these people",
+            label: context.kycText('business.applicant.notListed'),
             other: true,
             isSelected: _selection is _SelectionOther,
             onTap: () => setState(() => _selection = const _SelectionOther()),
@@ -227,8 +226,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
                   const SizedBox(width: MyazaSpacing.xs + 2),
                   Expanded(
                     child: Text(
-                      "You'll verify your identity at the end of this form — "
-                      'no separate invite link is needed for you.',
+                      context.kycText('business.applicant.selfNote'),
                       style: text.bodySmall,
                     ),
                   ),
@@ -240,7 +238,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
         ],
 
         if (showRoleForm) ...[
-          Text('Your role at the business', style: text.label),
+          Text(context.kycText('business.applicant.roleLabel'), style: text.label),
           const SizedBox(height: MyazaSpacing.xs),
           MyazaSelect<ApplicantRole>(
             value: _role,
@@ -273,7 +271,7 @@ class _ApplicantRoleScreenState extends ConsumerState<ApplicantRoleScreen> {
 
         const SizedBox(height: MyazaSpacing.xl),
         MyazaButton(
-          label: 'Continue',
+          label: context.kycText('common.continue'),
           onPressed: _canContinue ? _onContinue : null,
         ),
       ],

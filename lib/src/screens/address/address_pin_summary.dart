@@ -5,6 +5,8 @@ import '../../config/address_flow.dart';
 import '../../config/theme.dart';
 import '../../widgets/line_skeleton.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
+import '../../i18n/translate.dart' show TextFn, defaultTextFn;
 
 /// How many of the applicant's own details are filled in — every editable
 /// claim on the edit-details form counts.
@@ -25,11 +27,10 @@ int addressDetailCount(AddressState? address) {
 
 /// The secondary line under the address: what has been added, or what would
 /// help. Pluralised here so the two SDKs cannot drift on the wording.
-String addressDetailSummary(AddressState? address) {
+String addressDetailSummary(AddressState? address,
+    [TextFn t = defaultTextFn]) {
   final count = addressDetailCount(address);
-  if (count == 0) {
-    return 'A house number and directions help someone find it';
-  }
+  if (count == 0) return t('address.pin.detailsHint');
   return count == 1 ? '1 detail added' : '$count details added';
 }
 
@@ -107,7 +108,7 @@ class AddressPinSummary extends StatelessWidget {
                   );
                 }),
                 const SizedBox(height: 2),
-                Text(addressDetailSummary(a),
+                Text(addressDetailSummary(a, context.kycText),
                     style:
                         text.bodySmall.copyWith(color: colors.textSecondary)),
               ],
@@ -136,7 +137,7 @@ class AddressPinSummary extends StatelessWidget {
                         color: onEdit == null ? colors.gray400 : colors.primary),
                     const SizedBox(width: 6),
                     Text(
-                      'Edit details',
+                      context.kycText('address.pin.editDetails'),
                       style: text.bodyMedium.copyWith(
                         fontWeight: FontWeight.w600,
                         color:

@@ -17,6 +17,7 @@ import '../widgets/myaza_button.dart';
 import 'mrz_scan_view.dart';
 import '../widgets/nfc_scanned_summary.dart';
 import 'nfc_screen_parts.dart';
+import '../i18n/text_scope.dart';
 
 // ─── NFC chip step ────────────────────────────────────────────────────────────
 //
@@ -249,7 +250,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           ),
           const SizedBox(height: MyazaSpacing.xl),
           MyazaButton(
-            label: 'Continue',
+            label: context.kycText('common.continue'),
             onPressed: () => ref.read(kYCNotifierProvider.notifier).nextStep(),
           ),
         ],
@@ -273,10 +274,8 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           Text(
             _phase == _Phase.reading
                 ? switch (_stage) {
-                    // Nothing has been detected yet — this is an instruction.
-                    NfcReadStage.waiting =>
-                      'Hold the top edge of your document flat against the '
-                          'back of your phone and keep still…',
+                    // Nothing detected yet: an instruction, and a catalogue text.
+                    NfcReadStage.waiting => context.kycText('nfc.waiting'),
                     // Android took the tag before our reader started and will
                     // not hand it over again, so the ONLY thing that recovers
                     // is a physical lift and replace. Without this case the
@@ -330,7 +329,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
           Center(
             child: TextButton(
               onPressed: _skip,
-              child: const Text('My device can’t scan the chip — skip'),
+              child: Text(context.kycText('nfc.skip')),
             ),
           ),
         ],

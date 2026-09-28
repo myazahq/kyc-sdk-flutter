@@ -7,6 +7,7 @@ import '../widgets/myaza_input.dart';
 import '../widgets/phone_number_input.dart';
 import 'business_company_date_field.dart';
 import 'business_details_parts.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The company profile a KYB workflow asks for ─────────────────────────────
 //
@@ -57,10 +58,10 @@ class BusinessCompanyInfoFields extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('Company information', style: text.label),
+        Text(context.kycText('business.companyInfo.title'), style: text.label),
         const SizedBox(height: 2),
         Text(
-          'We verify these details against the official registry record.',
+          context.kycText('business.companyInfo.description'),
           style: text.bodySmall.copyWith(color: colors.textSecondary),
         ),
         for (final field in visible) ...[

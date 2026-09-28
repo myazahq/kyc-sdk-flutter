@@ -89,3 +89,56 @@ String? rebaseServerUrl(String? url, String baseUrl) {
     return url;
   }
 }
+
+/// The path every image the server serves for branding lives under: the org
+/// logo, a workflow's own logo and the custom footer logos alike.
+const String _serverBrandingPath = '/api/kyc/branding/';
+
+bool _isServerBrandingUrl(Object? url) =>
+    url is String && (Uri.tryParse(url)?.path.startsWith(_serverBrandingPath) ?? false);
+
+Map<String, dynamic>? _asMap(Object? v) =>
+    v is Map ? v.cast<String, dynamic>() : null;
+
+Map<String, dynamic> _rebaseKey(
+  Map<String, dynamic> block,
+  String key,
+  String baseUrl,
+) =>
+    _isServerBrandingUrl(block[key])
+        ? {...block, key: rebaseServerUrl(block[key] as String, baseUrl)}
+        : block;
+
+/// A config or workflow response with every server-served branding image
+/// rebased onto [baseUrl] (see [rebaseServerUrl]): `branding.logo`, the custom
+/// footer's `branding.trustAttribution.logo` / `logoDark`, and the workflow's
+/// own `config.appearance.logo` (and its dark theme's). Only the server's own
+/// branding URLs move; a consumer's literal image URL is left alone. Without
+/// this a dev USB tunnel (`adb reverse` → localhost) loaded the org logo but
+/// not a workflow's logo or the footer logos, whose host is the server's
+/// PUBLIC_SERVER_URL. A no-op in production, where the two hosts match.
+Map<String, dynamic> rebaseServerAssets(
+  Map<String, dynamic> json,
+  String baseUrl,
+) {
+  var out = json;
+  final branding = _asMap(json['branding']);
+  if (branding != null) {
+    var b = _rebaseKey(branding, 'logo', baseUrl);
+    final attribution = _asMap(b['trustAttribution']);
+    if (attribution != null) {
+      final a = _rebaseKey(_rebaseKey(attribution, 'logo', baseUrl), 'logoDark', baseUrl);
+      b = {...b, 'trustAttribution': a};
+    }
+    out = {...out, 'branding': b};
+  }
+  final config = _asMap(json['config']);
+  final appearance = _asMap(config?['appearance']);
+  if (config != null && appearance != null) {
+    var a = _rebaseKey(appearance, 'logo', baseUrl);
+    final dark = _asMap(a['dark']);
+    if (dark != null) a = {...a, 'dark': _rebaseKey(dark, 'logo', baseUrl)};
+    out = {...out, 'config': {...config, 'appearance': a}};
+  }
+  return out;
+}

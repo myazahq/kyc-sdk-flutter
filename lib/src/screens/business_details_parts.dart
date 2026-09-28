@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import '../widgets/myaza_input.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Business-details field parts ─────────────────────────────────────────────
 //
@@ -62,11 +63,10 @@ class BusinessContactEmailField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const BusinessFieldLabel(label: 'Contact email for owner verification'),
+        BusinessFieldLabel(label: context.kycText('business.contactEmail.label')),
         const SizedBox(height: 2),
         Text(
-          "We'll email this address a link for your directors and owners to "
-          'verify their identity.',
+          context.kycText('business.contactEmail.hint'),
           style: text.bodySmall.copyWith(color: colors.textSecondary),
         ),
         const SizedBox(height: MyazaSpacing.xs),

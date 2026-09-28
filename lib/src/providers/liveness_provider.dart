@@ -7,9 +7,11 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../liveness/challenge_manager.dart';
 import '../liveness/face_detection.dart';
 import '../liveness/flash_challenge.dart';
+import '../liveness/flash_outcome.dart';
 import '../liveness/flash_ready_gate.dart';
 import '../liveness/face_continuity.dart';
 import '../liveness/liveness_types.dart';
+import '../liveness/passive_hold.dart';
 import '../services/image_service.dart';
 import 'kyc_provider.dart';
 
@@ -152,6 +154,9 @@ class LivenessNotifier extends _$LivenessNotifier {
   final List<double> _earHistory = []; // eye open probability for blink
   static const int _historySize = 20;
 
+  /// Passive Liveness: how long the face has held still in position.
+  final _hold = PassiveHold();
+
   /// Shown once a flash-only face is framed + lit and the pre-flash hold begins.
   /// Doubles as the photosensitivity heads-up before the colours appear.
   static const String _kFlashHoldInstruction =
@@ -181,6 +186,17 @@ class LivenessNotifier extends _$LivenessNotifier {
   /// Whether the flash occupies a slot in the progress indicator.
   bool _flashIsStep = false;
 
+  /// A flash-only check whose flash could not be measured switched to gesture
+  /// challenges (flash_outcome.dart). The screen reads it so the capture that
+  /// follows those gestures does not run the flash a second time, and the
+  /// claim reports that both methods ran.
+  bool _fellBackToGestures = false;
+  bool get fellBackToGestures => _fellBackToGestures;
+
+  /// The prompts this session's manager ran, in order (for the liveness claim).
+  List<LivenessChallenge> get challengesRun =>
+      [for (final c in _manager.selectedChallenges) c.type];
+
   /// Total steps shown to the user: the gestures, plus the flash when it runs.
   int get _displayTotal => _manager.totalCount + (_flashIsStep ? 1 : 0);
 
@@ -204,12 +220,13 @@ class LivenessNotifier extends _$LivenessNotifier {
     // flash-only mode it showed no steps at all, since there are no gestures.
     _flashIsStep = config.livenessMode.runsFlash;
     _flashGate = flashOnly ? FlashReadyGate() : null;
-    _manager = flashOnly
-        ? ChallengeManager.none()
-        : ChallengeManager(
-            pool: livenessConfig?.challengePool,
-            count: livenessConfig?.challengeCount ?? 2,
-          );
+    // Passive Liveness runs the single hold prompt through the same machinery,
+    // so recording, the progress ring and capture work unchanged.
+    _manager = ChallengeManager.forMode(
+      config.livenessMode,
+      pool: livenessConfig?.challengePool,
+      count: livenessConfig?.challengeCount ?? 2,
+    );
 
     ref.onDispose(_cleanup);
 
@@ -297,7 +314,10 @@ class LivenessNotifier extends _$LivenessNotifier {
         if (_challengeProcessing) return;
         // Suspend gesture detection while position is wrong — the face is
         // too far or too close for reliable classification.
-        if (state.positionGuidance != null) return;
+        if (state.positionGuidance != null) {
+          _hold.reset(); // the hold restarts once the face is back
+          return;
+        }
         _updateHistory(data);
         _checkGesture(data);
 
@@ -328,6 +348,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     if (state.multipleFaces) return; // already paused
     // Pause the challenge timer so a second face can't run out the clock.
     _cancelTimer();
+    _hold.reset();
     // A second face invalidates the flash hold — restart it when we're back to
     // one, rather than resuming a hold that spanned two people.
     _flashGate?.reset();
@@ -397,6 +418,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     _manager.reset();
     _xHistory.clear();
     _earHistory.clear();
+    _hold.reset();
     _challengeProcessing = false;
     state = state.copyWith(
       phase: LivenessPhase.positioning,
@@ -416,10 +438,9 @@ class LivenessNotifier extends _$LivenessNotifier {
         // Reset gesture history and restart the (paused) challenge timer.
         _xHistory.clear();
         _earHistory.clear();
+        _hold.reset();
         _challengeProcessing = false;
-        final timeout =
-            ref.read(kycConfigProvider).livenessConfig?.timeoutPerChallenge ??
-                challenge.timeoutSeconds;
+        final timeout = _timeoutFor(challenge);
         state = state.copyWith(instruction: challenge.instruction);
         _startTimer(timeout);
       }
@@ -465,6 +486,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     // face returns, not resumed. (reportNoFace clears positionGuidance, which
     // would otherwise leave `framed` true with no face in the gate.)
     _flashGate?.reset();
+    _hold.reset();
     state = state.copyWith(
       faceDetected: false,
       clearPositionGuidance: true, // no face → no distance guidance
@@ -506,9 +528,48 @@ class LivenessNotifier extends _$LivenessNotifier {
     );
   }
 
+  /// The flash could not be measured even after its retry, on a flash-only
+  /// check: prove liveness with gesture challenges instead of passing on a
+  /// flash nobody could measure.
+  void startFallbackGestures() {
+    final livenessConfig = ref.read(kycConfigProvider).livenessConfig;
+    _fellBackToGestures = true;
+    _manager = ChallengeManager(
+      pool: livenessConfig?.challengePool,
+      count: livenessConfig?.challengeCount ?? 2,
+    );
+    state = state.copyWith(totalCount: _displayTotal);
+    _startNextChallenge();
+  }
+
+  /// Shown while an unmeasurable flash is retried.
+  void showFlashRetryGuidance() {
+    state = state.copyWith(instruction: kFlashRetryGuidance);
+  }
+
+  /// The flash was measured and did not match the colours emitted. Matches the
+  /// web and React Native SDKs.
+  void failFlash() {
+    if (state.phase == LivenessPhase.complete) return;
+    _cancelTimer();
+    _flashGate?.reset();
+    state = state.copyWith(
+      phase: LivenessPhase.failed,
+      instruction: 'We couldn\'t confirm the check. Let\'s try again.',
+      error: 'flash_failed',
+      clearActiveChallenge: true,
+      clearPositionGuidance: true,
+    );
+  }
+
   /// Resets the liveness session — picks a fresh random challenge set.
   void reset() {
     _cleanup();
+    // A flash-only check that fell back to gestures starts again flash-only.
+    if (_fellBackToGestures) {
+      _fellBackToGestures = false;
+      _manager = ChallengeManager.none();
+    }
     _manager.reset();
     _flashGate?.reset();
     // A retry starts a fresh session: whoever is in frame now becomes the
@@ -519,6 +580,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     // lighting stays confirmed; re-arming it would re-introduce the warmup race.
     _xHistory.clear();
     _earHistory.clear();
+    _hold.reset();
     _challengeProcessing = false;
     state = LivenessState(
       phase: LivenessPhase.positioning,
@@ -610,12 +672,11 @@ class LivenessNotifier extends _$LivenessNotifier {
       return;
     }
 
-    final livenessConfig = ref.read(kycConfigProvider).livenessConfig;
-    final timeout =
-        livenessConfig?.timeoutPerChallenge ?? challenge.timeoutSeconds;
+    final timeout = _timeoutFor(challenge);
 
     _xHistory.clear();
     _earHistory.clear();
+    _hold.reset();
     _challengeProcessing = false;
 
     state = state.copyWith(
@@ -630,6 +691,14 @@ class LivenessNotifier extends _$LivenessNotifier {
     _startTimer(timeout);
   }
 
+  /// Seconds a challenge gets. The consumer's per-challenge timeout governs the
+  /// gestures; the passive hold keeps its own, since it is not a gesture.
+  int _timeoutFor(ChallengeConfig challenge) {
+    if (challenge.type == LivenessChallenge.hold) return challenge.timeoutSeconds;
+    return ref.read(kycConfigProvider).livenessConfig?.timeoutPerChallenge ??
+        challenge.timeoutSeconds;
+  }
+
   void _checkGesture(LivenessFaceData data) {
     final challenge = _manager.current;
     if (challenge == null) return;
@@ -639,6 +708,11 @@ class LivenessNotifier extends _$LivenessNotifier {
       LivenessChallenge.turn  => detectTurn(data.headEulerAngleY),
       LivenessChallenge.blink => detectBlink(_earHistory),
       LivenessChallenge.smile => detectSmile(data.smilingProbability),
+      // Passive Liveness: passes on its own after a steady moment in position.
+      LivenessChallenge.hold => _hold.update(
+          inPosition: holdFrameInPosition(data),
+          now: DateTime.now(),
+        ),
     };
 
     if (detected) {
@@ -657,6 +731,8 @@ class LivenessNotifier extends _$LivenessNotifier {
       LivenessChallenge.turn  => isSmiling,
       LivenessChallenge.blink => isTurning || isSmiling,
       LivenessChallenge.smile => isTurning,
+      // Holding still has no wrong gesture; a turned head just delays the hold.
+      LivenessChallenge.hold => false,
     };
 
     if (wrong != state.wrongGesture) {

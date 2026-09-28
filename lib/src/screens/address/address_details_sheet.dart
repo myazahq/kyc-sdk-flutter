@@ -8,6 +8,7 @@ import '../../widgets/myaza_button.dart';
 import '../../widgets/themed_sheet.dart';
 import 'address_area_fields.dart';
 import 'address_detail_fields.dart';
+import '../../i18n/text_scope.dart';
 
 export 'address_detail_fields.dart' show AddressDetailsPatch;
 
@@ -119,13 +120,12 @@ class _AddressDetailsBodyState extends State<_AddressDetailsBody> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Edit your address', style: text.heading3),
+              Text(context.kycText('address.details.title'), style: text.heading3),
               const SizedBox(height: 2),
               Text(
                 anyRequired
                     ? 'Correct anything the map got wrong. Fields marked * are required.'
-                    : 'Correct anything the map got wrong. Every field is optional, '
-                        'and it all helps someone find the door.',
+                    : context.kycText('address.details.hint'),
                 style: text.bodySmall.copyWith(color: colors.textSecondary),
               ),
               const SizedBox(height: MyazaSpacing.md),
@@ -159,7 +159,9 @@ class _AddressDetailsBodyState extends State<_AddressDetailsBody> {
                 onChanged: widget.onChanged,
               ),
               const SizedBox(height: MyazaSpacing.lg),
-              MyazaButton(label: 'Done', onPressed: () => Navigator.of(context).pop()),
+              MyazaButton(
+                  label: context.kycText('common.done'),
+                  onPressed: () => Navigator.of(context).pop()),
             ],
           ),
         ),

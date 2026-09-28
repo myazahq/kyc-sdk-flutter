@@ -11,6 +11,7 @@ import 'document_plugin_preview.dart';
 import 'document_scan_overlay.dart';
 import 'native_camera_preview.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 /// Keys for the two controls whose overlap is a real (and once-shipped) bug:
 /// the hint sat behind the shutter. Layout tests target these.
@@ -227,9 +228,9 @@ class DocumentViewfinder extends StatelessWidget {
                       onPressed: onUpload,
                       icon: const MyazaIcon(MyazaIcons.upload,
                           size: 15, color: Colors.white),
-                      label: const Text(
-                        'Upload a photo instead',
-                        style: TextStyle(
+                      label: Text(
+                        context.kycText('uploadDocument.camera.uploadInstead'),
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 13,
                           fontWeight: FontWeight.w600,

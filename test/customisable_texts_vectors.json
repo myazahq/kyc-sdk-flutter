@@ -1,0 +1,3319 @@
+{
+  "baseLanguage": "en",
+  "resolution": [
+    "the workflow's text in the applicant's language, when that is not the base language",
+    "the older config field named by configPath",
+    "the workflow's text in the base language",
+    "the SDK's own default"
+  ],
+  "texts": [
+    {
+      "key": "welcome.title",
+      "group": "welcome",
+      "default": "Identity Verification",
+      "configPath": [
+        "consent",
+        "title"
+      ],
+      "availability": {}
+    },
+    {
+      "key": "welcome.description",
+      "group": "welcome",
+      "default": "We need to verify your identity to comply with regulatory requirements. This process is quick and secure.",
+      "configPath": [
+        "consent",
+        "description"
+      ],
+      "availability": {}
+    },
+    {
+      "key": "welcome.process.heading",
+      "group": "welcome",
+      "default": "During this process we will",
+      "availability": {}
+    },
+    {
+      "key": "welcome.process.verifyId",
+      "group": "welcome",
+      "default": "Verify your government-issued ID",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.personalInfo",
+      "group": "welcome",
+      "default": "Collect basic personal information",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.businessDetails",
+      "group": "welcome",
+      "default": "Collect your business registration details",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "welcome.process.businessRegistry",
+      "group": "welcome",
+      "default": "Verify your business against the official registry",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "welcome.process.addressPin",
+      "group": "welcome",
+      "default": "Pin your home address on a map",
+      "availability": {
+        "scopes": [
+          "address"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.addressDetails",
+      "group": "welcome",
+      "default": "Confirm the details only you can know",
+      "availability": {
+        "scopes": [
+          "address"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.faceSelfie",
+      "group": "welcome",
+      "default": "Take a quick selfie with liveness checks",
+      "availability": {
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.faceMatch",
+      "group": "welcome",
+      "default": "We match it against your enrolled face",
+      "availability": {
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.faceEnrol",
+      "group": "welcome",
+      "default": "It becomes your face check for next time",
+      "availability": {
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.contactScope",
+      "group": "welcome",
+      "default": "Confirm your contact details with a one-time code",
+      "availability": {
+        "scopes": [
+          "contact"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.contactEmailAndPhone",
+      "group": "welcome",
+      "default": "Confirm your email and phone number with a one-time code",
+      "availability": {
+        "scopes": [
+          "full"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "welcome.process.contactEmail",
+      "group": "welcome",
+      "default": "Confirm your email with a one-time code",
+      "availability": {
+        "scopes": [
+          "full"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "welcome.process.contactPhone",
+      "group": "welcome",
+      "default": "Confirm your phone number with a one-time code",
+      "availability": {
+        "scopes": [
+          "full"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "welcome.process.captureDocument",
+      "group": "welcome",
+      "default": "Capture a photo of your ID document",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.uploadDocument",
+      "group": "welcome",
+      "default": "Upload a photo of your ID document",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.selfie",
+      "group": "welcome",
+      "default": "Take a selfie for facial verification",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.supportingDocuments",
+      "group": "welcome",
+      "default": "Upload supporting documents",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.proofOfAddress",
+      "group": "welcome",
+      "default": "Upload a proof of address document",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ]
+      }
+    },
+    {
+      "key": "welcome.process.addressMap",
+      "group": "welcome",
+      "default": "Pin your address on a map",
+      "availability": {
+        "scopes": [
+          "full"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "welcome.process.questions",
+      "group": "welcome",
+      "default": "Answer a few short questions",
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "welcome.process.keyPeople",
+      "group": "welcome",
+      "default": "List the company's directors and owners",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "welcome.process.businessDocuments",
+      "group": "welcome",
+      "default": "Upload supporting business documents",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "welcome.process.applicant",
+      "group": "welcome",
+      "default": "Verify your own identity",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "welcome.secureNote",
+      "group": "welcome",
+      "default": "Your data is encrypted and securely processed",
+      "availability": {}
+    },
+    {
+      "key": "contact.email.title",
+      "group": "contact",
+      "default": "Verify your email",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "email"
+      }
+    },
+    {
+      "key": "contact.email.intro",
+      "group": "contact",
+      "default": "We'll send a one-time code to confirm this email belongs to you.",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "email"
+      }
+    },
+    {
+      "key": "contact.phone.title",
+      "group": "contact",
+      "default": "Verify your phone number",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "phone"
+      }
+    },
+    {
+      "key": "contact.email.label",
+      "group": "contact",
+      "default": "Email address",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "email"
+      }
+    },
+    {
+      "key": "contact.phone.label",
+      "group": "contact",
+      "default": "Phone number",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "phone"
+      }
+    },
+    {
+      "key": "contact.channel.question",
+      "group": "contact",
+      "default": "How should we send it?",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "phone"
+      }
+    },
+    {
+      "key": "contact.sendCode",
+      "group": "contact",
+      "default": "Send code",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "contact.skip",
+      "group": "contact",
+      "default": "Skip for now",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "contact.email.footer",
+      "group": "contact",
+      "default": "We only use this to verify your identity.",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "email"
+      }
+    },
+    {
+      "key": "contact.phone.footer",
+      "group": "contact",
+      "default": "Standard message rates may apply.",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "phone"
+      }
+    },
+    {
+      "key": "contact.code.label",
+      "group": "contact",
+      "default": "Verification code",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "contact.code.resend",
+      "group": "contact",
+      "default": "Resend code",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "contact.verifyCode",
+      "group": "contact",
+      "default": "Verify code",
+      "availability": {
+        "scopes": [
+          "full",
+          "contact"
+        ],
+        "step": "contact"
+      }
+    },
+    {
+      "key": "selectDocument.country.title",
+      "group": "selectDocument",
+      "default": "Where was your ID issued?",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "selectDocument.country.description",
+      "group": "selectDocument",
+      "default": "Choose the country that issued your identity document.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "selectDocument.idType.title",
+      "group": "selectDocument",
+      "default": "Select ID Type",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "selectDocument.idType.description",
+      "group": "selectDocument",
+      "default": "Choose the type of identification document you'd like to use.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "selectDocument.idInput.description",
+      "group": "selectDocument",
+      "default": "We’ll check this against the official record.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "primer.document.title",
+      "group": "primer",
+      "default": "You're about to scan your ID",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.document.body",
+      "group": "primer",
+      "default": "We'll photograph your document and read it automatically. Nothing is shared until you submit.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.document.checklist1",
+      "group": "primer",
+      "default": "Have your physical document with you",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.document.checklist2",
+      "group": "primer",
+      "default": "Find even lighting, avoid glare",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.document.checklist3",
+      "group": "primer",
+      "default": "Takes about a minute",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.selfie.title",
+      "group": "primer",
+      "default": "Let's confirm you're really here",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.body",
+      "group": "primer",
+      "default": "You'll follow a few short prompts on screen. This proves a real person is present, not a photo or a recording.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.bodyPassive",
+      "group": "primer",
+      "default": "You'll hold still and look at the camera for a moment. This proves a real person is present, not a photo or a recording.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.checklist1",
+      "group": "primer",
+      "default": "Put your face in the circle",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.checklist2",
+      "group": "primer",
+      "default": "Take off glasses or anything covering your face",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.checklist4",
+      "group": "primer",
+      "default": "Choose a bright spot, with the light in front of you",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.selfie.checklist5",
+      "group": "primer",
+      "default": "Keep glare and shiny reflections off your face",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "primer.readyButton",
+      "group": "primer",
+      "default": "I'm ready",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "primer.camera.title",
+      "group": "primer",
+      "default": "Allow camera access",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "primer.camera.body",
+      "group": "primer",
+      "default": "When prompted, allow camera access to continue your verification.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "primer.camera.bodyDocument",
+      "group": "primer",
+      "default": "When prompted, allow camera access to photograph your document.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "primer.camera.button",
+      "group": "primer",
+      "default": "Grant access",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "uploadDocument.title.scanFront",
+      "group": "uploadDocument",
+      "default": "Scan Front of Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.capture",
+      "group": "uploadDocument",
+      "default": "Capture Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.uploadFront",
+      "group": "uploadDocument",
+      "default": "Upload Front of Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.upload",
+      "group": "uploadDocument",
+      "default": "Upload Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.frontCaptured",
+      "group": "uploadDocument",
+      "default": "Front Side Captured",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.frontAdded",
+      "group": "uploadDocument",
+      "default": "Front Side Added",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.scanBack",
+      "group": "uploadDocument",
+      "default": "Scan Back of Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.uploadBack",
+      "group": "uploadDocument",
+      "default": "Upload Back of Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.title.review",
+      "group": "uploadDocument",
+      "default": "Review Your {document}",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.scanFront",
+      "group": "uploadDocument",
+      "default": "Place the FRONT of your {document} within the frame.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.capture",
+      "group": "uploadDocument",
+      "default": "Photograph your {document}. Position it within the frame and hold steady.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.uploadFront",
+      "group": "uploadDocument",
+      "default": "Choose a clear photo of the FRONT of your {document}.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.upload",
+      "group": "uploadDocument",
+      "default": "Choose a clear photo of your {document}.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.frontCaptured",
+      "group": "uploadDocument",
+      "default": "Looks good? Tap Next to flip the card and scan the back side.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.frontAdded",
+      "group": "uploadDocument",
+      "default": "Looks good? Tap Next to add the back.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.scanBack",
+      "group": "uploadDocument",
+      "default": "Now place the BACK of your {document} within the frame.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.uploadBack",
+      "group": "uploadDocument",
+      "default": "Now choose a clear photo of the BACK of your {document}.",
+      "placeholders": [
+        "document"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.reviewBoth",
+      "group": "uploadDocument",
+      "default": "Both sides captured. Tap Continue to proceed.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.reviewBothAdded",
+      "group": "uploadDocument",
+      "default": "Both sides added. Tap Continue to proceed.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.description.review",
+      "group": "uploadDocument",
+      "default": "Looks good? Tap Continue to proceed.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.camera.havingTrouble",
+      "group": "uploadDocument",
+      "default": "Having trouble?",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.camera.uploadInstead",
+      "group": "uploadDocument",
+      "default": "Upload a photo instead",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.addFromGallery",
+      "group": "uploadDocument",
+      "default": "Add a photo from your gallery or files",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.hint",
+      "group": "uploadDocument",
+      "default": "Use a clear, well-lit photo. You'll be able to crop it next.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.tapToChoose",
+      "group": "uploadDocument",
+      "default": "Tap to choose a photo",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.tip1",
+      "group": "uploadDocument",
+      "default": "Lay the document flat on a plain surface",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.tip2",
+      "group": "uploadDocument",
+      "default": "Keep all four corners inside the photo",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.upload.tip3",
+      "group": "uploadDocument",
+      "default": "Avoid glare, shadows and blur",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.crop.title",
+      "group": "uploadDocument",
+      "default": "Crop Your Document",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.crop.description",
+      "group": "uploadDocument",
+      "default": "Position the frame so your ID card fills it edge-to-edge.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.crop.confirm",
+      "group": "uploadDocument",
+      "default": "Crop & Use",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.flipBanner",
+      "group": "uploadDocument",
+      "default": "Great! Now flip your card over to scan the back.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.review.tapToEnlarge",
+      "group": "uploadDocument",
+      "default": "Tap a photo to see it larger.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "uploadDocument.check.title",
+      "group": "uploadDocument",
+      "default": "Check your photos",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "documentCapture"
+      }
+    },
+    {
+      "key": "nfc.title",
+      "group": "nfc",
+      "default": "Scan your document’s chip",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "nfc"
+      }
+    },
+    {
+      "key": "nfc.description",
+      "group": "nfc",
+      "default": "Hold your ID flat against the back of your phone and keep it still until scanning completes.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "nfc"
+      }
+    },
+    {
+      "key": "nfc.waiting",
+      "group": "nfc",
+      "default": "Waiting for your document…",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "nfc"
+      }
+    },
+    {
+      "key": "nfc.skip",
+      "group": "nfc",
+      "default": "My device can’t scan the chip. Skip",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "nfc"
+      }
+    },
+    {
+      "key": "presence.title",
+      "group": "presence",
+      "default": "Liveness Check",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.intro.description",
+      "group": "presence",
+      "default": "We'll use your camera to verify you're a real person.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.camera.description",
+      "group": "presence",
+      "default": "Follow the instructions below to verify you are a real person.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.position.placeFace",
+      "group": "presence",
+      "default": "Kindly position your face in the circle",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.challenge.nod",
+      "group": "presence",
+      "default": "Kindly nod your head",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.challenge.turn",
+      "group": "presence",
+      "default": "Kindly turn your head",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.challenge.blink",
+      "group": "presence",
+      "default": "Kindly blink your eyes",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.challenge.smile",
+      "group": "presence",
+      "default": "Kindly smile",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.challenge.hold",
+      "group": "presence",
+      "default": "Hold still and look at the camera",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.review.title",
+      "group": "presence",
+      "default": "Selfie Captured",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "presence.review.description",
+      "group": "presence",
+      "default": "Review your selfie before continuing.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "biometric-authentication",
+          "biometric-enrollment"
+        ],
+        "step": "liveness"
+      }
+    },
+    {
+      "key": "address.intro.badge",
+      "group": "address",
+      "default": "Address verification",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.title",
+      "group": "address",
+      "default": "Let's confirm your address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.description",
+      "group": "address",
+      "default": "This address will be verified over the coming days. Your part takes a minute; the rest happens on its own.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step1.stage",
+      "group": "address",
+      "default": "Your part",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step1.title",
+      "group": "address",
+      "default": "Pin your address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step1.caption",
+      "group": "address",
+      "default": "Put the pin right on your building. Takes a minute.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step2.stage",
+      "group": "address",
+      "default": "After that",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step2.title",
+      "group": "address",
+      "default": "Quiet check-ins",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step2.caption",
+      "group": "address",
+      "default": "Keep location on; your phone confirms it over the coming days.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step2.caption.background",
+      "group": "address",
+      "default": "Allow location all the time when asked. Your phone then confirms it on its own, even with the app closed.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step3.stage",
+      "group": "address",
+      "default": "Then",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step3.title",
+      "group": "address",
+      "default": "Confirmed",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.step3.caption",
+      "group": "address",
+      "default": "You'll be notified. That is it.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.howItWorks.title",
+      "group": "address",
+      "default": "How it works",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.howItWorks.body",
+      "group": "address",
+      "default": "After you finish, your device periodically confirms it is at this address over the coming days. Only day-level summaries ever leave your phone, never your movements.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.howItWorks.body.background",
+      "group": "address",
+      "default": "After you finish, your phone confirms it is at this address over the coming days, even when the app is closed. Only day-level summaries ever leave your phone, never your movements.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.control.title",
+      "group": "address",
+      "default": "You stay in control",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.control.body",
+      "group": "address",
+      "default": "You can turn location off at any time in your device settings. An unfinished check simply expires. It never counts against you.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.privacy.title",
+      "group": "address",
+      "default": "Your data is protected",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.privacy.body",
+      "group": "address",
+      "default": "Location summaries are used only to confirm this address and are handled under your country's data protection rules.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.intro.start",
+      "group": "address",
+      "default": "Got it, let's go",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.search.title",
+      "group": "address",
+      "default": "Find your address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.search.description",
+      "group": "address",
+      "default": "Search it, use your current location, or place a pin on the map.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.currentLocation.title",
+      "group": "address",
+      "default": "Use my current location",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.currentLocation.hint",
+      "group": "address",
+      "default": "Lands the pin right where you are",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.search.pinInstead",
+      "group": "address",
+      "default": "Place a pin on the map instead",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.skip",
+      "group": "address",
+      "default": "Skip for now",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.pin.title",
+      "group": "address",
+      "default": "Is the pin on your building?",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.pin.title.business",
+      "group": "address",
+      "default": "Is the pin on the premises?",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "business"
+      }
+    },
+    {
+      "key": "address.pin.description",
+      "group": "address",
+      "default": "Drag the map until the pin sits exactly on it. You can add details for whoever needs to find it.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.pin.detailsHint",
+      "group": "address",
+      "default": "A house number and directions help someone find it",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.pin.editDetails",
+      "group": "address",
+      "default": "Edit details",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.locate.button",
+      "group": "address",
+      "default": "Use my location",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.labelDecision.title",
+      "group": "address",
+      "default": "You moved the pin",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.labelDecision.keep",
+      "group": "address",
+      "default": "Keep this address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.labelDecision.adopt",
+      "group": "address",
+      "default": "Use the pin’s address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.details.title",
+      "group": "address",
+      "default": "Edit your address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.details.hint",
+      "group": "address",
+      "default": "Correct anything the map got wrong. Every field is optional, and it all helps someone find the door.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.entrance.title",
+      "group": "address",
+      "default": "Show the entrance",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.description.framing",
+      "group": "address",
+      "default": "Frame your entrance in the street imagery. No camera needed.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.description.photo",
+      "group": "address",
+      "default": "A picture of the gate or front door makes the address findable.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.framePill",
+      "group": "address",
+      "default": "Fit your entrance in the frame",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.frameHint",
+      "group": "address",
+      "default": "Drag to look around until your gate or front door sits inside the frame.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.useView",
+      "group": "address",
+      "default": "Use this view",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.photo.cta",
+      "group": "address",
+      "default": "Take or upload a photo",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.photo.hint",
+      "group": "address",
+      "default": "The gate, front door or the building itself.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.entrance.continueWithoutPhoto",
+      "group": "address",
+      "default": "Continue without a photo",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.review.title",
+      "group": "address",
+      "default": "Confirm your address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.review.title.business",
+      "group": "address",
+      "default": "Confirm the premises",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "business"
+      }
+    },
+    {
+      "key": "address.review.description",
+      "group": "address",
+      "default": "Check everything is right before you continue.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.review.badge",
+      "group": "address",
+      "default": "Pinned address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "address.review.badge.business",
+      "group": "address",
+      "default": "Pinned premises",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address",
+        "subject": "business"
+      }
+    },
+    {
+      "key": "address.review.edit",
+      "group": "address",
+      "default": "Edit",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.review.confirm",
+      "group": "address",
+      "default": "Confirm address",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.badge",
+      "group": "address",
+      "default": "Address check active",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.title",
+      "group": "address",
+      "default": "Your address confirms itself from here",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.description",
+      "group": "address",
+      "default": "Nothing else for you to do. Carry on as normal.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step1.stage",
+      "group": "address",
+      "default": "Today",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step1.title",
+      "group": "address",
+      "default": "Check started",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step1.caption",
+      "group": "address",
+      "default": "Your pin is saved. Keep location on.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step2.stage",
+      "group": "address",
+      "default": "Next few days",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step2.title",
+      "group": "address",
+      "default": "Quiet check-ins",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step2.caption",
+      "group": "address",
+      "default": "Your phone confirms it is at your address now and then.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step3.stage",
+      "group": "address",
+      "default": "Then",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step3.title",
+      "group": "address",
+      "default": "Confirmed",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "address.presence.step3.caption",
+      "group": "address",
+      "default": "You get a notification. That is it.",
+      "availability": {
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "address"
+      }
+    },
+    {
+      "key": "proofOfAddress.title",
+      "group": "proofOfAddress",
+      "default": "Proof of address",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.documentType",
+      "group": "proofOfAddress",
+      "default": "Document type",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.kind.utilityBill",
+      "group": "proofOfAddress",
+      "default": "Utility bill",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.kind.bankStatement",
+      "group": "proofOfAddress",
+      "default": "Bank statement",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.kind.tenancyAgreement",
+      "group": "proofOfAddress",
+      "default": "Tenancy agreement",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.kind.governmentDocument",
+      "group": "proofOfAddress",
+      "default": "Government-issued document",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.kind.other",
+      "group": "proofOfAddress",
+      "default": "Other document",
+      "configPath": [
+        "proofOfAddress",
+        "otherLabel"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "proofOfAddress.uploaded",
+      "group": "proofOfAddress",
+      "default": "Document uploaded",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full",
+          "address"
+        ],
+        "step": "proofOfAddress"
+      }
+    },
+    {
+      "key": "supportingDocuments.title",
+      "group": "supportingDocuments",
+      "default": "Supporting documents",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.intro.optional.one",
+      "group": "supportingDocuments",
+      "default": "Upload this document if you have it, so we can keep it on file. You can skip it.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.intro.optional.many",
+      "group": "supportingDocuments",
+      "default": "Upload any of these you have, so we can keep them on file. You can skip the rest.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.intro.required.one",
+      "group": "supportingDocuments",
+      "default": "We need this document to continue. Upload it below.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.card.required",
+      "group": "supportingDocuments",
+      "default": "Required",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.card.optional",
+      "group": "supportingDocuments",
+      "default": "Optional",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "supportingDocuments.card.reads",
+      "group": "supportingDocuments",
+      "default": "What we read from it",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ],
+        "step": "supportingDocuments"
+      }
+    },
+    {
+      "key": "business.details.title",
+      "group": "business",
+      "default": "Business Details",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.description",
+      "group": "business",
+      "default": "Provide your business registration details for verification against the official registry.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.countryLabel",
+      "group": "business",
+      "default": "Country of registration",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.search.manualEntry",
+      "group": "business",
+      "default": "Enter the details myself",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.registrationNumberLabel",
+      "group": "business",
+      "default": "Registration number",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.nameLabel",
+      "group": "business",
+      "default": "Registered business name",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.companyInfo.title",
+      "group": "business",
+      "default": "Company information",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.companyInfo.description",
+      "group": "business",
+      "default": "We verify these details against the official registry record.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.contactEmail.label",
+      "group": "business",
+      "default": "Contact email for owner verification",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.contactEmail.hint",
+      "group": "business",
+      "default": "We'll email this address a link for your directors and owners to verify their identity.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.checkNote",
+      "group": "business",
+      "default": "Continue checks this business against the official register and brings back its details.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.details.confirm",
+      "group": "business",
+      "default": "Confirm details & continue",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "business.documents.title",
+      "group": "business",
+      "default": "Business documents",
+      "availability": {
+        "subject": "business",
+        "step": "businessDocuments"
+      }
+    },
+    {
+      "key": "business.documents.description",
+      "group": "business",
+      "default": "Upload the supporting documents for your business. Each one must clearly show the registered business name and registration number. Required documents are marked with *.",
+      "availability": {
+        "subject": "business",
+        "step": "businessDocuments"
+      }
+    },
+    {
+      "key": "business.applicant.title",
+      "group": "business",
+      "default": "Now verify your own identity",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.description",
+      "group": "business",
+      "default": "Tell us your role at the business, then verify your identity with a government-issued ID.",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.notice",
+      "group": "business",
+      "default": "Regulations require the person submitting a business application to verify their own identity. This only takes a minute.",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.whoLabel",
+      "group": "business",
+      "default": "Are you one of the people you listed?",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.notListed",
+      "group": "business",
+      "default": "I'm not one of these people",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.selfNote",
+      "group": "business",
+      "default": "You'll verify your identity at the end of this form, so no separate invite link is needed for you.",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "business.applicant.roleLabel",
+      "group": "business",
+      "default": "Your role at the business",
+      "availability": {
+        "subject": "business",
+        "step": "applicant"
+      }
+    },
+    {
+      "key": "keyPeople.title",
+      "group": "keyPeople",
+      "default": "Key people",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.description",
+      "group": "keyPeople",
+      "default": "Add the company's directors, shareholders and beneficial owners.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.hints.skippable",
+      "group": "keyPeople",
+      "default": "You can skip this if you’re unsure. We’ll identify directors and owners from the official registry. Adding them here speeds up the review.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.section.ubos.add",
+      "group": "keyPeople",
+      "default": "Add a beneficial owner",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.section.shareholders.add",
+      "group": "keyPeople",
+      "default": "Add a shareholder",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.section.representatives.description",
+      "group": "keyPeople",
+      "default": "People who act on behalf of the company.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.section.representatives.add",
+      "group": "keyPeople",
+      "default": "Add a representative",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.pending.title",
+      "group": "keyPeople",
+      "default": "Working out who else needs to verify",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.pending.body",
+      "group": "keyPeople",
+      "default": "We are checking the official register for the company's directors and owners.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.await.allDone",
+      "group": "keyPeople",
+      "default": "Everyone on this application has completed their identity check.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.await.intro",
+      "group": "keyPeople",
+      "default": "To complete the review, the people below must verify their identity with a KYC check. Anyone with an email on file has already been sent their link.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "keyPeople.await.linkValidity",
+      "group": "keyPeople",
+      "default": "Links are valid for 14 days.",
+      "availability": {
+        "subject": "business",
+        "step": "keyPeople"
+      }
+    },
+    {
+      "key": "questionnaire.title",
+      "group": "questionnaire",
+      "default": "A few more questions",
+      "configPath": [
+        "questionnaire",
+        "title"
+      ],
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "questionnaire.description",
+      "group": "questionnaire",
+      "default": "This information is required for compliance and helps keep your account safe.",
+      "configPath": [
+        "questionnaire",
+        "description"
+      ],
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "questionnaire.detailLabel",
+      "group": "questionnaire",
+      "default": "Please specify",
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "questionnaire.yes",
+      "group": "questionnaire",
+      "default": "Yes",
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "questionnaire.no",
+      "group": "questionnaire",
+      "default": "No",
+      "availability": {
+        "scopes": [
+          "full",
+          "questionnaire"
+        ],
+        "step": "questionnaire"
+      }
+    },
+    {
+      "key": "result.submitting.title",
+      "group": "result",
+      "default": "Submitting your verification",
+      "availability": {}
+    },
+    {
+      "key": "result.submitting.description",
+      "group": "result",
+      "default": "Please wait a moment.",
+      "availability": {}
+    },
+    {
+      "key": "result.success.title",
+      "group": "result",
+      "default": "Verification Submitted!",
+      "configPath": [
+        "success",
+        "title"
+      ],
+      "availability": {}
+    },
+    {
+      "key": "result.success.description.individual",
+      "group": "result",
+      "default": "Your identity verification has been submitted for review. You'll be notified of the result.",
+      "configPath": [
+        "success",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "result.success.description.business",
+      "group": "result",
+      "default": "Your business verification has been submitted for review. You'll be notified of the result.",
+      "configPath": [
+        "success",
+        "description"
+      ],
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "result.success.redirectLabel",
+      "group": "result",
+      "default": "Continue",
+      "configPath": [
+        "success",
+        "redirectLabel"
+      ],
+      "availability": {}
+    },
+    {
+      "key": "result.success.closeTabNote",
+      "group": "result",
+      "default": "You're all set, you can close this tab.",
+      "availability": {}
+    },
+    {
+      "key": "result.faceCheck.checking.title",
+      "group": "result",
+      "default": "Checking it's you",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "title"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.checking.description",
+      "group": "result",
+      "default": "Matching your selfie against the photo on record. This usually takes a few seconds.",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.sending.title",
+      "group": "result",
+      "default": "Sending your face check",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "title"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.sending.description",
+      "group": "result",
+      "default": "This only takes a moment.",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceEnrolment.saving.title",
+      "group": "result",
+      "default": "Saving your selfie",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "title"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "result.faceEnrolment.saving.description",
+      "group": "result",
+      "default": "It becomes the reference for your future face checks.",
+      "configPath": [
+        "biometric",
+        "copy",
+        "waiting",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.verified.title",
+      "group": "result",
+      "default": "You're verified",
+      "configPath": [
+        "biometric",
+        "copy",
+        "verified",
+        "title"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.verified.description",
+      "group": "result",
+      "default": "Your face matched the photo on record.",
+      "configPath": [
+        "biometric",
+        "copy",
+        "verified",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.declined.title",
+      "group": "result",
+      "default": "We couldn't confirm it's you",
+      "configPath": [
+        "biometric",
+        "copy",
+        "declined",
+        "title"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.declined.description",
+      "group": "result",
+      "default": "Your face didn't match the photo on record.",
+      "configPath": [
+        "biometric",
+        "copy",
+        "declined",
+        "description"
+      ],
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.inReview.title",
+      "group": "result",
+      "default": "Under review",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.inReview.description",
+      "group": "result",
+      "default": "A reviewer will take a look. You'll be notified of the outcome.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.submitted.title",
+      "group": "result",
+      "default": "Check submitted",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.submitted.description",
+      "group": "result",
+      "default": "You'll be notified of the result.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.timeout.title",
+      "group": "result",
+      "default": "Still checking",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.faceCheck.timeout.description",
+      "group": "result",
+      "default": "This is taking longer than usual. You'll be notified as soon as it's done.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-authentication"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.title",
+      "group": "result",
+      "default": "Verification complete",
+      "availability": {}
+    },
+    {
+      "key": "result.completed.approved.title.faceEnrolment",
+      "group": "result",
+      "default": "Enrolment complete",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.description.individual",
+      "group": "result",
+      "default": "Your identity has been verified. There is nothing left to do here.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.description.business",
+      "group": "result",
+      "default": "This business has been verified. There is nothing left to do here.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "result.completed.approved.description.address",
+      "group": "result",
+      "default": "Your address has been verified. There is nothing left to do here.",
+      "availability": {
+        "scopes": [
+          "address"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.description.faceEnrolment",
+      "group": "result",
+      "default": "Your face has been saved as the reference for your future face checks. There is nothing left to do here.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.description.questionnaire",
+      "group": "result",
+      "default": "Your answers have been received. There is nothing left to do here.",
+      "availability": {
+        "scopes": [
+          "questionnaire"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.approved.description.contact",
+      "group": "result",
+      "default": "Your contact details have been verified. There is nothing left to do here.",
+      "availability": {
+        "scopes": [
+          "contact"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.declined.title",
+      "group": "result",
+      "default": "Verification unsuccessful",
+      "availability": {}
+    },
+    {
+      "key": "result.completed.declined.description.individual",
+      "group": "result",
+      "default": "Your identity could not be verified. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "full"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.declined.description.business",
+      "group": "result",
+      "default": "This business could not be verified. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "subject": "business"
+      }
+    },
+    {
+      "key": "result.completed.declined.description.address",
+      "group": "result",
+      "default": "Your address could not be verified. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "scopes": [
+          "address"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.declined.description.faceEnrolment",
+      "group": "result",
+      "default": "Your face enrolment could not be completed. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "subject": "individual",
+        "scopes": [
+          "biometric-enrollment"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.declined.description.questionnaire",
+      "group": "result",
+      "default": "Your answers could not be accepted. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "scopes": [
+          "questionnaire"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.declined.description.contact",
+      "group": "result",
+      "default": "Your contact details could not be verified. Contact the organisation that sent you this link to find out what happens next.",
+      "availability": {
+        "scopes": [
+          "contact"
+        ]
+      }
+    },
+    {
+      "key": "result.completed.actionNeeded.title",
+      "group": "result",
+      "default": "More information needed",
+      "availability": {}
+    },
+    {
+      "key": "result.completed.actionNeeded.description",
+      "group": "result",
+      "default": "Some details need to be provided again. The organisation that sent you this link will have shared a new link to continue.",
+      "availability": {}
+    },
+    {
+      "key": "handoff.gate.title",
+      "group": "handoff",
+      "default": "Continue on your phone",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.gate.description",
+      "group": "handoff",
+      "default": "Scan the QR code with your phone to continue your verification there, handy for capturing your ID and selfie.",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.gate.description.noCamera",
+      "group": "handoff",
+      "default": "This device has no camera. Scan the QR code with your phone to finish your verification there.",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.gate.description.mobileOnly",
+      "group": "handoff",
+      "default": "This verification can only be completed on a mobile device. Scan the QR code with your phone to continue there.",
+      "availability": {}
+    },
+    {
+      "key": "handoff.codeLabel",
+      "group": "handoff",
+      "default": "Or enter this code",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.copyLink",
+      "group": "handoff",
+      "default": "Copy link",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.continueHere",
+      "group": "handoff",
+      "default": "Continue on this device",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.mobileOnly.title",
+      "group": "handoff",
+      "default": "Continue on a mobile device",
+      "availability": {}
+    },
+    {
+      "key": "handoff.mobileOnly.description",
+      "group": "handoff",
+      "default": "This verification can only be completed on a phone or tablet. Open it on your mobile device to continue.",
+      "availability": {}
+    },
+    {
+      "key": "handoff.completed.title",
+      "group": "handoff",
+      "default": "Completed on your phone",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.completed.description",
+      "group": "handoff",
+      "default": "Your verification has been submitted for review. You can close this window.",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.sheet.trigger",
+      "group": "handoff",
+      "default": "Continue on a different device",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.sheet.title",
+      "group": "handoff",
+      "default": "Continue on another device",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.sheet.description",
+      "group": "handoff",
+      "default": "Scan the QR code with another device to continue your verification there.",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "handoff.sheet.stayButton",
+      "group": "handoff",
+      "default": "I'll stay on this device",
+      "availability": {
+        "step": "handoff"
+      }
+    },
+    {
+      "key": "common.continue",
+      "group": "common",
+      "default": "Continue",
+      "availability": {}
+    },
+    {
+      "key": "common.continueAnyway",
+      "group": "common",
+      "default": "Continue anyway",
+      "availability": {
+        "subject": "individual"
+      }
+    },
+    {
+      "key": "common.back",
+      "group": "common",
+      "default": "Back",
+      "availability": {}
+    },
+    {
+      "key": "common.done",
+      "group": "common",
+      "default": "Done",
+      "availability": {}
+    },
+    {
+      "key": "common.retake",
+      "group": "common",
+      "default": "Retake",
+      "availability": {}
+    },
+    {
+      "key": "common.skip",
+      "group": "common",
+      "default": "Skip",
+      "availability": {}
+    }
+  ]
+}

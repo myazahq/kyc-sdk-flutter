@@ -10,6 +10,7 @@ import '../providers/step_order.dart';
 import '../services/validators.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/myaza_input.dart';
+import '../i18n/text_scope.dart';
 
 // ─── ID input screen ──────────────────────────────────────────────────────────
 
@@ -125,7 +126,7 @@ class _IdInputScreenState extends ConsumerState<IdInputScreen> {
         ListenableBuilder(
           listenable: _idCtrl,
           builder: (_, __) => MyazaButton(
-            label: 'Continue',
+            label: context.kycText('common.continue'),
             onPressed: _canSubmit ? _onContinue : null,
           ),
         ),

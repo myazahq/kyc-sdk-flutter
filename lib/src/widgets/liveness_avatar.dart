@@ -52,7 +52,13 @@ class LivenessAvatar extends StatelessWidget {
         phase == LivenessPhase.challengePassed ||
         phase == LivenessPhase.positioning;
 
-    if (!isVisible || challenge == null) return const SizedBox.shrink();
+    // The passive hold has no gesture to demonstrate, so the avatar hides for
+    // it (as the flash, which is never a challenge here, always has).
+    if (!isVisible ||
+        challenge == null ||
+        challenge == LivenessChallenge.hold) {
+      return const SizedBox.shrink();
+    }
 
     return AnimatedSwitcher(
       duration: const Duration(milliseconds: 350),

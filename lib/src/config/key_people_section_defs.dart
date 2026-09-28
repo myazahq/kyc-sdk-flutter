@@ -1,5 +1,6 @@
 import 'business.dart';
 import 'key_people_sections.dart';
+import '../i18n/translate.dart' show TextFn, defaultTextFn;
 
 // The step's section definitions: which sections show and what they say.
 // Split from key_people_sections.dart (200-line rule), as the RN SDK splits
@@ -37,10 +38,13 @@ String _pct(double n) =>
 /// register's default): a printed band the server does not enforce would be a
 /// lie the applicant plans around. Scope follows the workflow's
 /// `keyPeople.roles`.
+/// The add buttons and the representatives' definition are catalogue texts
+/// ([text]); the lines carrying a threshold keep this SDK's wording.
 List<KeyPeopleSectionDef> keyPeopleSectionList(
   WorkflowBusinessConfig? business,
-  double threshold,
-) {
+  double threshold, [
+  TextFn text = defaultTextFn,
+]) {
   final scoped = business?.keyPeople?.roles ?? const <KeyPersonRole>[];
   bool inScope(List<KeyPersonRole> roles) =>
       scoped.isEmpty || roles.any(scoped.contains);
@@ -53,7 +57,7 @@ List<KeyPeopleSectionDef> keyPeopleSectionList(
       key: KeyPeopleSection.ubos,
       title: 'Beneficial owners',
       description: 'Individuals who own $t% or more of the company.',
-      addLabel: 'Add a beneficial owner',
+      addLabel: text('keyPeople.section.ubos.add'),
     ));
   }
   if (inScope(const [KeyPersonRole.shareholder])) {
@@ -61,15 +65,15 @@ List<KeyPeopleSectionDef> keyPeopleSectionList(
       key: KeyPeopleSection.shareholders,
       title: 'Shareholders',
       description: 'People or companies holding under $t%.',
-      addLabel: 'Add a shareholder',
+      addLabel: text('keyPeople.section.shareholders.add'),
     ));
   }
   if (inScope(const [KeyPersonRole.director, KeyPersonRole.signatory])) {
-    out.add(const KeyPeopleSectionDef(
+    out.add(KeyPeopleSectionDef(
       key: KeyPeopleSection.representatives,
       title: 'Directors & representatives',
-      description: 'People who act on behalf of the company.',
-      addLabel: 'Add a representative',
+      description: text('keyPeople.section.representatives.description'),
+      addLabel: text('keyPeople.section.representatives.add'),
     ));
   }
   return out;

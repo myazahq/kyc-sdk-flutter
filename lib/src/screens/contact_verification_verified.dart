@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Contact verification — the already-verified panel ────────────────────────
 //
@@ -61,7 +62,8 @@ class ContactVerifiedView extends StatelessWidget {
           ),
         ),
         const SizedBox(height: MyazaSpacing.xl),
-        MyazaButton(label: 'Continue', onPressed: onContinue),
+        MyazaButton(
+            label: context.kycText('common.continue'), onPressed: onContinue),
       ],
     );
   }

@@ -10,6 +10,7 @@ import 'address_flow_scaffold.dart';
 import 'address_location_row.dart';
 import 'address_pin_move.dart';
 import 'address_search_body.dart';
+import '../../i18n/text_scope.dart';
 
 /// Step 1 of the address flow: find the address as words.
 ///
@@ -83,7 +84,7 @@ class _AddressSearchStepState extends ConsumerState<AddressSearchStep>
                   padding: const EdgeInsets.symmetric(
                       vertical: MyazaSpacing.sm, horizontal: MyazaSpacing.sm),
                   child: Text(
-                    'Place a pin on the map instead',
+                    context.kycText('address.search.pinInstead'),
                     style: text.bodyMedium.copyWith(
                       color: colors.textSecondary,
                       decoration: TextDecoration.underline,

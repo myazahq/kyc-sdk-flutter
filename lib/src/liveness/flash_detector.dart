@@ -120,9 +120,11 @@ class FlashResult {
       };
 }
 
-/// Aggregates per-flash samples into a pass/fail. Passes when either every
-/// measurable flash was inconclusive (too-bright daylight — soft pass) or at
-/// least ~2/3 of the measurable flashes matched.
+/// Aggregates per-flash samples into a pass/fail. Passes when at least ~2/3
+/// of the measurable flashes matched. A run where NONE could be measured is not
+/// a pass: a phone screen held up to the camera drowns the reflection just as
+/// daylight does. The caller retries it, then lets gestures carry the check
+/// (flash_outcome.dart).
 FlashResult evaluateFlashSequence(
   List<FlashColor> sequence,
   List<FlashSample> samples,
@@ -130,9 +132,8 @@ FlashResult evaluateFlashSequence(
   final measurable = samples.where((s) => !s.inconclusive).toList();
   final matched = measurable.where((s) => s.matched).length;
   final inconclusive = samples.length - measurable.length;
-  final passed = measurable.isEmpty
-      ? true // all inconclusive ⇒ ambient too bright ⇒ soft pass
-      : matched >= (measurable.length * 0.66).ceil();
+  final passed =
+      measurable.isNotEmpty && matched >= (measurable.length * 0.66).ceil();
   final score = measurable.isEmpty ? 0.0 : matched / measurable.length;
   return FlashResult(
     passed: passed,

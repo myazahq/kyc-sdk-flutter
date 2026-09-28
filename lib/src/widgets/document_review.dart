@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import 'document_review_side.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Document review ──────────────────────────────────────────────────────────
 //
@@ -161,7 +162,7 @@ class _DocumentReviewState extends State<DocumentReview> {
                 ),
                 const SizedBox(height: MyazaSpacing.xs),
                     Text(
-                      'Tap a photo to see it larger.',
+                      context.kycText('uploadDocument.review.tapToEnlarge'),
                       style: text.bodySmall.copyWith(color: colors.textMuted),
                       textAlign: TextAlign.center,
                     ),

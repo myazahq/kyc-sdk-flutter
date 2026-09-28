@@ -6,6 +6,7 @@ import '../config/theme.dart';
 import '../widgets/myaza_input.dart';
 import 'business_company_info_fields.dart';
 import 'business_details_parts.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The DETAILS screen of the business step ──────────────────────────────────
 //
@@ -63,7 +64,9 @@ class BusinessDetailsFields extends StatelessWidget {
         // not discovered on Continue. The registry tip fills the same slot
         // until there is an error to show.
         MyazaInput(
-          label: productDef.inputLabel,
+          label: productDef.input == BusinessProductInput.tin
+              ? productDef.inputLabel
+              : context.kycText('business.details.registrationNumberLabel'),
           controller: regCtrl,
           hint: regHint.placeholder,
           textCapitalization: TextCapitalization.characters,
@@ -79,7 +82,7 @@ class BusinessDetailsFields extends StatelessWidget {
         const SizedBox(height: MyazaSpacing.md),
 
         BusinessFieldLabel(
-          label: 'Registered business name',
+          label: context.kycText('business.details.nameLabel'),
           required: requireName,
         ),
         const SizedBox(height: MyazaSpacing.xs),

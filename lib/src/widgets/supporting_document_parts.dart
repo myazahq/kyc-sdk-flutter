@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── The pieces of a supporting-document card ────────────────────────────────
 //
@@ -66,7 +67,9 @@ class DocumentStatePill extends StatelessWidget {
         borderRadius: BorderRadius.circular(MyazaRadius.full),
       ),
       child: Text(
-        required ? 'Required' : 'Optional',
+        context.kycText(required
+            ? 'supportingDocuments.card.required'
+            : 'supportingDocuments.card.optional'),
         style: text.bodySmall.copyWith(
           color: required ? MyazaColors.error : colors.textSecondary,
           fontWeight: FontWeight.w600,
@@ -97,7 +100,7 @@ class DocumentReads extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'WHAT WE READ FROM IT',
+            context.kycText('supportingDocuments.card.reads').toUpperCase(),
             style: text.bodySmall.copyWith(
               color: colors.textSecondary,
               fontWeight: FontWeight.w600,

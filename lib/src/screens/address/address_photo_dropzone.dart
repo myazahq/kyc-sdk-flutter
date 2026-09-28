@@ -4,6 +4,7 @@ import '../../config/theme.dart';
 import '../../widgets/dashed_border.dart';
 import 'address_photo_filled.dart';
 import '../../widgets/icons/icons.dart';
+import '../../i18n/text_scope.dart';
 
 // ─── The entrance photo, as the hero of its screen ───────────────────────────
 //
@@ -92,7 +93,7 @@ class _Empty extends StatelessWidget {
                 ),
                 const SizedBox(height: MyazaSpacing.md),
                 Text(
-                  uploading ? 'Uploading photo…' : 'Take or upload a photo',
+                  uploading ? 'Uploading photo…' : context.kycText('address.photo.cta'),
                   style: text.body.copyWith(fontWeight: FontWeight.w600),
                   textAlign: TextAlign.center,
                 ),
@@ -100,7 +101,7 @@ class _Empty extends StatelessWidget {
                   const SizedBox(height: MyazaSpacing.xs),
                   Text(
                     parent.required
-                        ? 'The gate, front door or the building itself.'
+                        ? context.kycText('address.photo.hint')
                         : 'The gate, front door or the building itself. Optional.',
                     style: text.bodyMedium
                         .copyWith(color: colors.textSecondary),

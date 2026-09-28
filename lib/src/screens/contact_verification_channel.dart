@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../widgets/whatsapp_icon.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Contact verification — delivery-channel choice ───────────────────────────
 //
@@ -56,7 +57,7 @@ class ContactChannelChoice extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('How should we send it?',
+          Text(context.kycText('contact.channel.question'),
               style: text.bodySmall.copyWith(color: colors.textSecondary)),
           const SizedBox(height: MyazaSpacing.sm),
           Row(

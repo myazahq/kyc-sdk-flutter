@@ -4,6 +4,8 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import io.flutter.embedding.engine.plugins.FlutterPlugin
+import io.flutter.embedding.engine.plugins.activity.ActivityAware
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -31,10 +33,15 @@ import io.flutter.view.TextureRegistry
  *     → [DocumentCameraHandler]. The same single-session approach for the
  *     document step, replacing the Flutter camera plugin there on Android.
  *
+ *  5. **Screen brightness** (`kyc_sdk_flutter/capture_tuning`) →
+ *     [ScreenBrightness]. The activity window's brightness for the flash
+ *     sequence and the bright-screen liveness; needs the Activity, hence
+ *     [ActivityAware].
+ *
  * Keeping ML Kit Android-only (Gradle) means no GoogleMLKit CocoaPod on iOS, so
  * the SDK still builds for Apple-Silicon iOS simulators (iOS uses Apple Vision).
  */
-class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
+class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
   private lateinit var channel: MethodChannel
   private lateinit var recorderChannel: MethodChannel
   private lateinit var textChannel: MethodChannel
@@ -44,6 +51,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
   private lateinit var imageChannel: MethodChannel
   private lateinit var presenceChannel: MethodChannel
   private lateinit var faceEventChannel: EventChannel
+  private lateinit var tuningChannel: MethodChannel
+  private val screenBrightness = ScreenBrightness()
 
   private val faceDetector = FaceDetectorHandler()
   private val textRecognizer = TextRecognizerHandler()
@@ -78,6 +87,11 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     presenceChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/presence")
     presenceChannel.setMethodCallHandler(this)
 
+    tuningChannel = MethodChannel(binding.binaryMessenger, "kyc_sdk_flutter/capture_tuning")
+    tuningChannel.setMethodCallHandler { call, result ->
+      if (!screenBrightness.handle(call, result)) result.notImplemented()
+    }
+
     faceEventChannel = EventChannel(binding.binaryMessenger, "kyc_sdk_flutter/liveness_recorder/faces")
     faceEventChannel.setStreamHandler(object : EventChannel.StreamHandler {
       override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
@@ -97,6 +111,7 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     textChannel.setMethodCallHandler(null)
     imageChannel.setMethodCallHandler(null)
     presenceChannel.setMethodCallHandler(null)
+    tuningChannel.setMethodCallHandler(null)
     presence = null
     imageDecoder.dispose()
     textRecognizer.close()
@@ -106,6 +121,24 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler {
     recorder?.dispose()
     recorder = null
     faceDetector.close()
+  }
+
+  // ── Activity (the window whose brightness is ours) ─────────────────────────
+
+  override fun onAttachedToActivity(binding: ActivityPluginBinding) {
+    screenBrightness.attach(binding.activity)
+  }
+
+  override fun onDetachedFromActivityForConfigChanges() {
+    screenBrightness.detach()
+  }
+
+  override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
+    screenBrightness.attach(binding.activity)
+  }
+
+  override fun onDetachedFromActivity() {
+    screenBrightness.detach()
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {

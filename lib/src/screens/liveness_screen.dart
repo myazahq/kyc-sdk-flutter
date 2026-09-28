@@ -25,8 +25,13 @@ import '../config/theme.dart';
 import '../widgets/selfie_soft_notice.dart';
 import '../liveness/face_detection.dart';
 import '../liveness/capture_tuning.dart';
+import '../liveness/challenge_manager.dart';
 import '../liveness/face_rgb_sampler.dart';
 import '../liveness/flash_challenge.dart';
+import '../liveness/flash_outcome.dart';
+import '../liveness/flash_overlay_color.dart';
+import '../config/bright_screen.dart';
+import '../providers/theme_provider.dart' show livenessCameraOnProvider;
 import '../liveness/flash_detector.dart';
 import '../liveness/liveness_types.dart';
 import '../liveness/native_liveness_recorder.dart';
@@ -48,6 +53,7 @@ import '../widgets/myaza_alert.dart';
 import '../widgets/native_camera_preview.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Liveness screen ──────────────────────────────────────────────────────────
 
@@ -212,6 +218,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   bool _ready = false;
   bool _showPrimer = false;
 
+  // Bright screen (config/bright_screen.dart): set once the camera is asked to
+  // start, and published to livenessCameraOnProvider so the flow can light the
+  // face. [_lit] latches from the camera screen to the end of the step, so the
+  // review after the selfie stays lit too; the ready and permission primers
+  // never are. [_cameraOnCtrl] is held from initState so dispose can clear it.
+  bool _cameraStarted = false;
+  bool _lit = false;
+  bool? _publishedCameraOn;
+  StateController<bool>? _cameraOnCtrl;
+
   // Latest camera-stream frame, kept whole (not just its bytes) so flash
   // liveness can sample the face region's mean RGB from it (iOS).
   CameraImage? _latestImage;
@@ -233,6 +249,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   /// a flash repaints only the overlay — a setState per flash would rebuild the
   /// camera preview mid-sequence and disturb the very frames being sampled.
   final ValueNotifier<Color?> _flashColor = ValueNotifier<Color?>(null);
+
+  /// True while a flash sequence is measuring: the overlay then paints black
+  /// between colours, so every neutral frame is dark (flash_overlay_color.dart).
+  final ValueNotifier<bool> _flashSequenceRunning = ValueNotifier<bool>(false);
 
   /// The flash outcome, submitted as the integrity claim. Null = didn't run.
   FlashResult? _flashResult;
@@ -257,6 +277,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   // compressed + uploaded alongside the selfie. Kept locally (as a path so it
   // can be handed to VideoCompress) until [_uploadSelfieAndVideo].
   String? _livenessVideoPath;
+  // Why the recording produced no file, when it did not: reported with the
+  // claim so a missing recording on the server has a cause (add-only codes
+  // shared with the web and React Native SDKs).
+  String? _recordingFailure;
 
   // The selfie is shown immediately while the gesture recording finalizes in the
   // background (MP4 muxer flush). This future tracks that finalization so the
@@ -281,6 +305,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     super.initState();
     _ringTicker = createTicker(_ringTick)..start();
     WidgetsBinding.instance.addObserver(this);
+    _cameraOnCtrl = ref.read(livenessCameraOnProvider.notifier);
     final voice = ref.read(kycConfigProvider).voiceGuidance;
     _tts.initialize(enabled: voice.enabled, language: voice.resolvedLanguage);
     WidgetsBinding.instance.addPostFrameCallback((_) => _maybePrime());
@@ -337,6 +362,18 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     _detector.dispose();
     _tts.dispose();
     _flashColor.dispose();
+    _flashSequenceRunning.dispose();
+    // Leaving the screen closes its camera: hand the flow its own theme and
+    // brightness back. After the frame, as a provider may not change while the
+    // tree is being torn down; a flow that closed has nothing left to clear.
+    final cameraOn = _cameraOnCtrl;
+    if (_publishedCameraOn == true && cameraOn != null) {
+      Future.microtask(() {
+        try {
+          cameraOn.state = false;
+        } catch (_) {}
+      });
+    }
     _nativeRecorder?.dispose();
     super.dispose();
   }
@@ -390,6 +427,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     _isDim = false;
     _isBright = false;
     _livenessVideoPath = null;
+    _recordingFailure = null;
     _pendingRecordingStop = null;
     _cameraPermissionReported = false;
     _brightnessSampler.reset();
@@ -403,6 +441,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   Future<void> _init() async {
     if (_initializing) return;
     _initializing = true;
+    _cameraStarted = true;
     try {
       await _initInternal();
     } finally {
@@ -641,6 +680,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
     if (_recordsDuringGestures) {
       _livenessVideoPath = null; // a fresh recording is in progress
+      _recordingFailure = null;
       await cameraNotifier.startVideoRecording(onImage: _onCameraImage);
     } else {
       await cameraNotifier.startStream(_onCameraImage);
@@ -703,9 +743,15 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     return box.localToGlobal(Offset.zero) & box.size;
   }
 
-  Future<void> _runFlashChallenge() async {
+  /// Runs the flash (and its one retry when unmeasurable), and answers what the
+  /// step should do next (flash_outcome.dart). Null when no flash runs: the mode
+  /// has none, or a flash-only check already fell back to gestures.
+  Future<FlashOutcome?> _runFlashChallenge() async {
     final config = ref.read(kycConfigProvider);
-    if (!config.livenessMode.runsFlash) return;
+    if (!config.livenessMode.runsFlash) return null;
+    if (ref.read(livenessNotifierProvider.notifier).fellBackToGestures) {
+      return null;
+    }
 
     _tts.stop(); // the sequence is visual; spoken guidance would talk over it
 
@@ -726,17 +772,26 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // never a second preview that jumps in and out (which is what shook).
     final holeRect = _previewCircleRect();
     final entry = OverlayEntry(
-      builder: (_) => ValueListenableBuilder<Color?>(
-        valueListenable: _flashColor,
-        builder: (_, color, __) => IgnorePointer(
-          child: color == null
-              ? const SizedBox.shrink()
-              : SizedBox.expand(
-                  child: CustomPaint(
-                    painter: _FlashHolePainter(color: color, hole: holeRect),
+      builder: (_) => ListenableBuilder(
+        listenable: Listenable.merge([_flashColor, _flashSequenceRunning]),
+        builder: (_, __) {
+          // Black between colours while the sequence measures, whatever the
+          // theme behind: a light screen would lift every neutral frame and
+          // read the reflection backwards.
+          final color = flashOverlayColor(
+            flashColor: _flashColor.value,
+            sequenceRunning: _flashSequenceRunning.value,
+          );
+          return IgnorePointer(
+            child: color == null
+                ? const SizedBox.shrink()
+                : SizedBox.expand(
+                    child: CustomPaint(
+                      painter: _FlashHolePainter(color: color, hole: holeRect),
+                    ),
                   ),
-                ),
-        ),
+          );
+        },
       ),
     );
     overlay.insert(entry);
@@ -746,37 +801,63 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // erases the reflection we measure; and the screen is the light source, so
     // a dim display simply produces nothing to measure.
     final cameraNotifier = ref.read(cameraNotifierProvider.notifier);
+    // Dark from here: exposure locks on the black neutral frame the colours
+    // are then measured against, as it did under the dark theme.
+    _flashSequenceRunning.value = true;
     await beginFlashTuning(
       lockExposure: () => cameraNotifier.setExposureLocked(true),
     );
 
+    var retries = 0;
+    var outcome = FlashOutcome.pass;
     try {
-      if (!mounted) return;
-      // The flash is a step in the progress indicator; the provider cannot see
-      // the sequence finish, so it is told.
-      _flashResult = await runFlashChallenge(
-        latestRgb: _flashRgbSample,
-        paint: (color) => _flashColor.value = color,
-        // Per-flow sequence length (default 4), clamped to the palette by
-        // generateFlashSequence.
-        sequence: generateFlashSequence(config.flashSequenceLength),
-        // Abort if the face has been gone for a while — no point flashing at an
-        // empty frame for the full sequence. Generous window so a colour flash
-        // briefly hiding the face doesn't cut a sequence it's still in.
-        // Also stops the moment the session can no longer vouch for who is in
-        // frame — a second face during the flash used to be ignored outright,
-        // which made the one measurement that proves liveness the one moment
-        // anybody could stand in shot.
-        isActive: () =>
-            mounted &&
-            !ref.read(livenessNotifierProvider.notifier).integrityBroken &&
-            _faceRecentlyPresent(const Duration(milliseconds: 1500)),
-      );
+      while (true) {
+        if (!mounted) return null;
+        _flashSequenceRunning.value = true;
+        // The flash is a step in the progress indicator; the provider cannot
+        // see the sequence finish, so it is told (after the loop).
+        _flashResult = await runFlashChallenge(
+          latestRgb: _flashRgbSample,
+          paint: (color) => _flashColor.value = color,
+          // Per-flow sequence length (default 4), clamped to the palette by
+          // generateFlashSequence.
+          sequence: generateFlashSequence(config.flashSequenceLength),
+          // Abort if the face has been gone for a while — no point flashing at an
+          // empty frame for the full sequence. Generous window so a colour flash
+          // briefly hiding the face doesn't cut a sequence it's still in.
+          // Also stops the moment the session can no longer vouch for who is in
+          // frame — a second face during the flash used to be ignored outright,
+          // which made the one measurement that proves liveness the one moment
+          // anybody could stand in shot.
+          isActive: () =>
+              mounted &&
+              !ref.read(livenessNotifierProvider.notifier).integrityBroken &&
+              _faceRecentlyPresent(const Duration(milliseconds: 1500)),
+        );
+        outcome = flashOutcome(
+          result: _flashResult,
+          mode: config.livenessMode,
+          retriesUsed: retries,
+        );
+        if (outcome != FlashOutcome.retry) break;
+        // Unmeasurable: ask them out of bright light, then a fresh sequence.
+        retries++;
+        if (!mounted) return null;
+        // Lift the black while the retry guidance is on screen to be read.
+        _flashSequenceRunning.value = false;
+        ref.read(livenessNotifierProvider.notifier).showFlashRetryGuidance();
+        await Future<void>.delayed(const Duration(milliseconds: 1500));
+        if (!mounted ||
+            ref.read(livenessNotifierProvider.notifier).integrityBroken) {
+          break;
+        }
+      }
       if (mounted) {
         ref.read(livenessNotifierProvider.notifier).markFlashStepComplete();
       }
     } finally {
       _flashColor.value = null;
+      if (mounted) _flashSequenceRunning.value = false;
       entry.remove();
       // Unconditional: the user's brightness is theirs, and a still-locked
       // exposure would degrade the selfie captured moments later.
@@ -784,6 +865,26 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         unlockExposure: () => cameraNotifier.setExposureLocked(false),
       );
     }
+    return outcome;
+  }
+
+  /// Acts on a flash outcome from the capture seam. True when capture should
+  /// stop here: the check failed, or gestures now have to run first.
+  bool _stopAfterFlash(FlashOutcome? outcome) {
+    final notifier = ref.read(livenessNotifierProvider.notifier);
+    if (outcome == FlashOutcome.fail) {
+      _capturingHandled = false;
+      notifier.failFlash();
+      return true;
+    }
+    if (outcome == FlashOutcome.fallbackGestures) {
+      // The capture seam runs again once the gestures pass; the flash is
+      // settled by then (fellBackToGestures), so it does not run twice.
+      _capturingHandled = false;
+      notifier.startFallbackGestures();
+      return true;
+    }
+    return false;
   }
 
   Future<void> _handleCapture() async {
@@ -796,8 +897,12 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // the gesture recording (since the step opened), Android via the native
     // CameraX recorder (started at init). _runFlashChallenge no-ops off flash
     // mode and reads its reflection samples per platform (_flashRgbSample).
-    if (_recordsDuringGestures || _useNativeRecorder) await _runFlashChallenge();
-    if (!mounted) return;
+    if (_recordsDuringGestures || _useNativeRecorder) {
+      final outcome = await _runFlashChallenge();
+      if (!mounted) return;
+      final broken = ref.read(livenessNotifierProvider.notifier).integrityBroken;
+      if (!broken && _stopAfterFlash(outcome)) return;
+    }
 
     // A second face appeared while the flash ran. Aborting the flash is not
     // enough on its own — the still is taken moments later, and capturing it
@@ -863,6 +968,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       // retry.
       _capturingHandled = false;
       _livenessVideoPath = null;
+      _recordingFailure = null;
       await nativeRecorder.stopRecording();
       if (!mounted) return;
       await nativeRecorder.startRecording();
@@ -923,8 +1029,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       // Flash inside the recording window so the clip carries the sequence the
       // server verifies. When flash isn't configured this is the original
       // fixed-length clip.
-      if (ref.read(kycConfigProvider).livenessMode.runsFlash) {
-        await _runFlashChallenge();
+      final flashes = ref.read(kycConfigProvider).livenessMode.runsFlash &&
+          !ref.read(livenessNotifierProvider.notifier).fellBackToGestures;
+      if (flashes) {
+        final outcome = await _runFlashChallenge();
+        if (!mounted) return;
+        if (outcome == FlashOutcome.fail ||
+            outcome == FlashOutcome.fallbackGestures) {
+          // This clip is discarded: the next capture records its own.
+          await cameraNotifier.stopVideoRecording();
+          if (!mounted) return;
+          await _startGestureFeed();
+          _stopAfterFlash(outcome);
+          return;
+        }
       } else {
         await Future<void>.delayed(const Duration(seconds: 2));
       }
@@ -940,6 +1058,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     if (bytes == null) {
       _capturingHandled = false;
       _livenessVideoPath = null;
+      _recordingFailure = null;
       await _startGestureFeed();
       ref.read(livenessNotifierProvider.notifier).reset();
       return;
@@ -953,9 +1072,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   Future<void> _stopRecordingInBackground(CameraNotifier cameraNotifier) async {
     try {
       final videoPath = await cameraNotifier.stopVideoRecording();
-      if (videoPath != null) _livenessVideoPath = videoPath;
-    } catch (_) {
-      // Best-effort — proceed without a liveness video.
+      if (videoPath != null) {
+        _livenessVideoPath = videoPath;
+      } else {
+        _recordingFailure = 'recording_empty';
+      }
+    } catch (e) {
+      // Best-effort: the verification proceeds without the liveness video, but
+      // the failure is reported rather than swallowed.
+      _recordingFailure = 'recording_empty';
+      if (kDebugMode) debugPrint('KYC liveness recording stop failed: $e');
     }
   }
 
@@ -966,9 +1092,17 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       NativeLivenessRecorder recorder) async {
     try {
       final videoPath = await recorder.stopRecording();
-      if (videoPath != null) _livenessVideoPath = videoPath;
-    } catch (_) {
-      // Best-effort — proceed without a liveness video.
+      if (videoPath != null) {
+        _livenessVideoPath = videoPath;
+      } else {
+        _recordingFailure = 'recording_empty';
+      }
+    } catch (e) {
+      // Best-effort, but reported (see _stopRecordingInBackground).
+      _recordingFailure = 'recording_empty';
+      if (kDebugMode) {
+        debugPrint('KYC native liveness recording stop failed: $e');
+      }
     }
   }
 
@@ -981,7 +1115,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // flash sequence — without this the capture is unverifiable after the fact.
     ref.read(kYCNotifierProvider.notifier).setLivenessIntegrity(
           livenessIntegrityClaim(
-            mode: ref.read(kycConfigProvider).livenessMode,
+            // A flash-only check that fell back to gestures ran both.
+            mode: ref.read(livenessNotifierProvider.notifier).fellBackToGestures
+                ? 'both'
+                : ref.read(kycConfigProvider).livenessMode,
+            // Which prompts ran, so the server knows whether a turn was asked
+            // for (its shape-from-movement verdict depends on it).
+            challenges: livenessClaimChallenges(
+              mode: ref.read(kycConfigProvider).livenessMode,
+              gestures:
+                  ref.read(livenessNotifierProvider.notifier).challengesRun,
+              fellBackToGestures: ref
+                  .read(livenessNotifierProvider.notifier)
+                  .fellBackToGestures,
+            ),
             flash: _flashResult,
           ),
         );
@@ -1067,20 +1214,35 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
       // Upload the recorded liveness video (best-effort — proceed if the
       // recording was unavailable or its upload fails after retries).
+      // What happened to it is reported with the claim: the server records a
+      // missing recording as a finding, and the cause makes it actionable.
+      Map<String, dynamic> videoReport;
       if (_livenessVideoPath != null) {
         try {
           final videoBytes = await compressVideoToBytes(
             _livenessVideoPath!,
             label: 'liveness video',
           );
-          final videoMediaId = await withRetry(
-            () => api.upload(videoBytes, 'video/mp4', MediaType.livenessVideo),
-          );
-          report(() => notifier.setMediaId('livenessVideo', videoMediaId));
+          if (videoBytes.isEmpty) {
+            videoReport = {'recorded': false, 'failure': 'recording_empty'};
+          } else {
+            final videoMediaId = await withRetry(
+              () => api.upload(videoBytes, 'video/mp4', MediaType.livenessVideo),
+            );
+            report(() => notifier.setMediaId('livenessVideo', videoMediaId));
+            videoReport = {'recorded': true};
+          }
         } catch (_) {
           // Best-effort — the verification proceeds without the liveness video.
+          videoReport = {'recorded': false, 'failure': 'upload_failed'};
         }
+      } else {
+        videoReport = {
+          'recorded': false,
+          'failure': _recordingFailure ?? 'recording_missing',
+        };
       }
+      report(() => notifier.setLivenessVideoReport(videoReport));
 
       if (mounted) setState(() => _isUploadingSelfie = false);
       report(() => notifier.setSelfieUpload(SelfieUploadState.done));
@@ -1147,6 +1309,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       _processing = false;
       _isDim = false;
       _livenessVideoPath = null;
+      _recordingFailure = null;
       _pendingRecordingStop = null;
     });
     _brightnessSampler.reset();
@@ -1194,6 +1357,17 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         .addPostFrameCallback((_) => widget.onError?.call(error));
   }
 
+  /// Tells the flow whether the step is lit (bright screen). After the
+  /// frame: a provider may not change while this screen is building.
+  void _publishCameraOn(bool on) {
+    if (_publishedCameraOn == on) return;
+    _publishedCameraOn = on;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _publishedCameraOn != on) return;
+      _cameraOnCtrl?.state = on;
+    });
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -1202,6 +1376,20 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     final cameraState = ref.watch(cameraNotifierProvider);
     final controller =
         ref.read(cameraNotifierProvider.notifier).controller;
+    final kycSelfie = ref.watch(kYCNotifierProvider);
+    _lit = livenessStepLit(
+      alreadyLit: _lit,
+      cameraRunning: livenessCameraRunning(
+        started: _cameraStarted,
+        pastPrimers: _ready && !_showPrimer,
+        faceModelReady: _faceModel.state.value == ModelReadyState.ready,
+        permissionDenied: _permissionDenied || cameraState.isPermissionDenied,
+        selfieTaken: livenessState.phase == LivenessPhase.complete ||
+            kycSelfie.selfieImage != null ||
+            kycSelfie.mediaIds.selfie != null,
+      ),
+    );
+    _publishCameraOn(_lit);
 
     ref.listen<LivenessState>(livenessNotifierProvider, (prev, next) {
       final phaseChanged    = prev?.phase != next.phase;
@@ -1217,8 +1405,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         // Speak lighting guidance when it first appears.
         _tts.speak(_lightingText(next.lightingGuidance!));
       } else if (phaseChanged && next.instruction.isNotEmpty && !next.multipleFaces) {
-        // Speak instruction when phase/challenge changes.
-        _tts.speak(next.instruction);
+        _tts.speak(presenceInstruction(next.instruction, context.kycText));
       }
 
       // Speak position guidance when it first appears (or changes).
@@ -1265,7 +1452,8 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // selfie camera never opens unannounced.
     if (!_ready) {
       return ReadyPrimer(
-        content: readyLiveness,
+        // Passive Liveness asks for a hold, not prompts, and says so.
+        content: readyLivenessFor(ref.read(kycConfigProvider).livenessMode),
         onReady: () {
           setState(() => _ready = true);
           _maybePrime(); // now decide: OS prompt, or straight to the camera
@@ -1290,8 +1478,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // Camera-access primer — shown before the OS prompt (camera not yet started).
     if (_showPrimer) {
       return CameraPermissionPrimingView(
-        message:
-            'When prompted, allow camera access to continue your verification.',
+        message: context.kycText('primer.camera.body'),
         onGrant: () {
           setState(() => _showPrimer = false);
           _init();
@@ -1618,7 +1805,7 @@ class _ActiveView extends StatelessWidget {
         if (!isFailed) ...[
           _InstructionBanner(
             phase: phase,
-            instruction: livenessState.instruction,
+            instruction: presenceInstruction(livenessState.instruction, context.kycText),
             faceDetected: livenessState.faceDetected,
             positionGuidance: livenessState.positionGuidance,
             wrongGesture: livenessState.wrongGesture,
@@ -1829,7 +2016,7 @@ class _SelfieReviewView extends StatelessWidget {
           children: [
             Expanded(
               child: MyazaButton.outline(
-                label: 'Retake',
+                label: context.kycText('common.retake'),
                 onPressed: isUploading ? null : onRetake,
                 leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
               ),
@@ -1837,7 +2024,7 @@ class _SelfieReviewView extends StatelessWidget {
             const SizedBox(width: MyazaSpacing.md),
             Expanded(
               child: MyazaButton(
-                label: uploadError != null ? 'Try Again' : 'Continue',
+                label: uploadError != null ? 'Try Again' : context.kycText('common.continue'),
                 onPressed: isUploading ? null : onContinue,
                 leadingIcon: MyazaIcon(
                   uploadError != null

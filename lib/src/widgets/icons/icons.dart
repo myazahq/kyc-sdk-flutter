@@ -51,6 +51,7 @@ class MyazaIcons {
   static const MyazaIconData filter = HugeIcons.strokeRoundedFilter;
   static const MyazaIconData fingerprint = HugeIcons.strokeRoundedFingerPrint;
   static const MyazaIconData flaskConical = HugeIcons.strokeRoundedFlaskConical;
+  static const MyazaIconData glasses = HugeIcons.strokeRoundedGlasses;
   static const MyazaIconData globe = HugeIcons.strokeRoundedGlobe;
   static const MyazaIconData house = HugeIcons.strokeRoundedHome01;
   static const MyazaIconData idCard = HugeIcons.strokeRoundedIdentityCard;
@@ -104,6 +105,7 @@ class MyazaIcons {
       HugeIcons.strokeRoundedSlidersHorizontal;
   static const MyazaIconData smartphone = HugeIcons.strokeRoundedSmartPhone01;
   static const MyazaIconData stamp = HugeIcons.strokeRoundedStamp;
+  static const MyazaIconData sparkles = HugeIcons.strokeRoundedSparkles;
   static const MyazaIconData sun = HugeIcons.strokeRoundedSun01;
   static const MyazaIconData timer = HugeIcons.strokeRoundedTimer01;
   static const MyazaIconData triangleAlert = HugeIcons.strokeRoundedAlert01;

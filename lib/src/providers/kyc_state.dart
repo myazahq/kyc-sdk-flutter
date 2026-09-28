@@ -4,6 +4,7 @@ import '../config/business_application.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/resumed_application.dart';
 import '../config/supporting_documents.dart';
 import '../services/api_service.dart';
 import '../services/nfc_reader.dart';
@@ -218,6 +219,12 @@ class KYCState {
   /// The session's own hosted web page (see SessionStartResponse.url).
   final String? sessionUrl;
 
+  /// A KYB application whose business half already committed, resumed before
+  /// the applicant's own verification went through. The business submission
+  /// replays its request id rather than sending a second application the
+  /// server refuses (config/resumed_application.dart).
+  final ResumedApplication? resumedApplication;
+
   /// What the register said about the company the applicant identified — the
   /// paid check run at SELECTION, so the officer list is already here by the
   /// time the key-people step asks for it. [checkedNumber] stops a re-check of
@@ -429,6 +436,7 @@ class KYCState {
     this.currentStep = KYCStep.consent,
     this.sessionId,
     this.sessionUrl,
+    this.resumedApplication,
     this.businessCheck = const BusinessCheckState(),
     this.selectedCountry,
     this.countryAutoPicked = false,
@@ -495,6 +503,7 @@ class KYCState {
     KYCStep? currentStep,
     String? sessionId,
     String? sessionUrl,
+    ResumedApplication? resumedApplication,
     BusinessCheckState? businessCheck,
     String? selectedCountry,
     bool? countryAutoPicked,
@@ -579,6 +588,7 @@ class KYCState {
         currentStep: currentStep ?? this.currentStep,
         sessionId: sessionId ?? this.sessionId,
       sessionUrl: sessionUrl ?? this.sessionUrl,
+        resumedApplication: resumedApplication ?? this.resumedApplication,
         businessCheck: businessCheck ?? this.businessCheck,
         selectedCountry: selectedCountry ?? this.selectedCountry,
         countryAutoPicked: countryAutoPicked ?? this.countryAutoPicked,

@@ -6,6 +6,7 @@ import '../config/id_types.dart';
 import '../config/supporting_documents.dart';
 import '../utils/step_log.dart';
 import 'address_step_order.dart';
+import '../config/liveness_resume.dart';
 import 'kyc_state.dart';
 
 // ─── Restoring a resumed attempt session ─────────────────────────────────────
@@ -131,7 +132,11 @@ KYCState restoredState(
   // Never resume onto a step the restored state cannot support. Whatever went
   // missing, sending the applicant back to pick their ID is somewhere they can
   // act; the ID screen without an ID type is somewhere they can only sit.
-  final restored = step ?? s.currentStep;
+  // A restored selfie is taken again: its liveness claim cannot be restored
+  // (config/liveness_resume.dart).
+  final selfieRestored = mediaIds['selfie'] is String;
+  final saved = step ?? s.currentStep;
+  final restored = selfieRestored ? resumeStepWithoutSelfie(saved) : saved;
   final target = _neverResume.contains(restored) ? s.currentStep : restored;
   // Same principle one flow along: an address step this mount no longer offers
   // is absent from the step order, so next and back are both no-ops and the
@@ -149,7 +154,8 @@ KYCState restoredState(
     mediaIds: s.mediaIds.copyWith(
       documentFront: (mediaIds['documentFront'] as String?) ?? s.mediaIds.documentFront,
       documentBack: (mediaIds['documentBack'] as String?) ?? s.mediaIds.documentBack,
-      selfie: (mediaIds['selfie'] as String?) ?? s.mediaIds.selfie,
+      // Never the restored selfie (see above).
+      selfie: s.mediaIds.selfie,
       proofOfAddress: (mediaIds['proofOfAddress'] as String?) ?? s.mediaIds.proofOfAddress,
       addressPhoto: (mediaIds['addressPhoto'] as String?) ?? s.mediaIds.addressPhoto,
     ),

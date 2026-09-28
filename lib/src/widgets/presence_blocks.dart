@@ -5,6 +5,7 @@ import '../config/theme.dart';
 import 'presence_milestone_track.dart';
 import 'presence_milestones.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 /// The success screen's presence card, drawn as a LIVE PROCESS rather than a
 /// notice: the check began the moment they submitted, so the badge pulses and
@@ -16,44 +17,35 @@ import 'icons/icons.dart';
 class PresenceExpectations extends StatelessWidget {
   const PresenceExpectations({super.key});
 
-  static const _milestones = [
-    PresenceMilestone(
-      icon: MyazaIcons.mapPinCheck,
-      stage: 'Today',
-      title: 'Check started',
-      caption: 'Your pin is saved. Keep location on.',
-      active: true,
-    ),
-    PresenceMilestone(
-      icon: MyazaIcons.radar,
-      stage: 'Next few days',
-      title: 'Quiet check-ins',
-      caption: 'Your phone confirms it is at your address now and then.',
-    ),
-    PresenceMilestone(
-      icon: MyazaIcons.bellRing,
-      stage: 'Then',
-      title: 'Confirmed',
-      caption: 'You get a notification. That is it.',
-    ),
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.only(top: MyazaSpacing.lg),
+    // Catalogue texts (a workflow may reword them); defaults in i18n/.
+    final t = context.kycText;
+    PresenceMilestone milestone(int n, MyazaIconData icon) => PresenceMilestone(
+          icon: icon,
+          stage: t('address.presence.step$n.stage'),
+          title: t('address.presence.step$n.title'),
+          caption: t('address.presence.step$n.caption'),
+          active: n == 1,
+        );
+    return Padding(
+      padding: const EdgeInsets.only(top: MyazaSpacing.lg),
       child: PresenceCard(
         header: PresenceHeaderBand(
           badge: PresenceBadge(
-            leading: _LiveDot(),
-            label: 'Address check active',
+            leading: const _LiveDot(),
+            label: t('address.presence.badge'),
           ),
-          title: 'Your address confirms itself from here',
-          body: 'Nothing else for you to do. Carry on as normal.',
+          title: t('address.presence.title'),
+          body: t('address.presence.description'),
           compact: true,
         ),
         track: PresenceMilestoneTrack(
-          milestones: _milestones,
+          milestones: [
+            milestone(1, MyazaIcons.mapPinCheck),
+            milestone(2, MyazaIcons.radar),
+            milestone(3, MyazaIcons.bellRing),
+          ],
           medallion: 32,
         ),
       ),

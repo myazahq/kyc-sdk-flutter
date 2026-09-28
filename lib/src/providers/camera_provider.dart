@@ -354,6 +354,14 @@ class CameraNotifier extends _$CameraNotifier {
     }
   }
 
+  /// Closes the camera without leaving the screen: the document review
+  /// releases the rear camera so silent capture can open the front one. The
+  /// next [initialize] opens it again.
+  Future<void> release() async {
+    await _disposeController();
+    state = const CameraState();
+  }
+
   // ── Internal ───────────────────────────────────────────────────────────────
 
   Future<void> _disposeController() async {

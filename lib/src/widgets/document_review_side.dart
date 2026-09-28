@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import 'icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── One captured side, and its enlarged view ─────────────────────────────────
 //
@@ -108,7 +109,7 @@ class DocumentReviewThumb extends StatelessWidget {
         TextButton.icon(
           onPressed: isBusy ? null : side.onRetake,
           icon: const MyazaIcon(MyazaIcons.rotateCcw, size: 14),
-          label: Text(uploadOnly ? 'Replace' : 'Retake',
+          label: Text(uploadOnly ? 'Replace' : context.kycText('common.retake'),
               style: text.bodySmall),
           style: TextButton.styleFrom(
             foregroundColor: colors.primary,

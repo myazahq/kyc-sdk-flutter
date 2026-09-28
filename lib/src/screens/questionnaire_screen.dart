@@ -14,6 +14,7 @@ import '../widgets/myaza_input.dart';
 import '../widgets/myaza_select.dart';
 import '../widgets/themed_sheet.dart';
 import '../widgets/icons/icons.dart';
+import '../i18n/text_scope.dart';
 
 // ─── Questionnaire screen ─────────────────────────────────────────────────────
 //
@@ -138,10 +139,8 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (cfg.description != null) ...[
-          Text(cfg.description!, style: text.bodyMedium),
-          const SizedBox(height: MyazaSpacing.lg),
-        ],
+        // The org's title and description are the header's (the older fields
+        // of questionnaire.title/description), as on the web.
         for (final f in cfg.fields) ...[
           _FieldLabel(field: f),
           const SizedBox(height: MyazaSpacing.xs),
@@ -154,7 +153,7 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
           ],
           const SizedBox(height: MyazaSpacing.lg),
         ],
-        MyazaButton(label: 'Continue', onPressed: _onContinue),
+        MyazaButton(label: context.kycText('common.continue'), onPressed: _onContinue),
       ],
     );
   }
@@ -170,7 +169,7 @@ class _QuestionnaireScreenState extends ConsumerState<QuestionnaireScreen> {
       MyazaInput(
         label: (option.detailLabel?.isNotEmpty ?? false)
             ? option.detailLabel!
-            : 'Please specify',
+            : context.kycText('questionnaire.detailLabel'),
         controller: _controllers[otherKeyFor(f)],
         hint: (option.detailPlaceholder?.isNotEmpty ?? false)
             ? option.detailPlaceholder!
@@ -435,9 +434,9 @@ class _BooleanField extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Expanded(child: _choice(context, 'Yes', true)),
+        Expanded(child: _choice(context, context.kycText('questionnaire.yes'), true)),
         const SizedBox(width: MyazaSpacing.sm),
-        Expanded(child: _choice(context, 'No', false)),
+        Expanded(child: _choice(context, context.kycText('questionnaire.no'), false)),
       ],
     );
   }

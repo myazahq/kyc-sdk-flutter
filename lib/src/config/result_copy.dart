@@ -1,12 +1,14 @@
 import 'biometric_copy.dart';
 import 'result_wait.dart';
+import '../i18n/translate.dart' show TextFn, defaultTextFn;
 
 // ─── What the terminal screens say ──────────────────────────────────────────
 //
 // Pure so it is testable without Flutter. The server's own reason wins on a
 // decline or an error when it sent one: it is written for the applicant.
-// UK English, no em dashes (user-facing copy rule). Mirrors the web and RN
-// SDKs' result copy word for word; keep the three in lockstep.
+// UK English, no em dashes (user-facing copy rule). The words are catalogue
+// texts ([TextFn], defaults in i18n/), and the org's biometric.copy fields
+// ride as their older fields, so they still win. Mirrors the web SDK.
 
 enum ResultTone { success, error, info }
 
@@ -34,93 +36,64 @@ WaitingCopy describeWaiting({
   required bool waitsForResult,
   ({int attempt, int total})? retry,
   BiometricCopyText? override,
+  TextFn t = defaultTextFn,
 }) {
-  final base = _withWaitingOverride(_waitingCopyFor(scope, waitsForResult), override);
+  final prefix = _waitingKeyFor(scope, waitsForResult);
+  final title = t('$prefix.title', legacy: override?.title);
   if (retry != null) {
     return WaitingCopy(
-      title: base.title,
+      title: title,
       description: 'Connection issue, retrying (${retry.attempt}/${retry.total}).',
     );
   }
-  return base;
+  return WaitingCopy(
+      title: title, description: t('$prefix.description', legacy: override?.description));
 }
 
-WaitingCopy _waitingCopyFor(String? scope, bool waitsForResult) {
+String _waitingKeyFor(String? scope, bool waitsForResult) {
   if (scope == 'biometric-authentication') {
-    return waitsForResult
-        ? const WaitingCopy(
-            title: "Checking it's you",
-            description: 'Matching your selfie against the photo on record. This usually takes a few seconds.',
-          )
-        : const WaitingCopy(title: 'Sending your face check', description: 'This only takes a moment.');
+    return waitsForResult ? 'result.faceCheck.checking' : 'result.faceCheck.sending';
   }
-  if (scope == 'biometric-enrollment') {
-    return const WaitingCopy(
-      title: 'Saving your selfie',
-      description: 'It becomes the reference for your future face checks.',
-    );
-  }
-  return const WaitingCopy(title: 'Submitting your verification', description: 'Please wait a moment.');
+  if (scope == 'biometric-enrollment') return 'result.faceEnrolment.saving';
+  return 'result.submitting';
 }
 
-WaitingCopy _withWaitingOverride(WaitingCopy base, BiometricCopyText? over) => over == null
-    ? base
-    : WaitingCopy(
-        title: over.title ?? base.title,
-        description: over.description ?? base.description,
-      );
-
-ResultCopy _withOverride(ResultCopy base, BiometricCopyText? over) => over == null
-    ? base
-    : ResultCopy(
-        tone: base.tone,
-        title: over.title ?? base.title,
-        description: over.description ?? base.description,
-      );
+ResultCopy _screen(ResultTone tone, TextFn t, String prefix, [BiometricCopyText? over]) =>
+    ResultCopy(
+      tone: tone,
+      title: t('$prefix.title', legacy: over?.title),
+      description: t('$prefix.description', legacy: over?.description),
+    );
 
 /// What the person is told, per outcome. The server's own reason wins on a
 /// decline or an error when it sent one; it is written for the applicant.
 /// [verified] and [declined] are the org's own words for the two verdict
 /// screens: on a decline its description wins even over the server's reason,
-/// since the org chose to say that.
+/// since the org chose to say that (as does the workflow's own text for it).
 ResultCopy describeOutcome(
   VerificationOutcome outcome, {
   BiometricCopyText? verified,
   BiometricCopyText? declined,
+  TextFn t = defaultTextFn,
 }) {
   switch (outcome) {
     case TimedOutOutcome():
-      return const ResultCopy(
-        tone: ResultTone.info,
-        title: 'Still checking',
-        description: "This is taking longer than usual. You'll be notified as soon as it's done.",
-      );
+      return _screen(ResultTone.info, t, 'result.faceCheck.timeout');
     case SettledOutcome(:final status, :final reason):
       switch (status) {
         case 'approved':
-          return _withOverride(
-            const ResultCopy(
-              tone: ResultTone.success,
-              title: "You're verified",
-              description: 'Your face matched the photo on record.',
-            ),
-            verified,
-          );
+          return _screen(ResultTone.success, t, 'result.faceCheck.verified', verified);
         case 'declined':
-          return _withOverride(
-            ResultCopy(
-              tone: ResultTone.error,
-              title: "We couldn't confirm it's you",
-              description: reason ?? "Your face didn't match the photo on record.",
-            ),
-            declined,
+          final words = _screen(ResultTone.error, t, 'result.faceCheck.declined', declined);
+          final orgChose = declined?.description != null ||
+              words.description != defaultTextFn('result.faceCheck.declined.description');
+          return ResultCopy(
+            tone: ResultTone.error,
+            title: words.title,
+            description: orgChose ? words.description : (reason ?? words.description),
           );
         case 'in_review':
-          return const ResultCopy(
-            tone: ResultTone.info,
-            title: 'Under review',
-            description: "A reviewer will take a look. You'll be notified of the outcome.",
-          );
+          return _screen(ResultTone.info, t, 'result.faceCheck.inReview');
         case 'error':
           return ResultCopy(
             tone: ResultTone.error,
@@ -128,11 +101,7 @@ ResultCopy describeOutcome(
             description: reason ?? "We couldn't complete your check. Please try again in a moment.",
           );
         default:
-          return const ResultCopy(
-            tone: ResultTone.info,
-            title: 'Check submitted',
-            description: "You'll be notified of the result.",
-          );
+          return _screen(ResultTone.info, t, 'result.faceCheck.submitted');
       }
   }
 }

@@ -28,11 +28,16 @@ const double kFlashBrightness = 1.0;
 ///
 /// Platform reach differs, deliberately:
 ///  • iOS — screen brightness AND white-balance/exposure lock, natively.
-///  • Android — exposure lock only, via [lockExposure] (the camera plugin's
-///    cross-platform API). Its white balance lives inside the camera plugin's
-///    own Camera2 session, which a separate plugin cannot reach, and window
-///    brightness needs an Activity this plugin doesn't hold. Both are follow-ups;
-///    flash still works there, with a weaker signal in bright ambient light.
+///  • Android — screen brightness (the activity window's own, see
+///    ScreenBrightness.kt) and exposure lock via [lockExposure] (the camera
+///    plugin's cross-platform API). Its white balance lives inside the camera
+///    plugin's own Camera2 session, which a separate plugin cannot reach; that
+///    is a follow-up, and flash still works there, with a weaker signal in
+///    bright ambient light.
+///
+/// The screen is shared with the bright-screen liveness
+/// (screen_brightness.dart); the native side counts holders, so restoring
+/// after a flash never dims a screen the liveness step is still holding lit.
 ///
 /// [lockExposure] is injected rather than imported so this stays free of the
 /// camera provider (and testable without a camera).

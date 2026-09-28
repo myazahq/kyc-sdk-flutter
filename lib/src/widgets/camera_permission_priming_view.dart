@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
 import 'myaza_button.dart';
+import '../i18n/text_scope.dart';
 import 'icons/icons.dart';
 
 /// "Allow camera access" priming screen, shown right before the native OS camera
@@ -27,6 +28,7 @@ class CameraPermissionPrimingView extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final text = context.myazaText;
+    final t = context.kycText;
 
     return Center(
       child: SingleChildScrollView(
@@ -55,7 +57,7 @@ class CameraPermissionPrimingView extends StatelessWidget {
             ),
             const SizedBox(height: MyazaSpacing.lg),
             Text(
-              'Allow camera access',
+              t('primer.camera.title'),
               style: text.heading2,
               textAlign: TextAlign.center,
             ),
@@ -66,7 +68,7 @@ class CameraPermissionPrimingView extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: MyazaSpacing.lg),
-            MyazaButton(label: 'Grant access', onPressed: onGrant),
+            MyazaButton(label: t('primer.camera.button'), onPressed: onGrant),
           ],
         ),
       ).animate().fadeIn(duration: 250.ms),

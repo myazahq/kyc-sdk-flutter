@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
+import '../i18n/text_scope.dart';
 
 /// Held while the register is reconciled against what the applicant typed.
 ///
@@ -47,6 +48,7 @@ class _KeyPeoplePendingState extends State<KeyPeoplePending>
   Widget build(BuildContext context) {
     final text = context.myazaText;
     final colors = context.myazaColors;
+    final t = context.kycText;
     final opacity = Tween<double>(begin: 1.0, end: 0.45)
         .animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut));
 
@@ -58,8 +60,7 @@ class _KeyPeoplePendingState extends State<KeyPeoplePending>
           Semantics(
             container: true,
             liveRegion: true,
-            label: 'Working out who else needs to verify. We are checking the '
-                "official register for the company's directors and owners.",
+            label: '${t('keyPeople.pending.title')}. ${t('keyPeople.pending.body')}',
             child: ExcludeSemantics(
               child: Column(
                 children: [
@@ -77,7 +78,7 @@ class _KeyPeoplePendingState extends State<KeyPeoplePending>
                       const SizedBox(width: MyazaSpacing.sm),
                       Flexible(
                         child: Text(
-                          'Working out who else needs to verify',
+                          t('keyPeople.pending.title'),
                           style: text.bodyMedium
                               .copyWith(fontWeight: FontWeight.w600),
                         ),
@@ -88,8 +89,7 @@ class _KeyPeoplePendingState extends State<KeyPeoplePending>
                   // Naming the authority is the reassurance: the pause is the
                   // official register being consulted, not the app hanging.
                   Text(
-                    'We are checking the official register for the '
-                    "company's directors and owners.",
+                    t('keyPeople.pending.body'),
                     textAlign: TextAlign.center,
                     style: text.bodySmall.copyWith(color: colors.textMuted),
                   ),
