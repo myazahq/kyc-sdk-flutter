@@ -564,6 +564,34 @@ iOS (`Info.plist`):
 <string>Lets your address stay confirmed automatically.</string>
 ```
 
+**"Still here" check-ins.** A fence only speaks when the person crosses its
+edge, so without help a stay is only recorded when they leave, and someone
+who hardly leaves home earns little background evidence. The plugin records a
+stay while the person is still there, once it has run three hours:
+
+- **On app open**, automatically: an inside `MyazaAddressPresence.report()`
+  reading also records the running stay. On iOS every launch or relaunch
+  asks Core Location whether the phone is inside, too.
+- **Android, periodically**, automatically: a WorkManager job takes one
+  low-power reading about every two hours with the background permission the
+  tier already holds. It adds no manifest entry.
+- **iOS, periodically**, optional: add the identifier and the `fetch`
+  background mode to `Info.plist`. Without both, nothing is registered.
+
+  ```xml
+  <key>BGTaskSchedulerPermittedIdentifiers</key>
+  <array>
+    <string>co.myazahq.kyc.presence.checkin</string>
+  </array>
+  <key>UIBackgroundModes</key>
+  <array>
+    <string>fetch</string>
+  </array>
+  ```
+
+The OS decides when a background check-in actually runs, so treat it as
+best-effort.
+
 ### The Android foreground service (reliability on OEM-managed phones)
 
 A geofence alone is not reliable on Android once a manufacturer's battery

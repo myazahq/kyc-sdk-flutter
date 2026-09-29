@@ -14,7 +14,8 @@ import kotlin.math.sqrt
  * cooperate on one state rather than double-counting a stay:
  *
  *   inside,  no open stay  → open one (stamp enterAt)
- *   inside,  open stay     → nothing (the fence or an earlier sample did it)
+ *   inside,  open stay     → check in: once it has run CHECKPOINT_MS, fold it
+ *                            so far and restart it here (checkpointStay)
  *   outside, open stay     → close it: fold the span into per-day aggregates
  *   outside, no open stay  → nothing (absence is never evidence)
  *   mocked                 → report the day FLAGGED, never open a stay
@@ -86,7 +87,11 @@ object PresenceSampler {
         continue
       }
       if (insideFence(pinLat, pinLng, fix)) {
-        if (open == null) open = fix.timestamp
+        // A person who never leaves never produces an exit, so their stay is
+        // recorded here, at each confirmed-inside reading, instead.
+        val checked = PresenceFold.checkpointStay(open, fix.timestamp, offsetMinutes)
+        open = checked.enterAt
+        days.addAll(checked.days)
         continue
       }
       val enteredAt = open ?: continue

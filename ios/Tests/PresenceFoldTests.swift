@@ -43,4 +43,31 @@ final class PresenceFoldTests: XCTestCase {
       }
     }
   }
+
+  func testMatchesCanonicalCheckInVectors() throws {
+    let data = try Data(contentsOf: vectorsURL())
+    let doc = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+    XCTAssertEqual((doc["checkpointMs"] as! NSNumber).int64Value, PresenceFold.checkpointMs, "check-in interval")
+    let vectors = doc["checkpoints"] as! [[String: Any]]
+    XCTAssertGreaterThanOrEqual(vectors.count, 6, "meaningful case set")
+    for v in vectors {
+      let name = v["name"] as! String
+      let enterAt = (v["enterAt"] as? NSNumber)?.int64Value
+      let out = PresenceFold.checkpointStay(
+        enterAt: enterAt,
+        atMs: (v["atMs"] as! NSNumber).int64Value,
+        offsetMinutes: (v["offsetMinutes"] as! NSNumber).intValue
+      )
+      let expected = v["expected"] as! [String: Any]
+      XCTAssertEqual(out.enterAt, (expected["enterAt"] as! NSNumber).int64Value, "\(name): enterAt")
+      let days = expected["days"] as! [[String: Any]]
+      XCTAssertEqual(out.days.count, days.count, "\(name): day count")
+      for (i, e) in days.enumerated() where i < out.days.count {
+        XCTAssertEqual(out.days[i].day, e["day"] as! String, "\(name)[\(i)].day")
+        XCTAssertEqual(out.days[i].dwellMinutes, (e["dwellMinutes"] as! NSNumber).intValue, "\(name)[\(i)].dwellMinutes")
+        XCTAssertEqual(out.days[i].nightPresent, (e["nightPresent"] as! NSNumber).boolValue, "\(name)[\(i)].nightPresent")
+      }
+    }
+  }
 }
+

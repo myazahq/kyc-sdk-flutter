@@ -95,6 +95,31 @@ class MyazaBackgroundPresence {
     }
   }
 
+  /// A "still here" check-in from an inside reading the foreground reporter
+  /// already took on app open. The native side records the running stay now
+  /// rather than when the person leaves, so someone who hardly leaves home
+  /// still earns background evidence. A no-op unless the background tier is
+  /// armed; iOS confirms with its own region state. Never throws.
+  static Future<void> checkIn({
+    required double lat,
+    required double lng,
+    double? accuracy,
+    required DateTime at,
+    bool mocked = false,
+  }) async {
+    try {
+      await _channel.invokeMethod<bool>('presenceCheckIn', {
+        'lat': lat,
+        'lng': lng,
+        if (accuracy != null) 'accuracy': accuracy,
+        'timestamp': at.millisecondsSinceEpoch,
+        'mocked': mocked,
+      });
+    } catch (_) {
+      // Best-effort by contract.
+    }
+  }
+
   /// Whether the native geofence is registered right now.
   static Future<bool> isArmed() async {
     try {

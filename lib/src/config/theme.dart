@@ -177,6 +177,21 @@ Color kycHeaderSurface(MyazaColorScheme colors, {required bool isDark}) => isDar
       )
     : colors.backgroundSecondary;
 
+// ─── Sheet grab handle ────────────────────────────────────────────────────────
+
+/// The colour of a sheet's grab handle.
+///
+/// A grabber has to be SEEN to be used. The dark palette's `gray300` and
+/// `border` are both #302D53, about 1.4:1 against the dark sheet surfaces,
+/// so on dark themes the handle all but vanished. There it is drawn in the
+/// scheme's own text colour at 40%, which stays around 3:1 or better on any
+/// dark surface an org brands (the way the system grabber works). Light
+/// themes keep the colour the caller already used.
+Color myazaHandleColor(MyazaColorScheme colors, {required Color light}) {
+  final isDark = colors.background.computeLuminance() < 0.5;
+  return isDark ? colors.textDark.withValues(alpha: 0.4) : light;
+}
+
 // ─── BuildContext extensions ──────────────────────────────────────────────────
 
 extension MyazaBuildContextTheme on BuildContext {

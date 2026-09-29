@@ -32,7 +32,7 @@ void main() {
       expect(find.text('Pin your address'), findsOneWidget);
       expect(find.text('Quiet check-ins'), findsOneWidget);
       expect(find.text('Confirmed'), findsOneWidget);
-      expect(find.text('Got it, let’s go'), findsOneWidget);
+      expect(find.text('Continue'), findsOneWidget);
     });
 
     testWidgets('acknowledging is what dismisses it', (tester) async {
@@ -40,9 +40,9 @@ void main() {
       await tester.pumpWidget(
           _host(AddressIntroGate(onAcknowledge: () => seen = true)));
       await tester.pump(const Duration(milliseconds: 400));
-      await tester.ensureVisible(find.text('Got it, let’s go'));
+      await tester.ensureVisible(find.text('Continue'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Got it, let’s go'));
+      await tester.tap(find.text('Continue'));
       expect(seen, isTrue);
     });
   });

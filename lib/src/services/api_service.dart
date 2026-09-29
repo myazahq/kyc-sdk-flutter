@@ -24,7 +24,7 @@ part 'api_address_calls.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.3.0';
+const String kSdkVersion = '3.4.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 

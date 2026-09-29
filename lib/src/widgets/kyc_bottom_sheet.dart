@@ -126,7 +126,7 @@ class KycBottomSheet extends StatelessWidget {
     this.onClose,
     this.canDismiss = true,
     this.isFullScreen = false,
-    this.progressStyle = MyazaProgressStyle.steps,
+    this.progressStyle = MyazaProgressStyle.bar,
     this.isDark = false,
     this.headerSurface,
     this.onToggleTheme,
@@ -213,7 +213,7 @@ class KycBottomSheet extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     // Drag handle — only on bottom sheet
-                    if (!isFullScreen) _DragHandle(color: colors.gray300),
+                    if (!isFullScreen) _DragHandle(color: myazaHandleColor(colors, light: colors.gray300)),
 
                     // Top bar: org brand (left) + close (right), same line.
                     // See _brandRowPaddingBottom for why this is not simply 0.

@@ -1598,7 +1598,7 @@
     {
       "key": "address.intro.start",
       "group": "address",
-      "default": "Got it, let's go",
+      "default": "Continue",
       "availability": {
         "scopes": [
           "full",

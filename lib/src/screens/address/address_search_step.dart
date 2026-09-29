@@ -33,7 +33,7 @@ class _AddressSearchStepState extends ConsumerState<AddressSearchStep>
   void initState() {
     super.initState();
     // Warm the GPS and its reverse geocode from the moment the flow is
-    // reached, UNDER the primer too: by the time "Got it" is tapped the fix is
+    // reached, UNDER the primer too: by the time "Continue" is tapped the fix is
     // usually already resolved, so the location row carries the address
     // immediately and the pin lands with no hesitation.
     WidgetsBinding.instance.addPostFrameCallback((_) => flow.startPrefetch());

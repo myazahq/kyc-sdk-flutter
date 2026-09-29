@@ -126,6 +126,10 @@ dependencies {
     // reboot; hosts without Play services degrade to the foreground tier at
     // runtime (arm() reports failure, never crashes).
     implementation 'com.google.android.gms:play-services-location:21.3.0'
+    // Periodic "still here" check-ins for the same tier (PresenceCheckInWorker):
+    // a stay is recorded while the person is at home rather than only when
+    // they leave. A library, not a permission: no manifest or review change.
+    implementation 'androidx.work:work-runtime:2.9.1'
     // NotificationCompat + the registerReceiver flag for the foreground-service
     // presence tier (PresenceForegroundService.kt).
     implementation 'androidx.core:core:1.13.1'

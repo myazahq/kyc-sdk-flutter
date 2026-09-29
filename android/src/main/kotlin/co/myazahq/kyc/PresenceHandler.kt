@@ -8,6 +8,7 @@ import android.os.Build
 import androidx.core.content.ContextCompat
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel.Result
+import kotlin.concurrent.thread
 
 /**
  * Channel side of the background presence tier (`kyc_sdk_flutter/presence`).
@@ -38,11 +39,40 @@ class PresenceHandler(private val context: Context) {
           externalUserId = externalUserId,
         )
         PresenceGeofencer.arm(context, config) { ok ->
-          if (ok) store.saveConfig(config) else store.armed = false
+          if (ok) {
+            store.saveConfig(config)
+            PresenceCheckInWorker.schedule(context)
+          } else {
+            store.armed = false
+          }
           result.success(ok)
         }
       }
+      // An app-open reading the Dart reporter already took. Inside, it records
+      // the running stay now instead of when the person leaves. A no-op unless
+      // the background tier is armed. Off the main thread: it may flush.
+      "presenceCheckIn" -> {
+        val lat = call.argument<Double>("lat")
+        val lng = call.argument<Double>("lng")
+        val timestamp = call.argument<Number>("timestamp")?.toLong()
+        val store = PresenceStore(context)
+        val config = store.loadConfig()
+        if (lat == null || lng == null || timestamp == null || !store.armed || config == null) {
+          result.success(false)
+          return true
+        }
+        val fix = PresenceSampler.Fix(
+          lat = lat,
+          lng = lng,
+          accuracy = call.argument<Number>("accuracy")?.toDouble(),
+          timestamp = timestamp,
+          mocked = call.argument<Boolean>("mocked"),
+        )
+        thread(name = "myaza-presence-checkin") { PresenceCheckInWorker.applyCheckIn(store, config, fix) }
+        result.success(true)
+      }
       "disablePresence" -> {
+        PresenceCheckInWorker.cancel(context)
         PresenceGeofencer.disarm(context)
         PresenceStore(context).clear()
         result.success(null)

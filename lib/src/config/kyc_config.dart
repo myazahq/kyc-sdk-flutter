@@ -39,10 +39,11 @@ enum MyazaProgressStyle {
   /// Parse the wire value a published workflow carries. Anything unrecognised
   /// falls back to [steps] rather than throwing: a newer server adding a fourth
   /// style must not break an older SDK.
+  /// An unknown value takes the default, the bar.
   static MyazaProgressStyle fromJson(String? value) => switch (value) {
-        'bar' => MyazaProgressStyle.bar,
+        'steps' => MyazaProgressStyle.steps,
         'none' => MyazaProgressStyle.none,
-        _ => MyazaProgressStyle.steps,
+        _ => MyazaProgressStyle.bar,
       };
 }
 
@@ -461,10 +462,10 @@ class MyazaKYCConfig {
 
   /// How progress through the flow is drawn in the header.
   ///
-  ///   • [MyazaProgressStyle.steps] (default) — numbered circles, one per step,
+  ///   • [MyazaProgressStyle.steps] — numbered circles, one per step,
   ///     connected. Shows WHICH step you are on and how many there are, and
   ///     collapses to a window when they no longer fit.
-  ///   • [MyazaProgressStyle.bar] — a single thin bar pinned to the header's
+  ///   • [MyazaProgressStyle.bar] (default) — a single thin bar pinned to the header's
   ///     bottom edge. Quieter, and unaffected by step count, so it suits long
   ///     flows and hosts who would rather the chrome said less.
   ///   • [MyazaProgressStyle.none] — no progress in the header at all. For
@@ -642,7 +643,7 @@ class MyazaKYCConfig {
     this.livenessMode = 'gestures',
     this.flashSequenceLength = 4,
     this.showThemeToggle = true,
-    this.progressStyle = MyazaProgressStyle.steps,
+    this.progressStyle = MyazaProgressStyle.bar,
     this.disableClose = false,
     this.appearance,
     this.consent,

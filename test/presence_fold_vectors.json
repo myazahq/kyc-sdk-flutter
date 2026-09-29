@@ -165,5 +165,113 @@
         }
       ]
     }
+  ],
+  "checkpointMs": 10800000,
+  "$checkpointComment": "checkpoints pin checkpointStay: a CONFIRMED-INSIDE reading at atMs. No open stay opens one at atMs; a stay open at least checkpointMs folds [enterAt, atMs] (the 24h cap applies) and restarts at atMs; anything else is unchanged. Same three implementations, same rule.",
+  "checkpoints": [
+    {
+      "name": "no open stay: the reading opens one",
+      "enterAt": null,
+      "atMs": 1788195600000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788195600000,
+        "days": []
+      }
+    },
+    {
+      "name": "open one hour: too soon, unchanged",
+      "enterAt": 1788192000000,
+      "atMs": 1788195600000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788192000000,
+        "days": []
+      }
+    },
+    {
+      "name": "open exactly three hours: folded and restarted",
+      "enterAt": 1788184800000,
+      "atMs": 1788195600000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788195600000,
+        "days": [
+          {
+            "day": "2026-08-31",
+            "dwellMinutes": 180,
+            "nightPresent": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "overnight check-in, WAT: two days folded",
+      "enterAt": 1788195600000,
+      "atMs": 1788224400000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788224400000,
+        "days": [
+          {
+            "day": "2026-08-31",
+            "dwellMinutes": 360,
+            "nightPresent": true
+          },
+          {
+            "day": "2026-09-01",
+            "dwellMinutes": 120,
+            "nightPresent": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "open 30 hours: capped at 24, restarted at the reading",
+      "enterAt": 1788195600000,
+      "atMs": 1788303600000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788303600000,
+        "days": [
+          {
+            "day": "2026-08-31",
+            "dwellMinutes": 360,
+            "nightPresent": true
+          },
+          {
+            "day": "2026-09-01",
+            "dwellMinutes": 1080,
+            "nightPresent": true
+          }
+        ]
+      }
+    },
+    {
+      "name": "reading before the stay opened: unchanged",
+      "enterAt": 1788195600000,
+      "atMs": 1788177600000,
+      "offsetMinutes": 60,
+      "expected": {
+        "enterAt": 1788195600000,
+        "days": []
+      }
+    },
+    {
+      "name": "three hours in the evening, New York",
+      "enterAt": 1788213600000,
+      "atMs": 1788226200000,
+      "offsetMinutes": -240,
+      "expected": {
+        "enterAt": 1788226200000,
+        "days": [
+          {
+            "day": "2026-08-31",
+            "dwellMinutes": 210,
+            "nightPresent": true
+          }
+        ]
+      }
+    }
   ]
 }

@@ -6,12 +6,9 @@ import '../../config/address_collection.dart';
 import '../../config/address_flow.dart';
 import '../../config/theme.dart';
 import '../../utils/map_tiles.dart';
-import '../../widgets/line_skeleton.dart';
-import '../../widgets/presence_milestones.dart';
+import 'address_review_band.dart';
 import 'address_review_map.dart';
 import 'address_review_thumb.dart';
-import '../../widgets/icons/icons.dart';
-import '../../i18n/text_scope.dart';
 
 // ─── The confirmation card ───────────────────────────────────────────────────
 //
@@ -20,13 +17,6 @@ import '../../i18n/text_scope.dart';
 // as the card's own heading, in the success card's header-band language.
 // Mirrors the web and RN review cards; the map surface lives in
 // address_review_map.dart and the thumbnails in address_review_thumb.dart.
-
-// Web's geometry: the band clears the thumbnails with pr-32 / min-h-[4.25rem].
-// EXACTLY 128, no breathing room added: 12 more starved the "Pinned address"
-// pill on a 360dp phone (the S24, 2026-09-08) and a red overflow stripe stood
-// on the confirmation screen. RN keeps the same number.
-const double _kBandClearance = 128;
-const double _kBandMinHeight = 68;
 
 class AddressReviewCard extends StatelessWidget {
   final AddressState? address;
@@ -68,7 +58,6 @@ class AddressReviewCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
-    final text = context.myazaText;
     final a = address;
     final directions = (a?.directions ?? '').trim();
     final hero = (photoPreviewPath ?? '').trim();
@@ -76,11 +65,10 @@ class AddressReviewCard extends StatelessWidget {
     final hasHero = hero.isNotEmpty;
     final showFrameAsHero = !hasHero && frame != null;
     final showFrameBeside = hasHero && frame != null;
-    // Something hangs over the map's bottom edge: the band clears it, so Edit
-    // sits beside the entrance rather than under it.
+    // Something hangs over the map's bottom edge: the band clears it, and
+    // Edit moves under the address so it keeps clear of the entrance.
     final hangs = hasHero || showFrameAsHero;
     final line = a == null ? '' : displayAddressLine(a);
-    final lineStyle = text.body.copyWith(fontWeight: FontWeight.w600, height: 1.3);
 
     return Container(
       decoration: BoxDecoration(
@@ -114,73 +102,14 @@ class AddressReviewCard extends StatelessWidget {
                     ),
                   ),
                 ),
-              Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: colors.primary.withValues(alpha: 0.06),
-                  borderRadius: BorderRadius.vertical(
-                    bottom: Radius.circular(MyazaRadius.md - 1),
-                  ),
-                ),
-                padding: EdgeInsets.fromLTRB(
-                  MyazaSpacing.md,
-                  MyazaSpacing.md,
-                  hangs ? _kBandClearance : MyazaSpacing.md,
-                  MyazaSpacing.md,
-                ),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: hangs ? _kBandMinHeight : 0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            PresenceBadge(
-                              leading: MyazaIcon(MyazaIcons.mapPin, size: 12, color: colors.primary),
-                              label: context.kycText(isBusiness ? 'address.review.badge.business' : 'address.review.badge'),
-                            ),
-                            const SizedBox(height: MyazaSpacing.xs),
-                            // Never coordinates: an unread pin shows a skeleton
-                            // line while its address is still coming.
-                            if (a != null && line.isEmpty && labelling)
-                              LineSkeleton(label: kAddressLinePending, style: lineStyle, widthFactor: 0.7)
-                            else
-                              Text(
-                                a == null
-                                    ? 'No pin placed'
-                                    : line.isNotEmpty
-                                        ? line
-                                        : kAddressLineUnavailable,
-                                style: lineStyle,
-                              ),
-                            if (directions.isNotEmpty) ...[
-                              const SizedBox(height: 3),
-                              Text('“$directions”',
-                                  style: text.bodySmall.copyWith(color: colors.textSecondary, height: 1.4)),
-                            ],
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: MyazaSpacing.sm),
-                      Semantics(
-                        button: true,
-                        label: context.kycText('address.review.edit'),
-                        child: InkWell(
-                          onTap: onEdit,
-                          borderRadius: BorderRadius.circular(MyazaRadius.xs),
-                          child: Padding(
-                            // No side padding: every pixel of the row is the
-                            // pill's on a 360dp phone.
-                            padding: const EdgeInsets.symmetric(vertical: 2),
-                            child: Text(context.kycText('address.review.edit'), style: text.bodyMedium.copyWith(color: colors.primary)),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              AddressReviewBand(
+                isBusiness: isBusiness,
+                hasAddress: a != null,
+                line: line,
+                labelling: labelling,
+                directions: directions,
+                hangs: hangs,
+                onEdit: onEdit,
               ),
             ],
           ),

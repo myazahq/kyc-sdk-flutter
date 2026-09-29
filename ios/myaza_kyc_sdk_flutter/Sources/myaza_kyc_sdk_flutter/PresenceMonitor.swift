@@ -20,6 +20,21 @@ final class PresenceMonitor: NSObject, CLLocationManagerDelegate {
   func reattachIfArmed() {
     guard PresenceStore.armed, PresenceStore.loadConfig() != nil else { return }
     ensureManager()
+    // Every launch or relaunch is a free "still here" check-in: ask iOS
+    // whether the phone is inside, and didDetermineState records the stay.
+    requestCheckIn()
+  }
+
+  /// Asks Core Location whether the phone is inside the region right now. The
+  /// answer arrives in didDetermineState, which records the running stay. Uses
+  /// the cell and wifi signals region monitoring already watches, not GPS.
+  func requestCheckIn() {
+    guard PresenceStore.armed else { return }
+    ensureManager()
+    guard let manager = manager else { return }
+    for region in manager.monitoredRegions where region.identifier == PresenceMonitor.regionId {
+      manager.requestState(for: region)
+    }
   }
 
   private func ensureManager() {
@@ -87,11 +102,10 @@ final class PresenceMonitor: NSObject, CLLocationManagerDelegate {
     _ manager: CLLocationManager, didDetermineState state: CLRegionState, for region: CLRegion
   ) {
     guard region.identifier == PresenceMonitor.regionId, PresenceStore.armed else { return }
-    // The arm-time state answer: already inside → stamp, exactly like
-    // Android's INITIAL_TRIGGER_ENTER. Never overwrite an open stamp.
-    if state == .inside && PresenceStore.enterAt == nil {
-      PresenceStore.enterAt = Int64(Date().timeIntervalSince1970 * 1000)
-    }
+    // Inside is a confirmed "still here": no open stamp opens one (the
+    // arm-time answer, exactly like Android's INITIAL_TRIGGER_ENTER); a stay
+    // open long enough is recorded so far and restarted (PresenceCheckIn).
+    if state == .inside { recordCheckIn(atMs: Int64(Date().timeIntervalSince1970 * 1000)) }
   }
 
   func locationManager(_ manager: CLLocationManager, didExitRegion region: CLRegion) {

@@ -17,6 +17,9 @@ final class PresenceChannel: NSObject {
     // A relaunch for a region event lands here before any Dart runs: stand
     // the delegate up again so Core Location has somewhere to deliver.
     PresenceMonitor.shared.reattachIfArmed()
+    // Registration is only accepted while the app finishes launching, which
+    // is when plugins register. A no-op unless the host opted in.
+    PresenceMonitor.shared.registerCheckInTask()
   }
 
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -40,12 +43,19 @@ final class PresenceChannel: NSObject {
       PresenceMonitor.shared.arm(config: config) { ok in
         if ok {
           PresenceStore.saveConfig(config)
+          PresenceMonitor.shared.scheduleCheckIns()
         } else {
           PresenceStore.armed = false
         }
         result(ok)
       }
+    case "presenceCheckIn":
+      // The Dart reporter saw an inside fix on app open. iOS confirms it with
+      // its own region state rather than trusting the coordinates twice.
+      PresenceMonitor.shared.requestCheckIn()
+      result(PresenceStore.armed)
     case "disablePresence":
+      PresenceMonitor.shared.cancelCheckIns()
       PresenceMonitor.shared.disarm()
       PresenceStore.clear()
       result(nil)

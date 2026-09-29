@@ -75,4 +75,29 @@ enum PresenceFold {
     }
     return out
   }
+
+  /// How long an open stay may run before a confirmed "still here" reading
+  /// records it. Without check-ins a stay was credited only when the person
+  /// left, so someone who hardly leaves home produced no background evidence,
+  /// and one lost exit capped a multi-day stay at its first 24 hours.
+  static let checkpointMs: Int64 = 3 * 60 * 60 * 1000
+
+  struct Checkpoint: Equatable {
+    let enterAt: Int64
+    let days: [DayAggregate]
+  }
+
+  /// Apply a CONFIRMED-INSIDE reading at `atMs`. No open stay opens one; a
+  /// stay open at least `checkpointMs` is folded up to `atMs` and restarted
+  /// there; anything else is unchanged. Mirrors checkpointStay in the RN
+  /// SDK's background-math.ts and PresenceFold.kt, pinned to the same vectors.
+  static func checkpointStay(enterAt: Int64?, atMs: Int64, offsetMinutes: Int) -> Checkpoint {
+    guard let enterAt = enterAt else { return Checkpoint(enterAt: atMs, days: []) }
+    if atMs - enterAt < checkpointMs { return Checkpoint(enterAt: enterAt, days: []) }
+    return Checkpoint(
+      enterAt: atMs,
+      days: foldSpanIntoDays(enterMs: enterAt, exitMs: atMs, offsetMinutes: offsetMinutes)
+    )
+  }
 }
+

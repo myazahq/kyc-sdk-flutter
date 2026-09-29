@@ -31,8 +31,31 @@ class PresenceSamplerTest {
     val r = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 9))), null, lagos)
     assertEquals(at(3, 9), r.enterAt)
     assertTrue(r.days.isEmpty())
-    val again = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 12))), r.enterAt, lagos)
+    // Within the check-in interval a later inside fix does not re-stamp.
+    val again = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 11))), r.enterAt, lagos)
     assertEquals(at(3, 9), again.enterAt)
+    assertTrue(again.days.isEmpty())
+  }
+
+  @Test
+  fun checksInOnALongStayFoldingItSoFarAndRestartingIt() {
+    val r = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 12))), at(3, 9), lagos)
+    assertEquals(at(3, 12), r.enterAt)
+    assertEquals(listOf(PresenceFold.DayAggregate("2026-09-03", 180, false)), r.days)
+  }
+
+  @Test
+  fun recordsSomeoneWhoNeverLeavesOneCheckInAtATime() {
+    // Home from Friday 18:00 through Monday with no exit: every day is still
+    // credited, where before only the first 24 hours could be.
+    val start = at(4, 18)
+    val fixes = (0..60 step 3).map { h -> fix(pinLat, pinLng, start + h * 3_600_000L) }
+    val r = PresenceSampler.apply(pinLat, pinLng, fixes, null, lagos)
+    val byDay = r.days.groupBy { it.day }
+    assertEquals(listOf("2026-09-04", "2026-09-05", "2026-09-06", "2026-09-07"), byDay.keys.toList())
+    assertEquals(1440, byDay.getValue("2026-09-05").sumOf { it.dwellMinutes })
+    // Slices are merged per day by the store; every DAY touched a night.
+    assertTrue(byDay.values.all { slices -> slices.any { it.nightPresent } })
   }
 
   @Test

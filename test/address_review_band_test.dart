@@ -67,4 +67,34 @@ void main() {
     )));
     expect(tester.takeException(), isNull);
   });
+
+  // Edit sat flush against the entrance photo: the photo is 112 wide, 16 from
+  // the card's edge, and the band reserves exactly 128 (user report
+  // 2026-09-29). With something hanging over the band, Edit moves under the
+  // address instead, well clear of the photo.
+  testWidgets('with an entrance hanging over the band, Edit sits under the address, clear of it',
+      (tester) async {
+    await narrow(tester);
+    await tester.pumpWidget(_host(_card()));
+    final edit = tester.getRect(find.text('Edit'));
+    final line = tester.getRect(find.text('No pin placed'));
+    expect(edit.top, greaterThan(line.bottom));
+    // The card spans 16..344; the photo's space starts 128 in from 344.
+    expect(edit.right, lessThanOrEqualTo(344 - 128 - 12));
+  });
+
+  testWidgets('with nothing hanging over the band, Edit stays beside the address', (tester) async {
+    await narrow(tester);
+    await tester.pumpWidget(_host(AddressReviewCard(
+      address: null,
+      pin: null,
+      isBusiness: false,
+      photoPreviewPath: null,
+      onEdit: () {},
+    )));
+    final edit = tester.getRect(find.text('Edit'));
+    final line = tester.getRect(find.text('No pin placed'));
+    expect(edit.top, lessThan(line.top));
+    expect(edit.left, greaterThan(line.right));
+  });
 }

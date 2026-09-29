@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:geolocator/geolocator.dart';
 
 import '../utils/resolve_url.dart';
+import 'background_presence.dart';
 import 'presence_math.dart';
 import 'presence_store.dart';
 import 'presence_watch_wait.dart';
@@ -124,6 +125,17 @@ class MyazaAddressPresence {
     // to the watch than silence.
     if (!inside && !fix.isMocked) {
       return const PresenceReportResult(false, false, PresenceReportReason.outsideFence);
+    }
+
+    // An inside reading is also a "still here" check-in for the background
+    // tier: a stay it is tracking is recorded now rather than when they leave.
+    if (inside && !fix.isMocked) {
+      await MyazaBackgroundPresence.checkIn(
+        lat: fix.latitude,
+        lng: fix.longitude,
+        accuracy: fix.accuracy.isFinite && fix.accuracy > 0 ? fix.accuracy : null,
+        at: fix.timestamp,
+      );
     }
 
     // The watch is minted seconds after a submission is accepted, and the

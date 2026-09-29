@@ -14,7 +14,7 @@ import '../../i18n/translate.dart' show TextFn;
 //
 // Shown ONCE, on the address flow's first step, when the workflow verifies
 // presence. It replaces that step's body until acknowledged — but the step's
-// mount work still runs behind it, so the GPS is warm by the time "Got it" is
+// mount work still runs behind it, so the GPS is warm by the time "Continue" is
 // tapped and the pin lands with no hesitation.
 //
 // Drawn in the SUCCESS CARD's language (the eyebrow badge, the milestone

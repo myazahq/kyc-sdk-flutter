@@ -71,4 +71,26 @@ object PresenceFold {
     }
     return out
   }
+
+  /**
+   * How long an open stay may run before a confirmed "still here" reading
+   * records it. Without check-ins a stay was credited only when the person
+   * left, so someone who hardly leaves home produced no background evidence,
+   * and one lost exit capped a multi-day stay at its first 24 hours.
+   */
+  const val CHECKPOINT_MS: Long = 3L * 60 * 60 * 1000
+
+  data class Checkpoint(val enterAt: Long, val days: List<DayAggregate>)
+
+  /**
+   * Apply a CONFIRMED-INSIDE reading at [atMs]. No open stay opens one; a stay
+   * open at least CHECKPOINT_MS is folded up to [atMs] and restarted there;
+   * anything else is unchanged. Mirrors checkpointStay in the RN SDK's
+   * background-math.ts and PresenceFold.swift, pinned to the same vectors.
+   */
+  fun checkpointStay(enterAt: Long?, atMs: Long, offsetMinutes: Int): Checkpoint {
+    if (enterAt == null) return Checkpoint(atMs, emptyList())
+    if (atMs - enterAt < CHECKPOINT_MS) return Checkpoint(enterAt, emptyList())
+    return Checkpoint(atMs, foldSpanIntoDays(enterAt, atMs, offsetMinutes))
+  }
 }

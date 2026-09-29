@@ -93,7 +93,7 @@ class _MyazaSheetHeader extends StatelessWidget {
               width: 36,
               height: 5,
               decoration: BoxDecoration(
-                color: colors.border,
+                color: myazaHandleColor(colors, light: colors.border),
                 borderRadius: BorderRadius.circular(MyazaRadius.full),
               ),
             ),
