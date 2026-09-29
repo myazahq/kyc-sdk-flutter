@@ -13,6 +13,8 @@ import '../config/scope.dart';
 import '../config/selfie_upload_wait.dart';
 import '../config/theme.dart';
 import '../config/contact_recovery.dart';
+import '../config/submit_recovery.dart';
+import '../providers/step_order.dart' show buildStepOrder;
 import '../providers/kyc_state.dart';
 import 'submitted_error_view.dart';
 import 'submitted_result_view.dart';
@@ -95,6 +97,9 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
   /// Set while a transient failure is being retried — drives the "Reconnecting…
   /// retrying (n/total)" copy under the spinner.
   ({int attempt, int total})? _retryInfo;
+  /// Where Go back lands after a refusal (submit_recovery.dart); null when
+  /// going back cannot help.
+  KYCStep? _recoverTo;
 
   bool _kicked = false;
 
@@ -182,10 +187,17 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       }
       // Retries (if any) are exhausted — surface a typed error.
       final error = mapToKycError(e, context: ErrorContext.verify);
+      final mediaKey = e.details?['mediaKey'];
+      final recoverTo = recoveryStepFor(
+        e.error,
+        buildStepOrder(ref.read(kycConfigProvider), ref.read(kYCNotifierProvider)),
+        mediaKey: mediaKey is String ? mediaKey : null,
+      );
       setState(() {
         _status = _SubmitStatus.error;
         _error = error;
         _retryInfo = null;
+        _recoverTo = recoverTo;
       });
       widget.onError?.call(error);
     } catch (_) {
@@ -280,6 +292,14 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
                   _ => null,
                 },
                 onClose: _close,
+                // Only where Try Again is not the answer: a refusal about what
+                // was entered is fixed on its own step, and the flow comes back
+                // here to submit again.
+                onGoBack: _recoverTo == null ||
+                        _error!.code == 'upload_failed' ||
+                        _error!.code == 'network_error'
+                    ? null
+                    : () => ref.read(kYCNotifierProvider.notifier).goToStep(_recoverTo!),
               )
             : config.waitsForResultOption
                 ? SubmittedResultView(
@@ -391,6 +411,18 @@ class _SuccessViewState extends ConsumerState<_SuccessView> {
     final invites = widget.invites;
     final awaiting = _awaiting?.people;
 
+    // KYB: hold the success screen until the server has settled WHO the
+    // application is waiting on. Shown earlier, Done sat beside a list still
+    // loading, and an applicant could close the sheet without ever seeing the
+    // people they have to chase. Bounded by the controller's give-up.
+    if (_awaiting != null && !_awaiting!.finished) {
+      final t = context.kycText;
+      return SubmittedWaitingView(
+        title: t('keyPeople.pending.title'),
+        description: t('keyPeople.pending.body'),
+      );
+    }
+
     return Column(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -420,20 +452,17 @@ class _SuccessViewState extends ConsumerState<_SuccessView> {
             // same people appeared twice and a reader had to hold both lists to
             // answer "who still owes me something". The link lives on the row.
             //
-            // Absent until the server says its list is settled: a list shown
-            // earlier is one director short, permanently. While it is coming,
-            // say so — a blank where a list is about to appear reads as
-            // "nobody needs to verify", which for a KYB application is the
-            // opposite of true.
+            // The screen is held until the server says its list is settled (see
+            // the early return above): a list shown earlier is one director
+            // short, permanently. Absent here only when the give-up passed with
+            // nothing readable, which is better than a list that may be wrong.
             if (ref.read(kycConfigProvider).addressCollection?.presenceEnabled == true &&
                 ref.read(kYCNotifierProvider).address != null)
               const PresenceExpectations().animate(delay: 400.ms).fadeIn(duration: 350.ms),
             if (awaiting != null)
               KeyPeopleAwaitList(people: awaiting)
                   .animate(delay: 450.ms)
-                  .fadeIn(duration: 350.ms)
-            else if (invites.isNotEmpty)
-              const KeyPeoplePending().animate(delay: 450.ms).fadeIn(duration: 350.ms),
+                  .fadeIn(duration: 350.ms),
             const SizedBox(height: MyazaSpacing.xl),
           ],
         ),

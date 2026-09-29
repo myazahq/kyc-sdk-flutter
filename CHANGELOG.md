@@ -1,3 +1,23 @@
+## 3.4.1
+
+Fixes for business applications, and a way back after a refused submission. No native rebuild is needed.
+
+### The applicant's own check reaches the server
+
+In a business application, the applicant's own identity check was sent without the application's session. The server refuses that, the refusal went unnoticed, and the flow ended on success with the applicant never verified; reopening the app resumed at the applicant's ID step. The check is now sent with the session, as the web SDK does.
+
+### Company documents survive a resume
+
+An applicant who closed the app partway through a business application came back with no company documents, and the submission was refused as missing them. The uploaded documents are now saved with the rest of the progress and restored as uploaded.
+
+### The success screen waits for the key-people list
+
+The business success screen now stays on the loader until the server has settled the key-people list (for up to 15 seconds), so Done never shows beside a list that is still loading. The key-people cards also have space between them, and a long role no longer cuts off mid-word: role, share and country read as one line.
+
+### Go back after a refused submission
+
+When the server refused a submission, the error screen offered only Close, even when its message asked the person to fix something earlier in the flow. It now also offers Go back, which returns to the step that can fix the refusal: company documents, company details, key people, supporting documents, questionnaire, proof of address, address, or the photo a refused upload names. When the refusal doesn't point at one step, Go back returns to the step before submission. Coming back to the end submits again. Refusals that going back can't fix (not enough credits, an invalid API key) still show Close alone.
+
 ## 3.4.0
 
 Background presence now records a stay while the person is still at home, a visible sheet handle in dark mode, the progress bar as the default indicator, and fixes on the address confirmation screens.

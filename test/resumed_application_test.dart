@@ -130,6 +130,10 @@ void main() {
     // verification goes out, linked back to the application.
     final applicant = api.submitted.firstWhere((r) => r.business == null);
     expect(applicant.toJson()['metadata']['userId'], 'kp_applicant');
+    // And names the application's session: the server refuses an applicant
+    // verification without it (409 applicant_session_required). It was left
+    // off, the refusal was swallowed, and reopening resumed at the ID step.
+    expect(applicant.toJson()['sessionId'], 'sess_parent');
   });
 
   test('an ordinary resume still sends a new request id', () async {

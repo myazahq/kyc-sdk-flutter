@@ -1162,10 +1162,15 @@ class KYCNotifier extends _$KYCNotifier {
     final mediaIds = state.mediaIds;
     // The applicant's own selfie leg is where the front camera ran.
     final silentFrames = _silentFrames;
-    // Deliberately NO sessionId: a session carries ONE submitted verification
-    // and the business application has already claimed this one. The applicant
-    // leg links back through metadata.userId instead.
+    // The application's session rides along: the server refuses an applicant
+    // verification that does not name it (409 applicant_session_required),
+    // and resolves the applicant continuation from the session + KeyPerson it
+    // names rather than letting the verification adopt the spent session.
+    // Without it every embedded applicant check was refused, the refusal was
+    // swallowed below, and reopening the app resumed the application at the
+    // applicant's ID step. Mirrors the web SDK.
     final request = VerifyRequest(
+      sessionId: state.sessionId,
       country: country,
       idType: idTypeConfig.key,
       workflowId: _config.applicantWorkflowId,

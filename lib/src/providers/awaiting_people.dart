@@ -52,6 +52,12 @@ class AwaitingPeopleController extends ChangeNotifier with WidgetsBindingObserve
   DateTime _startedAt = DateTime.now();
   Timer? _timer;
   bool _committed = false;
+  bool _gaveUp = false;
+
+  /// Whether the wait is over: the list settled, or the give-up passed with
+  /// nothing readable. The success screen is held until this is true, so the
+  /// applicant never reaches Done while the list is still being worked out.
+  bool get finished => sessionId == null || _committed || _gaveUp;
   bool _disposed = false;
 
   @override
@@ -90,7 +96,10 @@ class AwaitingPeopleController extends ChangeNotifier with WidgetsBindingObserve
     }
     if (expired) {
       // Nothing readable at all — leave the list ABSENT rather than empty,
-      // which would claim there is nobody to verify.
+      // which would claim there is nobody to verify. The wait still ends, so
+      // the success screen is not held forever.
+      _gaveUp = true;
+      notifyListeners();
       return;
     }
     _schedule(_retryInterval);

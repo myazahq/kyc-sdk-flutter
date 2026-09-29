@@ -143,33 +143,31 @@ class KeyPeopleAwaitCardState extends State<KeyPeopleAwaitCard> {
                       overflow: TextOverflow.ellipsis,
                     ),
                     const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        Flexible(
-                          child: Text(
-                            '${roleLabel(row.role)}'
-                            '${row.pct != null ? ' · ${row.pct}%' : ''}'
-                            '${row.country != null ? ' · ' : ''}',
-                            style: text.bodySmall
-                                .copyWith(color: colors.textSecondary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                    // ONE line of text, the flag inline: two Flexibles split
+                    // the row in half, so the role line was cut mid-way
+                    // ("Beneficial owner (UBO) · …") while the country kept
+                    // its half. Truncating at the end keeps role and share.
+                    Text.rich(
+                      TextSpan(children: [
+                        TextSpan(
+                          text: '${roleLabel(row.role)}'
+                              '${row.pct != null ? ' · ${row.pct}%' : ''}'
+                              '${row.country != null ? ' · ' : ''}',
                         ),
                         if (row.country != null) ...[
-                          MyazaCountryFlag(country: row.country, size: 14),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              countryLabel(row.country!),
-                              style: text.bodySmall
-                                  .copyWith(color: colors.textSecondary),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                          WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: MyazaCountryFlag(country: row.country, size: 14),
                             ),
                           ),
+                          TextSpan(text: countryLabel(row.country!)),
                         ],
-                      ],
+                      ]),
+                      style: text.bodySmall.copyWith(color: colors.textSecondary),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ],
                 ),

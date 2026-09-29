@@ -111,8 +111,11 @@ class KeyPeopleAwaitList extends StatelessWidget {
                 ),
               ),
             ),
-            for (final row in groupRows)
+            for (final (i, row) in groupRows.indexed) ...[
+              // Air between cards: back to back they read as one block.
+              if (i > 0) const SizedBox(height: MyazaSpacing.sm),
               _entrance(KeyPeopleAwaitCard(row: row), entranceIndex++, reduceMotion),
+            ],
             const SizedBox(height: MyazaSpacing.sm),
           ],
           if (outstanding > 0)

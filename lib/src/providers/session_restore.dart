@@ -108,6 +108,20 @@ KYCState restoredState(
       ((fallbackCountry?.isEmpty ?? true) ? null : fallbackCountry);
   final idTypeKey = data['selectedIdType'] as String?;
 
+  // The company documents. Restored as uploaded, without a thumbnail: the
+  // snapshot carries ids, never preview bytes. The server has already dropped
+  // any whose upload expired, so each one here can still be submitted.
+  final businessDocuments = <BusinessDocumentUpload>[
+    for (final row in (app['documents'] as List?) ?? const [])
+      if (row is Map && row['type'] is String && row['mediaId'] is String && (row['mediaId'] as String).isNotEmpty)
+        BusinessDocumentUpload(
+          type: row['type'] as String,
+          mediaId: row['mediaId'] as String,
+          fileName: (row['fileName'] as String?) ?? 'Uploaded document',
+          isPdf: row['isPdf'] == true,
+        ),
+  ];
+
   final keyPeople = <KeyPersonEntry>[
     for (final row in (app['keyPeople'] as List?) ?? const [])
       if (row is Map)
@@ -171,6 +185,7 @@ KYCState restoredState(
     businessPhone: _nonEmpty(business['phone']) ?? s.businessPhone,
     businessWebsite: _nonEmpty(business['website']) ?? s.businessWebsite,
     keyPeople: keyPeople.isNotEmpty ? keyPeople : s.keyPeople,
+    businessDocuments: businessDocuments.isNotEmpty ? businessDocuments : s.businessDocuments,
     applicantRole: app['applicantRole'] is String
         ? _applicantRoleFromKey(app['applicantRole'] as String) ?? s.applicantRole
         : s.applicantRole,

@@ -48,6 +48,15 @@ Map<String, dynamic> progressFromState(KYCState s, {String? effectiveCountryValu
       },
       'businessApplication': {
         'keyPeople': [for (final p in s.keyPeople) p.toJson()],
+        // The company documents, ids and names only (never a preview). Left
+        // out, a KYB applicant who closed the app after uploading resumed with
+        // none, and the submission was refused as missing documents. Same key
+        // the web and RN SDKs write, which the server reads (and prunes).
+        if (s.businessDocuments.isNotEmpty)
+          'documents': [
+            for (final d in s.businessDocuments)
+              {'type': d.type, 'mediaId': d.mediaId, 'fileName': d.fileName, if (d.isPdf) 'isPdf': true},
+          ],
         'applicantRole': s.applicantRole?.key,
         'applicantName': s.applicantName ?? '',
       },

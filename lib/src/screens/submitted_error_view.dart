@@ -14,10 +14,16 @@ class ErrorView extends StatelessWidget {
   final VoidCallback? onRetry;
   final VoidCallback onClose;
 
-  const ErrorView({super.key, 
+  /// Back to the step that can fix the refusal (submit_recovery.dart). When
+  /// present it is the primary action: the application is not lost, only
+  /// incomplete, and closing would throw it away.
+  final VoidCallback? onGoBack;
+
+  const ErrorView({super.key,
     required this.error,
     required this.onClose,
     this.onRetry,
+    this.onGoBack,
   });
 
   @override
@@ -87,9 +93,22 @@ class ErrorView extends StatelessWidget {
               ),
               const SizedBox(width: MyazaSpacing.md),
             ],
-            Expanded(
-              child: MyazaButton(label: 'Close', onPressed: onClose),
-            ),
+            if (onGoBack != null) ...[
+              Expanded(
+                child: MyazaButton.outline(label: 'Close', onPressed: onClose),
+              ),
+              const SizedBox(width: MyazaSpacing.md),
+              Expanded(
+                child: MyazaButton(
+                  label: 'Go back',
+                  onPressed: onGoBack,
+                  leadingIcon: const MyazaIcon(MyazaIcons.arrowLeft),
+                ),
+              ),
+            ] else
+              Expanded(
+                child: MyazaButton(label: 'Close', onPressed: onClose),
+              ),
           ],
         )
             .animate(delay: 420.ms)

@@ -24,7 +24,7 @@ part 'api_address_calls.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.4.0';
+const String kSdkVersion = '3.4.1';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -1550,31 +1550,8 @@ class KYCApiService {
     if (data is Map<String, dynamic>) {
       error = data['error'] as String? ?? error;
       message = data['message'] as String?;
-      // 402 insufficient_credits returns { required, balance, currency } at the top level
-      if (statusCode == 402) {
-        error = 'insufficient_credits';
-        details = {
-          if (data['required'] != null) 'required': data['required'],
-          if (data['balance'] != null) 'balance': data['balance'],
-          if (data['currency'] != null) 'currency': data['currency'],
-        };
-      }
-      // 422 contact_verification_required carries `missing` (email | phone) —
-      // what submit recovery routes on.
-      if (statusCode == 422 && data['missing'] is List) {
-        details = {'missing': data['missing']};
-      }
-      // 403 feature_disabled carries `feature` (document_verification | gov_db_check).
-      // 403 id_type_not_allowed carries `country`, `idType`, `reason`.
-      if (statusCode == 403) {
-        details = {
-          if (data['feature'] != null) 'feature': data['feature'],
-          if (data['country'] != null) 'country': data['country'],
-          if (data['idType'] != null) 'idType': data['idType'],
-          if (data['reason'] != null) 'reason': data['reason'],
-        };
-        if (details.isEmpty) details = null;
-      }
+      if (statusCode == 402) error = 'insufficient_credits';
+      details = errorDetailsFrom(statusCode, data);
     } else if (e.type == DioExceptionType.connectionTimeout ||
         e.type == DioExceptionType.receiveTimeout ||
         e.type == DioExceptionType.sendTimeout) {
@@ -1597,4 +1574,36 @@ class KYCApiService {
       details: details,
     );
   }
+}
+
+/// The parts of a refusal body the SDK acts on, by status. Pure, so the
+/// mapping is testable without a network.
+Map<String, dynamic>? errorDetailsFrom(int statusCode, Map<String, dynamic> data) {
+  // 402 insufficient_credits returns { required, balance, currency } at the top level.
+  if (statusCode == 402) {
+    return {
+      if (data['required'] != null) 'required': data['required'],
+      if (data['balance'] != null) 'balance': data['balance'],
+      if (data['currency'] != null) 'currency': data['currency'],
+    };
+  }
+  // 422 contact_verification_required carries `missing` (email | phone): what
+  // submit recovery routes on.
+  if (statusCode == 422 && data['missing'] is List) return {'missing': data['missing']};
+  // 400 invalid_media names the capture it refused (`mediaKey`), which is
+  // where Go back lands (config/submit_recovery.dart). Dropped, a bad upload
+  // always fell back to the step before submission.
+  if (statusCode == 400 && data['mediaKey'] is String) return {'mediaKey': data['mediaKey']};
+  // 403 feature_disabled carries `feature` (document_verification | gov_db_check).
+  // 403 id_type_not_allowed carries `country`, `idType`, `reason`.
+  if (statusCode == 403) {
+    final details = {
+      if (data['feature'] != null) 'feature': data['feature'],
+      if (data['country'] != null) 'country': data['country'],
+      if (data['idType'] != null) 'idType': data['idType'],
+      if (data['reason'] != null) 'reason': data['reason'],
+    };
+    return details.isEmpty ? null : details;
+  }
+  return null;
 }
