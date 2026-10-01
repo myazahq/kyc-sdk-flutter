@@ -1,5 +1,6 @@
 import 'biometric_copy.dart';
 import 'result_wait.dart';
+import 'session_cancelled.dart';
 import '../i18n/translate.dart' show TextFn, defaultTextFn;
 
 // ─── What the terminal screens say ──────────────────────────────────────────
@@ -79,6 +80,14 @@ ResultCopy describeOutcome(
   switch (outcome) {
     case TimedOutOutcome():
       return _screen(ResultTone.info, t, 'result.faceCheck.timeout');
+    // The result view hands a cancellation to the dedicated cancelled screen;
+    // this copy only stands in if something renders the outcome anyway.
+    case CancelledOutcome():
+      return const ResultCopy(
+        tone: ResultTone.error,
+        title: kSessionCancelledTitle,
+        description: kSessionCancelledMessage,
+      );
     case SettledOutcome(:final status, :final reason):
       switch (status) {
         case 'approved':

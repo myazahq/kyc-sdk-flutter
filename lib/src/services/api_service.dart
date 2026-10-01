@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 
 import '../nfc/emrtd_active_auth.dart';
 import '../utils/map_tiles.dart' show MapLatLng;
@@ -17,6 +18,7 @@ import 'sdk_branding.dart';
 // because the calls need the private Dio client and error mapper.
 part 'api_address.dart';
 part 'api_address_calls.dart';
+part 'api_device.dart';
 
 // ─── SDK version ─────────────────────────────────────────────────────────────
 //
@@ -24,7 +26,7 @@ part 'api_address_calls.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.4.1';
+const String kSdkVersion = '3.5.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -924,6 +926,10 @@ class SdkConfigResponse {
   /// hosted page's alone, and Street View entrance framing does not exist here.
   final String? mapsFrameUrl;
 
+  /// `deviceAttestation.playIntegrityCloudProjectNumber`: the Google Cloud
+  /// project Play Integrity tokens are requested for. Null skips it.
+  final String? playIntegrityCloudProjectNumber;
+
   const SdkConfigResponse({
     required this.environment,
     required this.idTypes,
@@ -932,6 +938,7 @@ class SdkConfigResponse {
     this.addressSearch = false,
     this.addressSearchMode,
     this.mapsFrameUrl,
+    this.playIntegrityCloudProjectNumber,
   });
 
   factory SdkConfigResponse.fromJson(Map<String, dynamic> json) =>
@@ -949,6 +956,7 @@ class SdkConfigResponse {
         addressSearch: json['addressSearch'] == true,
         addressSearchMode: json['addressSearchMode'] as String?,
         mapsFrameUrl: json['mapsFrameUrl'] as String?,
+        playIntegrityCloudProjectNumber: playIntegrityProjectOf(json),
       );
 }
 
@@ -1048,6 +1056,7 @@ class WorkflowResolution {
   final bool addressSearch;
   final String? addressSearchMode;
   final String? mapsFrameUrl;
+  final String? playIntegrityCloudProjectNumber;
 
   const WorkflowResolution({
     required this.flowId,
@@ -1062,6 +1071,7 @@ class WorkflowResolution {
     this.addressSearch = false,
     this.addressSearchMode,
     this.mapsFrameUrl,
+    this.playIntegrityCloudProjectNumber,
   });
 
   factory WorkflowResolution.fromJson(Map<String, dynamic> json) {
@@ -1090,6 +1100,7 @@ class WorkflowResolution {
       addressSearch: json['addressSearch'] == true,
       addressSearchMode: json['addressSearchMode'] as String?,
       mapsFrameUrl: json['mapsFrameUrl'] as String?,
+      playIntegrityCloudProjectNumber: playIntegrityProjectOf(json),
     );
   }
 }
@@ -1142,8 +1153,16 @@ class KYCApiService {
   final String baseUrl;
   final String apiKey;
 
-  KYCApiService({required this.baseUrl, required this.apiKey})
-      : _dio = Dio(BaseOptions(
+  /// The per-install device id for the upload header, or null to send none.
+  /// Supplied only while Device Intelligence is on (fingerprint_payload.dart).
+  final Future<String?> Function()? deviceId;
+
+  KYCApiService({
+    required this.baseUrl,
+    required this.apiKey,
+    this.deviceId,
+    @visibleForTesting HttpClientAdapter? httpClientAdapter,
+  }) : _dio = Dio(BaseOptions(
           baseUrl: baseUrl,
           headers: {
             'Authorization': 'Bearer $apiKey',
@@ -1151,7 +1170,21 @@ class KYCApiService {
           },
           connectTimeout: const Duration(seconds: 30),
           receiveTimeout: const Duration(seconds: 30),
-        ));
+        )) {
+    if (httpClientAdapter != null) _dio.httpClientAdapter = httpClientAdapter;
+  }
+
+  /// The upload header's value: the id, or null when there is none, it cannot
+  /// be read, or it is longer than the server accepts.
+  Future<String?> _uploadDeviceId() async {
+    try {
+      final id = (await deviceId?.call())?.trim();
+      if (id == null || id.isEmpty || id.length > kDeviceIdHeaderMax) return null;
+      return id;
+    } catch (_) {
+      return null;
+    }
+  }
 
   // ── Upload — store a media file during capture ────────────────────────────
   //
@@ -1184,11 +1217,15 @@ class KYCApiService {
         ),
       });
 
+      final uploadDeviceId = await _uploadDeviceId();
       final res = await _dio.post<Map<String, dynamic>>(
         '/api/kyc/upload',
         data: form,
         options: Options(
           contentType: 'multipart/form-data',
+          headers: {
+            if (uploadDeviceId != null) kDeviceIdHeader: uploadDeviceId,
+          },
           // Multipart uploads can take longer than the default 30s.
           sendTimeout: const Duration(seconds: 60),
           receiveTimeout: const Duration(seconds: 60),

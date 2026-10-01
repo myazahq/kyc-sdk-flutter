@@ -58,6 +58,7 @@ Future<WorkflowGateResult> resolveWorkflowResult(MyazaKYCConfig config) async {
         addressSearch: res.addressSearch,
         addressSearchMode: res.addressSearchMode,
         mapsFrameUrl: res.mapsFrameUrl,
+        playIntegrityCloudProjectNumber: res.playIntegrityCloudProjectNumber,
       ),
     );
   } on KYCApiException catch (e) {

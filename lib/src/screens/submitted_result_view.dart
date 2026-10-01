@@ -79,6 +79,13 @@ class _SubmittedResultViewState extends ConsumerState<SubmittedResultView> {
       },
     ).then((settled) {
       if (!mounted) return;
+      // Cancelled while the person waited: the flow swaps to the cancelled
+      // screen (which reports onError once). Never the status reason, which is
+      // the checks' own finding rather than why it stopped.
+      if (settled is CancelledOutcome) {
+        ref.read(kYCNotifierProvider.notifier).markSessionCancelled();
+        return;
+      }
       setState(() => _outcome = settled);
       if (settled is SettledOutcome) {
         widget.onResult?.call(KYCResult(

@@ -37,6 +37,8 @@ const Set<String> _notRecoverable = {
   'feature_disabled',
   'business_not_approved',
   'rate_limited',
+  // Nothing anybody entered can undo a cancellation; only an admin can.
+  'session_cancelled',
 };
 
 /// Where Go back should land for a refusal, or null when going back cannot

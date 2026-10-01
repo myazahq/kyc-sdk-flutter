@@ -14,6 +14,7 @@ import '../config/country_id_types.dart';
 import '../config/id_types.dart';
 import '../config/kyc_config.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/session_cancelled.dart';
 import '../config/silent_capture.dart';
 import '../config/supporting_documents.dart';
 import 'session_progress.dart';
@@ -21,6 +22,8 @@ import 'session_restore.dart';
 import '../config/key_people_prefill.dart';
 import '../services/api_service.dart';
 import '../services/device_metadata_service.dart';
+import '../services/device_signals.dart';
+import '../services/fingerprint_payload.dart';
 import '../services/fingerprint_service.dart';
 import '../services/nfc_reader.dart';
 import '../services/mrz_parser.dart';
@@ -112,6 +115,7 @@ VerifyUserData? resolveVerifyUserData(UserData? fromProp, UserData? fromState) {
 class KYCNotifier extends _$KYCNotifier {
   @override
   KYCState build() {
+    _disposed = false;
     // Step journey log — a fresh provider lifecycle is a fresh session. The
     // self-listener catches EVERY currentStep write, whatever method made it;
     // StepLog.record collapses consecutive duplicates. Rides the submission
@@ -157,7 +161,10 @@ class KYCNotifier extends _$KYCNotifier {
     unawaited(_startAttemptSession());
     // A debounce timer must not outlive its provider — in production that is a
     // leak, in a widget test it is a teardown failure.
-    ref.onDispose(() => _progressTimer?.cancel());
+    ref.onDispose(() {
+      _progressTimer?.cancel();
+      _disposed = true;
+    });
 
     // When the launcher resolved a workflow before mount, its idTypes/branding
     // are already known — use them directly and skip the /config fetch.
@@ -185,6 +192,7 @@ class KYCNotifier extends _$KYCNotifier {
         addressSearch: response.addressSearch,
         addressSearchMode: response.addressSearchMode,
         mapsFrameUrl: response.mapsFrameUrl,
+        playIntegrityCloudProjectNumber: response.playIntegrityCloudProjectNumber,
       );
       // The facts that just landed can add a step AHEAD of the one the flow
       // opened on (the address search step, on a consent-less address flow).
@@ -264,6 +272,9 @@ class KYCNotifier extends _$KYCNotifier {
       KYCApiService(
         baseUrl: resolveBaseUrl(_config.apiKey, devUrl: _config.devUrl),
         apiKey: _config.apiKey,
+        deviceId: uploadDeviceIdSource(
+          deviceIntelligence: _config.deviceIntelligence,
+        ),
       );
 
   // ── Step navigation ────────────────────────────────────────────────────────
@@ -959,14 +970,18 @@ class KYCNotifier extends _$KYCNotifier {
         stepLog = null;
       }
 
-      Map<String, dynamic>? fingerprint;
-      if (_config.deviceIntelligence) {
-        try {
-          fingerprint = await FingerprintService.instance.collect();
-        } catch (_) {
-          fingerprint = null;
-        }
-      }
+      // The fingerprint plus its mobile additions (stable id, integrity
+      // heuristics, a fresh attestation): all gated on Device Intelligence in
+      // fingerprint_payload.dart, all best-effort, bounded at about 5s.
+      final client = api;
+      final fingerprint = await collectFingerprint(
+        deviceIntelligence: _config.deviceIntelligence,
+        base: FingerprintService.instance.collect,
+        extras: () => DeviceSignals.instance.collect(
+          fetchChallenge: client.deviceChallenge,
+          cloudProjectNumber: state.serverConfig.playIntegrityCloudProjectNumber,
+        ),
+      );
 
       return {
         ...collected,
@@ -1458,9 +1473,28 @@ class KYCNotifier extends _$KYCNotifier {
           currentStep: legStart ?? state.currentStep,
         );
       }
-    } catch (_) {
-      // Resuming is a convenience; verifying is not conditional on it.
+    } catch (e) {
+      // Resuming is a convenience; verifying is not conditional on it. The one
+      // refusal that DOES stop the flow is a cancelled session: the applicant
+      // must not be walked into captures the server will refuse
+      // (config/session_cancelled.dart).
+      if (sessionStartStopsFlow(e)) {
+        markSessionCancelled(sessionCancelledMessageFor(e));
+      }
     }
+  }
+
+  /// The server refused this session as cancelled. Replaces the whole flow
+  /// with the cancelled screen (the widget reports `session_cancelled` to
+  /// onError once) and stops further progress saves. Idempotent: the first
+  /// message wins, so a later refusal cannot reword the screen under the
+  /// applicant.
+  void markSessionCancelled([String? message]) {
+    // A late refusal (a progress save answering after the flow closed) has
+    // nobody left to show a screen to.
+    if (_disposed || state.sessionCancelledMessage != null) return;
+    _progressTimer?.cancel();
+    state = state.copyWith(sessionCancelledMessage: sessionCancelledText(message));
   }
 
   /// The step after the address region in the REAL order, for a resume whose
@@ -1482,7 +1516,13 @@ class KYCNotifier extends _$KYCNotifier {
     // The kept ID of a redo is part of the flow's start, so a reset keeps it.
     final start = seedKeptIdType(
       _config,
-      KYCState(currentStep: opening, serverConfig: serverConfig),
+      KYCState(
+        currentStep: opening,
+        serverConfig: serverConfig,
+        // A cancellation is the server's answer about this attempt, not
+        // something a fresh start can undo: only an admin's uncancel can.
+        sessionCancelledMessage: state.sessionCancelledMessage,
+      ),
     );
     StepLog.reset();
     StepLog.record(start.currentStep);
@@ -1503,9 +1543,10 @@ class KYCNotifier extends _$KYCNotifier {
 
   Timer? _progressTimer;
   String _lastSavedProgress = '';
+  bool _disposed = false;
 
   void _scheduleProgressSave(KYCState next) {
-    if (next.sessionId == null) return;
+    if (next.sessionId == null || next.sessionCancelledMessage != null) return;
     _progressTimer?.cancel();
     _progressTimer = Timer(const Duration(milliseconds: 800), () {
       final s = state;
@@ -1525,8 +1566,14 @@ class KYCNotifier extends _$KYCNotifier {
       if (fingerprint == _lastSavedProgress) return;
       _lastSavedProgress = fingerprint;
       // Losing a save costs some re-typing on a future resume, never anything
-      // now.
-      api.saveProgress(sessionId, payload).catchError((_) {});
+      // now. A cancelled session is the exception: the server refused it, so
+      // the flow stops on the cancelled screen rather than carrying on into
+      // a submission that can only be refused too.
+      api.saveProgress(sessionId, payload).catchError((Object e) {
+        if (isSessionCancelledError(e)) {
+          markSessionCancelled(sessionCancelledMessageFor(e));
+        }
+      });
     });
   }
 

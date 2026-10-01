@@ -11,6 +11,7 @@ import '../config/kyc_result.dart';
 import '../config/result_copy.dart';
 import '../config/scope.dart';
 import '../config/selfie_upload_wait.dart';
+import '../config/session_cancelled.dart';
 import '../config/theme.dart';
 import '../config/contact_recovery.dart';
 import '../config/submit_recovery.dart';
@@ -175,6 +176,14 @@ class _SubmittedScreenState extends ConsumerState<SubmittedScreen> {
       unawaited(autoReportPresence(config));
     } on KYCApiException catch (e) {
       if (!mounted) return;
+      // An organisation cancelled this verification: no Try again, no Go back.
+      // The flow swaps to the dedicated cancelled screen, which reports
+      // `session_cancelled` to onError once (config/session_cancelled.dart).
+      final cancelled = sessionCancelledMessageFor(e);
+      if (cancelled != null) {
+        ref.read(kYCNotifierProvider.notifier).markSessionCancelled(cancelled);
+        return;
+      }
       // A refusal over stale contact proofs is recoverable in-flow: clear the
       // dead tokens and walk back to the contact step, which routes straight
       // back here once re-verified (see config/contact_recovery.dart).

@@ -113,6 +113,37 @@ Two things this does **not** do, so the trade is clear:
   `flutter_nfc_kit` weak-links `CoreNFC`, so an app that never declares them is
   unaffected either way.
 
+#### Device attestation (optional, only with Device Intelligence)
+
+While a workflow has Device Intelligence on, the SDK adds a few device facts to
+the submission: an id that survives a reinstall (a Keychain item on iOS,
+`ANDROID_ID` on Android), root / jailbreak / hook heuristics, and, where the
+platform supports it, an attestation that the app and device are genuine. None
+of these prompts the user or needs a permission, and none can block or slow a
+submission by more than about 5 seconds: whatever cannot be read is left out.
+The upload requests also carry the same per-install id in an
+`X-Myaza-Device-Id` header.
+
+The attestation needs a little setup on your side; without it the SDK simply
+sends no attestation.
+
+- **iOS (App Attest).** Add the **App Attest** capability to your app target in
+  Xcode, which writes
+  `com.apple.developer.devicecheck.appattest-environment` to your entitlements
+  (`development` while testing, `production` for release builds). Then register
+  your iOS App ID (Team ID + bundle id) with Myaza. Simulators and iOS 13 report
+  App Attest as unsupported and send nothing.
+- **Android (Play Integrity, Standard API).** Myaza serves the Google Cloud
+  project number the tokens are requested for. In Play Console, open
+  **App integrity → Play Integrity API** and link your app to that Cloud
+  project, then register your package name with Myaza. Tokens are only issued
+  to builds distributed through Play (internal testing tracks included);
+  devices without Google Play services send nothing. The SDK adds the
+  `com.google.android.play:integrity` dependency itself.
+
+Root checks on Android look only at packages Android lets an app see without a
+`<queries>` declaration, so the SDK does not add one to your manifest.
+
 ## Usage
 
 `MyazaKYC.show()` opens the full modal flow as a bottom sheet.

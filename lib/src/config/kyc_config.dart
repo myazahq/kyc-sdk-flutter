@@ -814,6 +814,11 @@ class KYCError {
   ///   • 'invalid_workflow'         — the workflow is unknown, unpublished, or
   ///                                  can't be run by this SDK (KYB subject /
   ///                                  country / product mismatch)
+  ///   • 'session_cancelled'        — the organisation (or Myaza support)
+  ///                                  cancelled this verification session; it
+  ///                                  cannot continue until it is uncancelled.
+  ///                                  Reported once, beside the SDK's own
+  ///                                  cancelled screen
   ///   • 'unknown'                  — anything else
   ///
   /// Voice guidance is text-to-speech *output* — it never records audio, so

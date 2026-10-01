@@ -1,3 +1,26 @@
+## 3.5.0
+
+Device integrity and app attestation signals, and a screen for a cancelled verification.
+
+**This version needs a native rebuild.** It adds a native device-intelligence channel on iOS and Android.
+
+### Device integrity and app attestation
+
+When the workflow's Device Intelligence is on, the SDK now sends:
+
+- the same per-install device ID on every upload as in the submission's fingerprint;
+- a stable device ID that survives a reinstall (a Keychain value on iOS, `ANDROID_ID` on Android);
+- root, jailbreak and hooking checks, with no permission or prompt;
+- an attestation of the app: App Attest on iOS and the Play Integrity Standard API on Android, against a single-use challenge from the server, given at most about five seconds and left out if anything fails.
+
+Attestation needs one-off setup in your app: the App Attest capability on iOS, and linking your app to Myaza's Google Cloud project in Play Console on Android. See "Device attestation" in the README. Without it, attestation is simply left out and the rest of the flow is unchanged.
+
+### A screen for a cancelled verification
+
+An organisation or Myaza support can now cancel a verification session midway. When the server says a session is cancelled (on start, on a progress save, on submission, or in the result check), the flow stops on a screen reading "This verification was cancelled", with the server's message and a Close button. There is no Try again or Go back: the session cannot continue until it is reopened from the dashboard. `onError` fires once with the new code `session_cancelled`.
+
+A failed session start used to be ignored so the flow could carry on. A cancelled session is the one exception: the flow now stops instead of walking the person through steps the server will refuse.
+
 ## 3.4.1
 
 Fixes for business applications, and a way back after a refused submission. No native rebuild is needed.

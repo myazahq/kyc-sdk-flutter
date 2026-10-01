@@ -1,4 +1,5 @@
 import '../services/api_service.dart' show StatusResponse;
+import 'session_cancelled.dart' show isCancelledStatus;
 
 // ─── Waiting for a verdict in the flow ──────────────────────────────────────
 //
@@ -31,6 +32,13 @@ class TimedOutOutcome extends VerificationOutcome {
   const TimedOutOutcome();
 }
 
+/// The organisation cancelled the session while the person waited. Terminal,
+/// and not a verdict: the screen hands over to the cancelled screen rather
+/// than describing an outcome (config/session_cancelled.dart).
+class CancelledOutcome extends VerificationOutcome {
+  const CancelledOutcome();
+}
+
 bool isPendingStatus(String status) => _kPending.contains(status);
 
 /// Poll until the check settles or the budget runs out. A failed read is not
@@ -49,6 +57,9 @@ Future<VerificationOutcome> awaitVerificationOutcome({
   final deadline = now() + waitMs;
   for (;;) {
     final read = await fetchStatus();
+    // Cancelled is terminal: waiting longer can never change it, and timing
+    // out would tell the person to wait for a webhook that is not coming.
+    if (read != null && isCancelledStatus(read.status)) return const CancelledOutcome();
     if (read != null && !isPendingStatus(read.status)) {
       return SettledOutcome(status: read.status, reason: read.reason, reasonCode: read.reasonCode);
     }

@@ -1,4 +1,5 @@
 import '../config/kyc_config.dart';
+import '../config/session_cancelled.dart';
 import 'api_service.dart';
 
 // ─── mapToKycError — raw API error → typed KYCError ────────────────────────────
@@ -87,6 +88,14 @@ KYCError mapToKycError(Object error, {required ErrorContext context}) {
     }
 
     switch (error.error) {
+      // An organisation cancelled this verification. Retrying can never work
+      // until somebody uncancels it, so it is never "try again": the server's
+      // own words, under a code of its own (config/session_cancelled.dart).
+      case kSessionCancelledCode:
+        return KYCError(
+          code: kSessionCancelledCode,
+          message: sessionCancelledText(error.message),
+        );
       case 'insufficient_credits':
         return KYCError(
           code: 'insufficient_credits',

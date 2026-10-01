@@ -134,6 +134,11 @@ dependencies {
     // presence tier (PresenceForegroundService.kt).
     implementation 'androidx.core:core:1.13.1'
 
+    // Play Integrity, Standard API (PlayIntegrity.kt): the device-intel
+    // attestation. Used only when the server names a Google Cloud project;
+    // without Play services the request fails and nothing is sent.
+    implementation 'com.google.android.play:integrity:1.4.0'
+
     // PresenceFoldTest runs on the JVM, where android.jar's org.json is a
     // stub — the real library stands in for unit tests only.
     testImplementation 'junit:junit:4.13.2'

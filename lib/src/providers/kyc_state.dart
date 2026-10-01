@@ -157,6 +157,10 @@ class ServerSdkConfig {
   /// picker, which is also the fallback when the page never reports ready.
   final String? mapsFrameUrl;
 
+  /// The Google Cloud project Play Integrity tokens are requested for
+  /// (`deviceAttestation.playIntegrityCloudProjectNumber`). Null skips it.
+  final String? playIntegrityCloudProjectNumber;
+
   const ServerSdkConfig({
     required this.status,
     this.idTypes = const [],
@@ -169,6 +173,7 @@ class ServerSdkConfig {
     this.addressSearch = false,
     this.addressSearchMode,
     this.mapsFrameUrl,
+    this.playIntegrityCloudProjectNumber,
   });
 
   static const ServerSdkConfig loading =
@@ -218,6 +223,12 @@ class KYCState {
 
   /// The session's own hosted web page (see SessionStartResponse.url).
   final String? sessionUrl;
+
+  /// Set once the server refuses this session as CANCELLED (409
+  /// `session_cancelled`, or `status: 'cancelled'` on the result wait): the
+  /// words the cancelled screen shows. Non-null replaces the whole flow with
+  /// that screen; nothing in the flow clears it (config/session_cancelled.dart).
+  final String? sessionCancelledMessage;
 
   /// A KYB application whose business half already committed, resumed before
   /// the applicant's own verification went through. The business submission
@@ -436,6 +447,7 @@ class KYCState {
     this.currentStep = KYCStep.consent,
     this.sessionId,
     this.sessionUrl,
+    this.sessionCancelledMessage,
     this.resumedApplication,
     this.businessCheck = const BusinessCheckState(),
     this.selectedCountry,
@@ -503,6 +515,7 @@ class KYCState {
     KYCStep? currentStep,
     String? sessionId,
     String? sessionUrl,
+    String? sessionCancelledMessage,
     ResumedApplication? resumedApplication,
     BusinessCheckState? businessCheck,
     String? selectedCountry,
@@ -588,6 +601,8 @@ class KYCState {
         currentStep: currentStep ?? this.currentStep,
         sessionId: sessionId ?? this.sessionId,
       sessionUrl: sessionUrl ?? this.sessionUrl,
+        sessionCancelledMessage:
+            sessionCancelledMessage ?? this.sessionCancelledMessage,
         resumedApplication: resumedApplication ?? this.resumedApplication,
         businessCheck: businessCheck ?? this.businessCheck,
         selectedCountry: selectedCountry ?? this.selectedCountry,

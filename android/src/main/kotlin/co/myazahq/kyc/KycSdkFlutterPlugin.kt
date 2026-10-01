@@ -59,6 +59,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
   private val imageDecoder = ImageDecoderHandler()
   private var presence: PresenceHandler? = null
   private var documentCamera: DocumentCameraHandler? = null
+  /// Device Intelligence: stable id, integrity heuristics, Play Integrity.
+  private var deviceIntel: DeviceIntelHandler? = null
 
   private lateinit var appContext: Context
   private lateinit var textures: TextureRegistry
@@ -103,6 +105,7 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     })
 
     documentCamera = DocumentCameraHandler(appContext, textures, binding.binaryMessenger)
+    deviceIntel = DeviceIntelHandler(appContext, binding.binaryMessenger)
   }
 
   override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
@@ -118,6 +121,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     faceEventChannel.setStreamHandler(null)
     documentCamera?.detach()
     documentCamera = null
+    deviceIntel?.detach()
+    deviceIntel = null
     recorder?.dispose()
     recorder = null
     faceDetector.close()

@@ -3,6 +3,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
 import '../config/kyc_config.dart';
+import '../config/session_cancelled.dart';
 import '../widgets/myaza_alert.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
@@ -39,6 +40,9 @@ class ErrorView extends StatelessWidget {
       'upload_failed' => 'Upload Failed',
       'network_error' => 'Connection Failed',
       'invalid_state' => 'Submission Incomplete',
+      // Normally the dedicated cancelled screen takes over first; this keeps
+      // any path that still lands here from reading as a failed submission.
+      kSessionCancelledCode => kSessionCancelledTitle,
       _ => 'Submission Failed',
     };
 

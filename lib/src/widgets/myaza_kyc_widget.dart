@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../config/kyc_config.dart';
+import '../config/session_cancelled.dart';
 import '../config/appearance_scheme.dart';
 import '../config/bright_screen.dart';
 import '../config/theme.dart';
@@ -355,6 +356,8 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
 
   // Ensures a fatal config-load failure is reported to onError at most once.
   bool _configErrorReported = false;
+  // Ensures a cancelled session is reported to onError at most once.
+  bool _cancelReported = false;
 
   @override
   void initState() {
@@ -470,7 +473,10 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
 
     // ── Prevent dismissal during submission, or when the consumer disables
     //    close (programmatic pop is then the only way out). ──────────────────
-    final canDismiss = step != KYCStep.submitted && !config.disableClose;
+    // A cancelled run has nothing left to protect, so it may always be closed.
+    final canDismiss =
+        (step != KYCStep.submitted || state.sessionCancelledMessage != null) &&
+            !config.disableClose;
 
     // ── Fatal config-load failure (e.g. wrong API key) blocks the flow ─────
     // It replaces the normal step with a clear error screen, strips the
@@ -495,10 +501,30 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
           .addPostFrameCallback((_) => widget.onError?.call(kycError));
     }
 
+    // ── Cancelled by the organisation (config/session_cancelled.dart) ─────
+    // Terminal for this run: the same chrome-free blocking screen, with its
+    // own title, and `session_cancelled` reported to onError once.
+    final cancelledMessage =
+        configError == null ? state.sessionCancelledMessage : null;
+    if (cancelledMessage != null && !_cancelReported) {
+      _cancelReported = true;
+      final kycError =
+          KYCError(code: kSessionCancelledCode, message: cancelledMessage);
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => widget.onError?.call(kycError));
+    }
+    final blockingMessage = configError ?? cancelledMessage;
+
     // ── Screen routing ────────────────────────────────────────────────────
-    final screen = configError != null
+    final screen = blockingMessage != null
         ? _ConfigErrorScreen(
-            message: configError,
+            title: cancelledMessage != null
+                ? kSessionCancelledTitle
+                : 'Unable to start verification',
+            icon: cancelledMessage != null
+                ? MyazaIcons.circleX
+                : MyazaIcons.circleAlert,
+            message: blockingMessage,
             onClose: () {
               widget.onClose?.call();
               if (Navigator.of(context).canPop()) {
@@ -510,7 +536,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
 
     // Keyed so the SAME State moves between the two shells instead of being
     // rebuilt — see _stepKeys.
-    final keyedScreen = configError != null
+    final keyedScreen = blockingMessage != null
         ? screen
         : KeyedSubtree(
             key: _stepKeys.putIfAbsent(step, GlobalKey.new),
@@ -519,7 +545,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
 
     // Show the country flag beside the title on the ID-selection steps (the
     // effective country — the picked one in a multi-region flow).
-    final headerCountry = configError == null &&
+    final headerCountry = blockingMessage == null &&
             (step == KYCStep.idType || step == KYCStep.idInput)
         ? effectiveCountry(config, state)
         : null;
@@ -533,11 +559,11 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
     ) {
       final sheet = KycBottomSheet(
         environment: state.serverConfig.environment,
-        title: configError != null ? '' : meta.title,
-        description: configError != null ? null : meta.description,
-        progress: configError != null ? null : progress,
-        stepCount: configError != null ? null : stepInfo?.stepCount,
-        onBack: configError != null ? null : onBack,
+        title: blockingMessage != null ? '' : meta.title,
+        description: blockingMessage != null ? null : meta.description,
+        progress: blockingMessage != null ? null : progress,
+        stepCount: blockingMessage != null ? null : stepInfo?.stepCount,
+        onBack: blockingMessage != null ? null : onBack,
         onClose: widget.onClose,
         canDismiss: canDismiss,
         isFullScreen: widget.isFullScreen,
@@ -551,14 +577,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
         progressStyle: config.progressStyle,
         // Hide the brand bar on a fatal config error — show a clean, chrome-free
         // error screen (just the theme/fullscreen controls), like the web SDK.
-        logoUrl: configError != null ? null : logoUrl,
-        logoAsset: configError != null ? null : appearance?.logoAsset,
-        companyName: configError != null ? null : companyName,
-        trustAttribution: configError != null ? null : branding?.trustAttribution,
+        logoUrl: blockingMessage != null ? null : logoUrl,
+        logoAsset: blockingMessage != null ? null : appearance?.logoAsset,
+        companyName: blockingMessage != null ? null : companyName,
+        trustAttribution: blockingMessage != null ? null : branding?.trustAttribution,
         country: headerCountry,
         // Which steps get the whole body instead of the shared scroll view: see
         // _fillsViewport.
-        fillsViewport: configError == null && _fillsViewport(step),
+        fillsViewport: blockingMessage == null && _fillsViewport(step),
         child: keyedScreen,
       );
 
@@ -571,7 +597,7 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
       // Scoped to the document step as well as the flag: if that step unmounts
       // while the flag is still raised, the NEXT step must not inherit a
       // chrome-free shell.
-      final immersive = configError == null &&
+      final immersive = blockingMessage == null &&
           state.immersiveCapture &&
           step == KYCStep.documentCapture;
 
@@ -826,10 +852,17 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
 // ConfigErrorScreen and the styling of SubmittedScreen's error view.
 
 class _ConfigErrorScreen extends StatelessWidget {
+  final String title;
+  final MyazaIconData icon;
   final String message;
   final VoidCallback onClose;
 
-  const _ConfigErrorScreen({required this.message, required this.onClose});
+  const _ConfigErrorScreen({
+    required this.title,
+    required this.icon,
+    required this.message,
+    required this.onClose,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -859,8 +892,8 @@ class _ConfigErrorScreen extends StatelessWidget {
                   color: MyazaColors.error.withValues(alpha: 0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const MyazaIcon(
-                  MyazaIcons.circleAlert,
+                child: MyazaIcon(
+                  icon,
                   size: 40,
                   color: MyazaColors.error,
                 ),
@@ -868,7 +901,7 @@ class _ConfigErrorScreen extends StatelessWidget {
             ),
             const SizedBox(height: MyazaSpacing.lg),
             Text(
-              'Unable to start verification',
+              title,
               style: text.heading2,
               textAlign: TextAlign.center,
             ),

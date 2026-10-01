@@ -45,6 +45,10 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
     // Background presence tier: region monitoring + killed-app flush
     // (see PresenceChannel / PresenceMonitor).
     PresenceChannel.register(with: registrar)
+
+    // Device Intelligence: Keychain stable id, jailbreak / hook heuristics
+    // and App Attest (see DeviceIntelChannel).
+    DeviceIntelChannel.register(with: registrar)
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
