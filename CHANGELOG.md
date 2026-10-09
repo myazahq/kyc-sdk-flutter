@@ -1,3 +1,99 @@
+## 3.6.0
+
+A full-screen liveness camera, signing on screen, and no selfie review by default.
+
+**This version needs a native rebuild.** It adds native code on iOS (`pod install`) and Android.
+
+### The SDK now asks for location all the time
+
+On iPhone, and on Android 11 and later, the SDK never asked the person to allow location all the time. `MyazaBackgroundPresence.enable()` and `MyazaPresenceService.enable()` answered `backgroundDenied` unless the person had already chosen it in Settings, so background presence monitoring did not start and checks collected only app-open reports.
+
+The SDK now asks itself, on both platforms:
+
+- **iPhone** shows the "Change to Always Allow" prompt, once per install.
+- **Android 11 and later** opens your app's location settings page, where the person picks "Allow all the time". After two refusals Android shows nothing.
+
+After a refusal, send the person to Settings with `openLocationSettings()`.
+
+### People already being checked get background monitoring
+
+People who verified before this version were never asked for location all the time, and the SDK only asks right after a verification. `MyazaAddressPresence.report()`, the call your app already makes when it opens, now does it for them: when the person's check is still running (or their always-on monitoring is between two checks) and background monitoring is not on, the report switches it on.
+
+- The person sees the system's "allow all the time" prompt once. The SDK never asks again from a report, whatever they answer.
+- If they already allowed it in Settings, it is switched on with no prompt.
+- Nothing happens when the check has finished, monitoring was stopped, the server cannot be reached, or the workflow has background monitoring off.
+- The result carries `background` when the report tried, with the same reasons `enable()` gives.
+
+Your app still needs the background location declarations, as before. To show your own explanation first, pass `autoBackground: false` to `report()` and call `MyazaBackgroundPresence.enable()` when you are ready.
+
+### A stay is reported sooner
+
+The background tier recorded a stay when the person left, or at a "still here" check-in once it had run three hours. Someone who came home and stayed in therefore showed nothing for three hours. The first check-in of a stay now comes after 35 minutes; later ones stay at three hours. Android schedules a check-in about 40 minutes after each arrival, and iOS asks for its background refresh at the same point when your app has opted in. The OS still decides when one runs.
+
+`presenceStay()` returns the stay the phone has open (`since` and `nextReportAt`), or `null`, so your app can tell the person a report is on its way.
+
+### Reading the check's status
+
+`fetchPresenceWatchStatus(apiKey:, externalUserId:)` returns where the check stands on the server: its status, progress from 0 to 1, nights and days counted, and when it ends. It never throws; `null` means the server could not be reached.
+
+### The liveness camera is full screen
+
+While the liveness camera is live it now takes the whole screen. The camera runs edge to edge, sharp inside a tall window for the face and blurred around it, with the instruction above the window and the step count below. Back and close are drawn over the camera in the flow's own colours. The face is judged against the window, and a check that fails stays on the camera with the reason and Try Again.
+
+A phone that cannot keep up with the blur gets a plain tint around the window instead.
+
+The photo now waits for the person to face the camera and hold still, takes three frames and keeps the sharpest, and retakes by itself up to twice when the result is soft.
+
+No change to your code.
+
+### No selfie review unless you ask for one
+
+**This changes existing integrations.** After the liveness capture the SDK used to show the selfie with Retake and Continue. It now hands straight on to the next step. A liveness selfie is evidence, not a portrait, and the capture already waits for a face that is in the window and still.
+
+Switch the review back on with `selfieReview` on `MyazaKYCConfig`, or with the switch on the workflow's Presence Intelligence step. On a biometric workflow its own setting wins. A selfie that fails to upload still shows the review, which is where the retry is.
+
+### Going back to a finished liveness step
+
+Going back to the liveness step after the selfie is taken now shows "Selfie already taken" with the photo and Continue. There is no Retake, so the check runs once per session.
+
+### Sign a supporting document on screen
+
+A supporting document in a workflow can now be signed on screen. The workflow sets `capture` on the document: `upload` (the default, as before), `draw` (a signature drawn on screen) or `draw_or_upload` (either). The person signs in a box with Clear and an Expand button for more room, and "Use this signature" stays disabled until there is real ink. With `draw_or_upload` they can switch to "Upload a photo of your signature instead".
+
+After saving, the card shows the signature with an Edit action that reopens the box with the signature in it. A session picked up later shows a mark that it was signed, not the drawing itself.
+
+Existing workflows are unchanged: a document with no `capture` is uploaded as before. The server must be on a version that accepts drawn signatures.
+
+### The SDK stands down when monitoring is stopped
+
+When your organisation stops address monitoring for a user, the next `MyazaAddressPresence.report()` switches background location off and the Android foreground service, forgets the stored address and answers the new reason ``PresenceReportReason.stopped``. Before this the phone kept reporting to a check that no longer existed.
+
+`standDownPresence(externalUserId)` does the same on request. **If your code switches over every `PresenceReportReason`, add a case for `stopped`.**
+
+### The footer reads "Protected by"
+
+The footer under every step now reads "Protected by" with the Myaza mark, as the web SDK does. It read "Powered by". A custom footer logo already read "Protected by".
+
+### One spinner everywhere
+
+Every loading state now shows the same spinner as the web SDK, in place of the platform's own. The pulsing loader is that spinner too.
+
+### A natural smile passes on iPhone
+
+The smile step on iPhone asked for a wider smile than most people give. It now accepts a natural one.
+
+### The iPhone's own name on results
+
+The device reported with a verification read "iPhone". It now reads the model's name, for example "iPhone 16 Pro Max". This raises `device_info_plus` to `^11.3.0`.
+
+### The flash check tells the server when each colour came on
+
+The submission now carries the time each flash colour came on, measured from the start of the recording, so the server's own check of the recording looks in the right place. No change to your code, and an older server ignores the new field.
+
+### The hosted map gets longer to load
+
+The SDK waited 8 seconds for the hosted map before falling back to the built-in one. It now waits 20 seconds, which a slow connection needs. A picture or script on the map page that fails to load no longer sends the person to the built-in map.
+
 ## 3.5.0
 
 Device integrity and app attestation signals, and a screen for a cancelled verification.

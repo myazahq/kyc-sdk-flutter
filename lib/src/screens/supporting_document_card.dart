@@ -2,9 +2,13 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../config/signature.dart';
+import '../config/supporting_documents.dart';
 import '../config/theme.dart';
+import '../widgets/signature_preview.dart';
 import '../widgets/supporting_document_parts.dart';
 import 'business_document_slot.dart';
+import 'supporting_document_signature.dart';
 
 // ─── One requested supporting document ───────────────────────────────────────
 //
@@ -18,7 +22,7 @@ import 'business_document_slot.dart';
 //
 // MIRRORS the web SDK's SupportingDocumentCard. Keep the two in step.
 
-class SupportingDocumentCard extends StatelessWidget {
+class SupportingDocumentCard extends StatefulWidget {
   const SupportingDocumentCard({
     super.key,
     required this.position,
@@ -35,7 +39,17 @@ class SupportingDocumentCard extends StatelessWidget {
     this.error,
     this.onTap,
     this.onRemove,
+    this.capture = SupportingDocumentCapture.upload,
+    this.drawn = false,
+    this.onSign,
   });
+
+  /// How it is provided: a file, a signature drawn on screen, or either.
+  final SupportingDocumentCapture capture;
+
+  /// The provided document was signed on screen.
+  final bool drawn;
+  final ValueChanged<SignatureDrawing>? onSign;
 
   /// 1-based, so the list reads as a checklist rather than a pile.
   final int position;
@@ -59,10 +73,37 @@ class SupportingDocumentCard extends StatelessWidget {
   final VoidCallback? onRemove;
 
   @override
+  State<SupportingDocumentCard> createState() => _SupportingDocumentCardState();
+}
+
+class _SupportingDocumentCardState extends State<SupportingDocumentCard> {
+  // Where the workflow offers both, the pad comes first: it is the shorter way.
+  bool _uploadInstead = false;
+
+  // What was signed, kept so it can be shown once saved and reopened by Edit.
+  // It lives only as long as this screen: a resumed session shows the pen mark.
+  SignatureDrawing? _signed;
+
+  @override
   Widget build(BuildContext context) {
     final colors = context.myazaColors;
     final text = context.myazaText;
+    final position = widget.position;
+    final total = widget.total;
+    final label = widget.label;
+    final description = widget.description;
+    final required = widget.required;
+    final reads = widget.reads;
+    final fileName = widget.fileName;
+    final uploading = widget.uploading;
+    final error = widget.error;
+    final capture = widget.capture;
     final done = fileName != null && !uploading;
+    final both = capture == SupportingDocumentCapture.drawOrUpload;
+    final signing = capture != SupportingDocumentCapture.upload &&
+        !_uploadInstead &&
+        fileName == null &&
+        widget.onSign != null;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: MyazaSpacing.md),
@@ -87,7 +128,8 @@ class SupportingDocumentCard extends StatelessWidget {
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      DocumentMarker(done: done, position: position, total: total),
+                      DocumentMarker(
+                          done: done, position: position, total: total),
                       const SizedBox(width: MyazaSpacing.sm + 4),
                       Expanded(
                         child: Column(
@@ -96,14 +138,16 @@ class SupportingDocumentCard extends StatelessWidget {
                           children: [
                             Text(
                               label,
-                              style: text.label.copyWith(fontWeight: FontWeight.w600),
+                              style: text.label
+                                  .copyWith(fontWeight: FontWeight.w600),
                             ),
                             if (description != null) ...[
                               const SizedBox(height: 4),
                               Text(
-                                description!,
+                                description,
                                 style: text.bodySmall.copyWith(
-                                  color: colors.textDark.withValues(alpha: 0.75),
+                                  color:
+                                      colors.textDark.withValues(alpha: 0.75),
                                 ),
                               ),
                             ],
@@ -124,19 +168,79 @@ class SupportingDocumentCard extends StatelessWidget {
             Divider(height: 1, thickness: 1, color: colors.border),
             Padding(
               padding: const EdgeInsets.all(MyazaSpacing.sm + 4),
-              child: BusinessDocumentSlot(
-                label: label,
-                required: required,
-                fileName: fileName,
-                previewBytes: previewBytes,
-                previewPath: previewPath,
-                isPdf: isPdf,
-                uploading: uploading,
-                error: error,
-                onTap: onTap,
-                onRemove: onRemove,
-                compact: true,
-              ),
+              child: signing
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SupportingDocumentSignature(
+                          label: label,
+                          saving: uploading,
+                          initial: _signed,
+                          onSave: (drawing) {
+                            setState(() => _signed = drawing);
+                            widget.onSign!(drawing);
+                          },
+                          onUploadInstead: both
+                              ? () => setState(() => _uploadInstead = true)
+                              : null,
+                        ),
+                        if (error != null) ...[
+                          const SizedBox(height: MyazaSpacing.sm),
+                          Text(error,
+                              style: text.bodySmall
+                                  .copyWith(color: MyazaColors.error)),
+                        ],
+                      ],
+                    )
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (widget.drawn && done) ...[
+                          SignedSignatureRow(
+                            drawing: _signed,
+                            label: label,
+                            // Edit reopens the pad with the signature in it.
+                            onEdit: widget.onRemove,
+                            onRemove: () {
+                              setState(() => _signed = null);
+                              widget.onRemove?.call();
+                            },
+                          ),
+                          if (error != null) ...[
+                            const SizedBox(height: MyazaSpacing.sm),
+                            Text(error,
+                                style: text.bodySmall
+                                    .copyWith(color: MyazaColors.error)),
+                          ],
+                        ] else
+                          BusinessDocumentSlot(
+                            label: label,
+                            required: required,
+                            fileName: fileName,
+                            previewBytes: widget.previewBytes,
+                            previewPath: widget.previewPath,
+                            isPdf: widget.isPdf,
+                            uploading: uploading,
+                            error: error,
+                            onTap: widget.onTap,
+                            onRemove: widget.onRemove,
+                            compact: true,
+                          ),
+                        if (both && _uploadInstead && fileName == null)
+                          TextButton(
+                            onPressed: uploading
+                                ? null
+                                : () => setState(() => _uploadInstead = false),
+                            style: TextButton.styleFrom(
+                              minimumSize: const Size(48, 48),
+                              foregroundColor: colors.primary,
+                            ),
+                            child: const Text('Sign on screen instead'),
+                          ),
+                      ],
+                    ),
             ),
           ],
         ),

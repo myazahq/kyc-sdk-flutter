@@ -9,6 +9,7 @@ import '../config/map_frame.dart';
 import '../config/theme.dart';
 import '../utils/map_tiles.dart' show MapLatLng;
 import 'map_pin_picker.dart';
+import 'myaza_spinner.dart';
 
 // ─── Framed map picker ───────────────────────────────────────────────────────
 //
@@ -95,7 +96,11 @@ class _FramedMapPickerState extends State<FramedMapPicker> {
         onMessageReceived: (message) => _onMessage(message.message),
       )
       ..setNavigationDelegate(NavigationDelegate(
-        onWebResourceError: (_) => _fail(),
+        onWebResourceError: (error) {
+          if (frameLoadFailed(isForMainFrame: error.isForMainFrame, ready: _ready)) {
+            _fail();
+          }
+        },
       ))
       ..loadRequest(Uri.parse(src));
     setState(() => _controller = controller);
@@ -181,7 +186,7 @@ class _FramedMapPickerState extends State<FramedMapPicker> {
                 child: Center(
                   child: SizedBox.square(
                     dimension: 20,
-                    child: CircularProgressIndicator(
+                    child: MyazaSpinner(
                       strokeWidth: 2,
                       color: colors.primary,
                     ),

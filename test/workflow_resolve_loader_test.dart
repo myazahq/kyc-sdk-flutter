@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:myaza_kyc_sdk_flutter/myaza_kyc_sdk_flutter.dart';
 import 'package:myaza_kyc_sdk_flutter/src/config/theme.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/workflow_gate.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/myaza_spinner.dart';
 
 // ─── The resolve loader wears the caller's brand ──────────────────────────────
 //
@@ -13,7 +14,7 @@ import 'package:myaza_kyc_sdk_flutter/src/widgets/workflow_gate.dart';
 // instant it opens.
 
 Color _spinnerColour(WidgetTester tester) => tester
-    .widget<CircularProgressIndicator>(find.byType(CircularProgressIndicator))
+    .widget<MyazaSpinner>(find.byType(MyazaSpinner))
     .color!;
 
 // The pulse loader animates forever (flutter_animate `repeat()`), so the widget

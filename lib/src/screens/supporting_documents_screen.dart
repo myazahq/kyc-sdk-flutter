@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../config/signature.dart';
 import '../config/supporting_documents.dart';
 import '../config/theme.dart';
 import '../config/upload_limits.dart';
@@ -95,6 +96,7 @@ class _SupportingDocumentsScreenState
           fileName: file.fileName,
           previewPath: file.previewPath,
           isPdf: isPdf,
+          method: 'uploaded',
         ),
       );
       setState(() => _uploadingKey = null);
@@ -103,6 +105,40 @@ class _SupportingDocumentsScreenState
       widget.onError?.call(e);
     } catch (_) {
       _fail(key, 'Upload failed. Please try again.');
+    }
+  }
+
+  Future<void> _sign(ResolvedSupportingDocument slot, SignatureDrawing drawing) async {
+    const empty = 'Please sign in the box first.';
+    const failed =
+        'Your signature could not be saved. Please check your connection and try again.';
+    final key = slot.key;
+    if (!drawing.hasSignature) {
+      _fail(key, empty);
+      return;
+    }
+    setState(() {
+      _errors.remove(key);
+      _uploadingKey = key;
+    });
+    try {
+      final notifier = ref.read(kYCNotifierProvider.notifier);
+      final mediaId = await notifier.api.uploadSignature(drawing);
+      if (!mounted) return;
+      notifier.setSupportingDocument(
+        SupportingDocumentUpload(
+          type: key,
+          mediaId: mediaId,
+          fileName: slot.label,
+          method: 'drawn',
+        ),
+      );
+      setState(() => _uploadingKey = null);
+    } on KYCApiException catch (e) {
+      _fail(key, e.error == 'signature_empty' ? empty : failed);
+      widget.onError?.call(e);
+    } catch (_) {
+      _fail(key, failed);
     }
   }
 
@@ -166,6 +202,9 @@ class _SupportingDocumentsScreenState
                 (uploadFor(slot.key)?.isPdf ?? false),
             uploading: _uploadingKey == slot.key,
             error: _errors[slot.key],
+            capture: slot.capture,
+            drawn: uploadFor(slot.key)?.method == 'drawn',
+            onSign: (drawing) => _sign(slot, drawing),
             onTap: () => _pick(slot.key),
             onRemove: () => _remove(slot.key),
           ),

@@ -134,7 +134,12 @@ class DeviceMetadataService {
         'device': {
           'type': _inferIosType(i.model),
           'vendor': 'Apple',
-          'model': i.model,
+          // The name people know the phone by ("iPhone 16 Pro Max"). `model`
+          // on iOS is only the family ("iPhone"), which is why results showed
+          // "Apple iPhone". A phone newer than the plugin's table has no
+          // name yet and falls back to the family; the hardware code below
+          // still identifies it exactly.
+          'model': i.modelName.trim().isNotEmpty ? i.modelName.trim() : i.model,
           'name': i.name,
           'localizedModel': i.localizedModel,
           'utsnameMachine': i.utsname.machine,

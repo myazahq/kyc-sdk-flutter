@@ -10,6 +10,7 @@ import '../config/theme.dart';
 import 'myaza_button.dart';
 import 'icons/icons.dart';
 import '../i18n/text_scope.dart';
+import 'myaza_spinner.dart';
 
 // ─── Gallery-photo cropper ────────────────────────────────────────────────────
 //
@@ -291,7 +292,7 @@ class _DocumentCropperScreenState extends State<DocumentCropperScreen> {
           Expanded(
             child: _naturalSize == null
                 ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
+                    child: MyazaSpinner(color: Colors.white),
                   )
                 : LayoutBuilder(builder: (ctx, cons) {
                     final imgR = _computeImgRect(cons.biggest);

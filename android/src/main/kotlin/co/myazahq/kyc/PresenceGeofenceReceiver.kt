@@ -22,7 +22,10 @@ class PresenceGeofenceReceiver : BroadcastReceiver() {
     if (!store.armed) return
     when (event.geofenceTransition) {
       Geofence.GEOFENCE_TRANSITION_ENTER -> {
-        store.enterAt = System.currentTimeMillis()
+        val now = System.currentTimeMillis()
+        store.enterAt = now
+        store.stayStart = now
+        PresenceCheckInWorker.scheduleFirst(context)
       }
       Geofence.GEOFENCE_TRANSITION_EXIT -> {
         val enteredAt = store.enterAt ?: return

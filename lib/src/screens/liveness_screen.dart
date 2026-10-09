@@ -5,9 +5,10 @@ import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart'
-    show Uint8List, ValueListenable, ValueNotifier, kDebugMode, debugPrint;
+    show compute, Uint8List, ValueListenable, ValueNotifier, kDebugMode, debugPrint;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -21,9 +22,12 @@ import '../config/liveness_avatar_url.dart';
 import '../services/model_readiness.dart';
 import '../config/selfie_upload_wait.dart';
 import 'liveness_handover.dart';
+import 'liveness_immersive.dart';
 import '../config/theme.dart';
 import '../widgets/selfie_soft_notice.dart';
+import '../liveness/capture_pose.dart';
 import '../liveness/face_detection.dart';
+import '../liveness/face_window.dart';
 import '../liveness/capture_tuning.dart';
 import '../liveness/challenge_manager.dart';
 import '../liveness/face_rgb_sampler.dart';
@@ -34,9 +38,12 @@ import '../config/bright_screen.dart';
 import '../providers/theme_provider.dart' show livenessCameraOnProvider;
 import '../liveness/flash_detector.dart';
 import '../liveness/liveness_types.dart';
+import '../liveness/sharpest_still.dart';
+import '../utils/selfie_sharpness.dart';
 import '../liveness/native_liveness_recorder.dart';
 import '../providers/camera_provider.dart';
 import '../providers/kyc_provider.dart';
+import '../providers/kyc_state.dart';
 import '../providers/liveness_provider.dart';
 import '../services/api_service.dart';
 import '../services/image_service.dart';
@@ -54,6 +61,7 @@ import '../widgets/native_camera_preview.dart';
 import '../widgets/myaza_button.dart';
 import '../widgets/icons/icons.dart';
 import '../i18n/text_scope.dart';
+import '../widgets/myaza_spinner.dart';
 
 // ─── Liveness screen ──────────────────────────────────────────────────────────
 
@@ -114,6 +122,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         ..reset()
         ..start();
     }
+    // Full screen, the line stands still while the face is out of the window
+    // (or out of sight): time passing with nobody in position is not progress.
+    final outOfPlace = _wantsImmersive &&
+        l.phase == LivenessPhase.challenge &&
+        (l.positionGuidance != null || !l.faceDetected || l.multipleFaces);
+    if (outOfPlace) {
+      _phaseClock.stop();
+    } else if (!_phaseClock.isRunning) {
+      _phaseClock.start();
+    }
     final timeout =
         (ref.read(kycConfigProvider).livenessConfig?.timeoutPerChallenge ?? 8)
             .toDouble();
@@ -136,7 +154,9 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       _ringColor.value = Color.lerp(_ringPrimary, MyazaColors.success, t)!;
       // The one rebuild this ticker ever asks for: hand over to the review once
       // the close has been SEEN (ring settled, green landed, shutter faded).
-      if (t >= 1 && !_reviewReady && elapsed.inMilliseconds - _greenSinceMs! >= 600) {
+      if (t >= 1 &&
+          !_reviewReady &&
+          elapsed.inMilliseconds - _greenSinceMs! >= _closeHoldMs()) {
         setState(() => _reviewReady = true);
       }
     }
@@ -197,6 +217,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   // so a user who drifts out of frame gets a selfie of nothing, which then
   // fails facial comparison. Null until the first detection.
   DateTime? _lastFaceSeenAt;
+
+  /// The face in the most recent frame that had one: what the photo's
+  /// straight-face wait reads.
+  LivenessFaceData? _lastFace;
   bool _completionHandled = false;
   int _sensorOrientation = 0;
   bool _isDim = false;
@@ -579,6 +603,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     final notifier = ref.read(livenessNotifierProvider.notifier);
     if (data != null) {
       _lastFaceSeenAt = DateTime.now();
+      _lastFace = data;
       // The native (Android) recorder owns the camera, so the raw frame never
       // reaches _onCameraImage — it ships the mean luma + face-region RGB with
       // the face data so lighting guidance AND flash liveness work here.
@@ -612,6 +637,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       final notifier = ref.read(livenessNotifierProvider.notifier);
       if (faceData != null) {
         _lastFaceSeenAt = DateTime.now();
+        _lastFace = faceData;
         // Snapshot THIS frame (the one detection ran on) as the selfie source.
         // `image` here is the exact frame that was found to contain a face.
         if (_selfieFromCachedFrame && image.planes.isNotEmpty) {
@@ -641,10 +667,12 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     if (level == null) return; // not yet time to sample
     final nowDim = level == _LightLevel.dark;
     final nowBright = level == _LightLevel.bright;
-    if ((nowDim != _isDim || nowBright != _isBright) && mounted) {
+    final lights = nowDim && !_litForDimRoom;
+    if ((nowDim != _isDim || nowBright != _isBright || lights) && mounted) {
       setState(() {
         _isDim = nowDim;
         _isBright = nowBright;
+        if (lights) _litForDimRoom = true;
       });
     }
     // Feed the gate into the liveness state machine so it won't start
@@ -724,6 +752,32 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       await Future<void>.delayed(const Duration(milliseconds: 60));
     }
     return false;
+  }
+
+  /// Waits until the face has looked straight at the camera for a moment
+  /// (capture_pose.dart), saying so if it does not settle by itself. Returns
+  /// after [kStraightTimeout] whatever the face is doing: the photo is then
+  /// taken as it always was, since nobody may be trapped on the camera.
+  Future<void> _awaitStraightFace() async {
+    final watch = StraightWatch();
+    final started = DateTime.now();
+    DateTime? fedAt;
+    while (mounted) {
+      final now = DateTime.now();
+      final waited = now.difference(started);
+      if (waited >= kStraightTimeout) return;
+      final seen = _lastFaceSeenAt;
+      final face = _lastFace;
+      // Each frame counts once; a stale one says nothing about now.
+      if (face != null && seen != null && seen != fedAt && seen.isAfter(started)) {
+        fedAt = seen;
+        if (watch.update(face, seen)) return;
+      }
+      if (waited >= kStraightPromptAfter) {
+        ref.read(livenessNotifierProvider.notifier).askForStraightFace();
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 40));
+    }
   }
 
   /// Drops back to positioning after the face was lost, instead of capturing an
@@ -919,10 +973,11 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       return;
     }
 
-    // Let the face settle after the final gesture (a nod/turn leaves the head
-    // still moving for a moment). The frame stream keeps running during this
-    // delay, so the cached frame advances to a steadier one before capture.
-    await Future<void>.delayed(const Duration(milliseconds: 300));
+    // Wait for the face to come back to the camera and stay there. A turn or
+    // a nod leaves the head still moving, and the photo used to be taken a
+    // fixed 300 ms later, often mid-turn. The frame stream keeps running, so
+    // the frame that is photographed is one of the straight ones.
+    await _awaitStraightFace();
     if (!mounted) return;
 
     // Don't capture an empty frame. The face can leave during the flash and
@@ -943,18 +998,19 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // iOS fast path.
     final nativeRecorder = _nativeRecorder;
     if (_useNativeRecorder && nativeRecorder != null) {
-      final selfie = await nativeRecorder.captureStill(
-        quality: CaptureConfig.selfieImageQuality,
-      );
+      // The native still is already a rotated, mirrored JPEG of a PREVIEW
+      // frame, so it is only size-bounded (under 1 MB), never exposure-lifted:
+      // the lift is tuned for takePicture stills and brightened this frame
+      // past what the user saw on screen.
+      final processed = await _sharpestStill(() async {
+        final selfie = await nativeRecorder.captureStill(
+          quality: CaptureConfig.selfieImageQuality,
+        );
+        return selfie == null ? null : processSelfieStreamStill(selfie);
+      });
       if (!mounted) return;
 
-      if (selfie != null) {
-        // The native still is already a rotated, mirrored JPEG of a PREVIEW
-        // frame, so it is only size-bounded (under 1 MB), never exposure-lifted:
-        // the lift is tuned for takePicture stills and brightened this frame
-        // past what the user saw on screen.
-        final processed = await processSelfieStreamStill(selfie);
-        if (!mounted) return;
+      if (processed != null) {
         ref
             .read(livenessNotifierProvider.notifier)
             .captureSelfieEncoded(processed);
@@ -986,10 +1042,10 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       // The last frame with a CONFIRMED face, not the latest frame — the latest
       // may be blank if the face just left. The capture gate above guaranteed a
       // fresh face, so this is both recent AND non-empty.
-      final frame = _lastFaceFrameBytes;
-      Uint8List? selfie;
-      if (frame != null && _lastFaceFrameWidth > 0) {
-        selfie = await processSelfieFrame(
+      final selfie = await _sharpestStill(() async {
+        final frame = _lastFaceFrameBytes;
+        if (frame == null || _lastFaceFrameWidth <= 0) return null;
+        return processSelfieFrame(
           bytes: frame,
           width: _lastFaceFrameWidth,
           height: _lastFaceFrameHeight,
@@ -1000,7 +1056,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
           // UN-mirror the selfie. Keep it as-is to preserve the selfie mirror.
           mirror: false,
         );
-      }
+      });
       if (!mounted) return;
 
       if (selfie != null) {
@@ -1270,17 +1326,84 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   // that already failed keeps the review, whose Try Again is the recovery.
   bool _handedOver = false;
 
-  bool get _selfieReviewShown => ref.read(kycConfigProvider).showsSelfieReviewOption;
+  /// The review is shown when the workflow asks for it, and also when the
+  /// selfie stayed soft through every automatic retake: its notice and its
+  /// Retake are then the way out (liveness/sharpest_still.dart).
+  bool get _selfieReviewShown =>
+      ref.read(kycConfigProvider).showsSelfieReviewOption || _softSelfie;
+
+  /// The selfie kept is still soft after the automatic retakes.
+  bool _softSelfie = false;
+
+  /// Takes a few photos through [grab] and answers with the sharpest, taking
+  /// them again by itself while even that one is soft. Null only when no
+  /// photo could be taken at all.
+  Future<Uint8List?> _sharpestStill(Future<Uint8List?> Function() grab) async {
+    final notifier = ref.read(livenessNotifierProvider.notifier);
+    ScoredStill? best;
+    for (var attempt = 0; attempt <= kSoftRetakes; attempt++) {
+      if (attempt > 0) {
+        notifier.askToHoldForRetake();
+        await _awaitStraightFace();
+        if (!mounted) return null;
+      }
+      final scoring = <Future<ScoredStill>>[];
+      for (var shot = 0; shot < kStillBurst; shot++) {
+        if (shot > 0) await Future<void>.delayed(kStillBurstGap);
+        final bytes = await grab();
+        if (!mounted) return null;
+        if (bytes == null) continue;
+        // Measured off the UI thread while the next photo is taken.
+        scoring.add(compute(measureSelfieSharpnessBytes, bytes)
+            .then((score) => ScoredStill(bytes, score))
+            .catchError((Object _) => ScoredStill(bytes, null)));
+      }
+      final shots = await Future.wait(scoring);
+      if (!mounted) return null;
+      best = sharpestOf([if (best != null) best, ...shots]);
+      if (best == null) return null;
+      if (!best.soft) {
+        _softSelfie = false;
+        return best.bytes;
+      }
+    }
+    _softSelfie = true;
+    return best?.bytes;
+  }
 
   /// Advance exactly once, on the first build on which the selfie is ready.
   Widget _handOver() {
     if (!_handedOver) {
       _handedOver = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) ref.read(kYCNotifierProvider.notifier).nextStep();
+        if (!mounted) return;
+        ref.read(kYCNotifierProvider.notifier).nextStep();
+        _leftStep = true;
       });
     }
     return const LivenessHandover();
+  }
+
+  /// The flow has moved on from this step once. Coming back to it shows the
+  /// "already taken" screen, never a second hand-over and never the camera.
+  bool _leftStep = false;
+
+  /// The step as it reads once its selfie is taken and the person returns:
+  /// the photo, a line saying it is done, and Continue. No retake, so the
+  /// check runs once per session.
+  Widget _alreadyTaken(KYCState kyc) {
+    final done = _SelfieReviewView(
+      immersive: kyc.selfieImage != null,
+      done: true,
+      selfieBase64: kyc.selfieImage,
+      onRetake: () {},
+      onContinue: _onSelfieAccepted,
+      isUploading: _isUploadingSelfie,
+      uploadError: _selfieUploadError,
+      retryInfo: _selfieRetryInfo,
+      onDismissError: () => setState(() => _selfieUploadError = null),
+    );
+    return kyc.selfieImage != null ? _fullScreen(done) : done;
   }
 
   /// Continue button. The upload was kicked off eagerly when the selfie was
@@ -1304,6 +1427,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     // re-open the review the retake is trying to leave.
     ref.read(kYCNotifierProvider.notifier).clearSelfie();
     setState(() {
+      _softSelfie = false;
       _capturingHandled = false;
       _completionHandled = false;
       _processing = false;
@@ -1334,6 +1458,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
   static String _guidanceText(String guidance) => switch (guidance) {
     'too_far'   => 'Kindly move closer',
     'too_close' => 'Kindly move further away',
+    'off_centre' => 'Centre your face in the frame',
     _           => '',
   };
 
@@ -1370,8 +1495,113 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
 
   // ── Build ──────────────────────────────────────────────────────────────────
 
+  /// Whether this build ends on the live camera, which takes the whole screen.
+  bool _wantsImmersive = false;
+
+  /// How long the frame is held after the photo before the review takes
+  /// over: the close of the ring, and full screen the scan that follows it.
+  int _closeHoldMs() {
+    final scans = _wantsImmersive &&
+        !WidgetsBinding
+            .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+    return scans ? kLivenessScanHoldMs : 600;
+  }
+
+  /// Marks this build as one that takes the whole screen, and returns
+  /// [screen] once the shell has handed it over. For the frame or two before
+  /// that, this still sits in the sheet's scroll view, where a full-screen
+  /// layout has no height to fill; nothing is drawn then, rather than the
+  /// sheet's old circle flashing up first.
+  Widget _fullScreen(Widget screen) {
+    _wantsImmersive = true;
+    final handedOver =
+        ref.watch(kYCNotifierProvider.select((s) => s.immersiveCapture));
+    return handedOver ? screen : const SizedBox(height: 320);
+  }
+
+  FaceWindow? _reportedWindow;
+
+  /// The box the full-screen camera is drawn in, as its own layout measured
+  /// it. The window is worked out from this box, so the face is judged
+  /// against it too; the screen's size is only the answer until the first
+  /// layout has run.
+  Size? _frameSize;
+
+  void _onFrameSize(Size size) {
+    if (size == _frameSize) return;
+    _frameSize = size;
+    if (!mounted) return;
+    _syncFaceWindow(
+      context,
+      ref.read(cameraNotifierProvider.notifier).controller,
+    );
+  }
+
+  /// The room has read as dark since the camera opened. Latched: more of the
+  /// screen is then given to the light background, which brightens the face,
+  /// and a tint that followed the reading would drop again and flicker.
+  bool _litForDimRoom = false;
+
+  /// Tells the state machine how much of the camera frame the full-screen
+  /// window shows, so it judges the face against the window. Null in the
+  /// sheet, where the circle shows the whole frame.
+  void _syncFaceWindow(BuildContext context, CameraController? controller) {
+    FaceWindow? window;
+    if (_wantsImmersive) {
+      double? aspect;
+      if (_nativeTextureId != null && _nativePreviewW > 0 && _nativePreviewH > 0) {
+        aspect = math.min(_nativePreviewW, _nativePreviewH) /
+            math.max(_nativePreviewW, _nativePreviewH);
+      } else {
+        final preview = controller?.value.previewSize;
+        // Reported sideways: the longer edge is the upright height.
+        if (preview != null && preview.longestSide > 0) {
+          aspect = preview.shortestSide / preview.longestSide;
+        }
+      }
+      if (aspect != null) {
+        final screen = _frameSize ?? MediaQuery.sizeOf(context);
+        window = faceWindowFor(
+          screen: screen,
+          window: livenessCutout(screen),
+          frameAspect: aspect,
+          drop: livenessWindowDrop(
+            screen,
+            livenessCutout(screen),
+            MediaQueryData.fromView(View.of(context)).viewPadding.top,
+          ),
+        );
+      }
+    }
+    if (window == _reportedWindow) return;
+    _reportedWindow = window;
+    ref.read(livenessNotifierProvider.notifier).setFaceWindow(window);
+  }
+
+  /// Tells the shell whether the full-screen camera is on. Deferred to after
+  /// the frame (it is decided during build) and compared against the SHELL's
+  /// value, never a local copy: see DocumentCaptureScreen._syncImmersive.
+  void _syncImmersive(bool wanted) {
+    if (ref.read(kYCNotifierProvider).immersiveCapture == wanted) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(kYCNotifierProvider.notifier).setImmersiveCapture(wanted);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    _wantsImmersive = false;
+    final content = _content(context);
+    _syncImmersive(_wantsImmersive);
+    _syncFaceWindow(
+      context,
+      ref.read(cameraNotifierProvider.notifier).controller,
+    );
+    return content;
+  }
+
+  Widget _content(BuildContext context) {
     final livenessState = ref.watch(livenessNotifierProvider);
     final cameraState = ref.watch(cameraNotifierProvider);
     final controller =
@@ -1414,6 +1644,13 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       }
 
       if (phaseChanged) {
+        // A tap in the hand for each step that lands, and a firmer one for
+        // the photo: the screen is being looked at, not read.
+        if (next.phase == LivenessPhase.challengePassed) {
+          HapticFeedback.lightImpact();
+        } else if (next.phase == LivenessPhase.complete) {
+          HapticFeedback.mediumImpact();
+        }
         if (next.phase == LivenessPhase.capturing) {
           _handleCapture();
         } else if (next.phase == LivenessPhase.complete &&
@@ -1432,8 +1669,14 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     final kycForReview = ref.watch(kYCNotifierProvider);
     if ((kycForReview.selfieImage != null || kycForReview.mediaIds.selfie != null) &&
         livenessState.phase != LivenessPhase.complete) {
-      if (!_selfieReviewShown && _selfieUploadError == null) return _handOver();
-      return _SelfieReviewView(
+      // Review off: the person came back to a finished step (or resumed a
+      // session past it). It says so; it does not run again.
+      if (!_selfieReviewShown && _selfieUploadError == null) {
+        return _alreadyTaken(kycForReview);
+      }
+      // With a photo to show, the review keeps the whole screen.
+      final review = _SelfieReviewView(
+        immersive: kycForReview.selfieImage != null,
         selfieBase64: kycForReview.selfieImage,
         onRetake: () {
           ref.read(kYCNotifierProvider.notifier).clearSelfie();
@@ -1446,6 +1689,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         retryInfo: _selfieRetryInfo,
         onDismissError: () => setState(() => _selfieUploadError = null),
       );
+      return kycForReview.selfieImage != null ? _fullScreen(review) : review;
     }
 
     // "Here's what happens next" — shown before the permission primer, so the
@@ -1472,7 +1716,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       );
     }
     if (faceModel == ModelReadyState.preparing) {
-      return const _LoadingView();
+      return _fullScreen(const _ImmersiveLoading());
     }
 
     // Camera-access primer — shown before the OS prompt (camera not yet started).
@@ -1508,7 +1752,12 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
     }
 
     if (livenessState.phase == LivenessPhase.loading) {
-      return _LoadingView(error: cameraState.error);
+      // A camera that failed to start has something to say, and says it in
+      // the sheet. One that is only starting already has the screen.
+      if (cameraState.error != null) {
+        return _LoadingView(error: cameraState.error);
+      }
+      return _fullScreen(const _ImmersiveLoading());
     }
 
     // The ACTIVE flow's own review, once the close has been SEEN: with the
@@ -1518,10 +1767,16 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
         _reviewReady &&
         !_selfieReviewShown &&
         _selfieUploadError == null) {
+      if (_leftStep && kycForReview.currentStep == KYCStep.liveness) {
+        return _alreadyTaken(kycForReview);
+      }
       return _handOver();
     }
 
-    return _ActiveView(
+    // The camera is live from here to the shutter, so it has the whole screen,
+    // and the review that follows keeps it.
+    return _fullScreen(_ActiveView(
+      immersive: true,
       avatarUrl: livenessState.activeChallenge == null
           ? null
           : livenessAvatarUrl(
@@ -1540,6 +1795,8 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       nativePreviewH: _nativePreviewH,
       isDim: _isDim,
       isBright: _isBright,
+      onFrameSize: _onFrameSize,
+      litForDimRoom: _litForDimRoom,
       onRetry: livenessState.isFailed ? _retryLiveness : null,
       onSelfieAccepted: _onSelfieAccepted,
       onRetakeSelfie: _retryLiveness,
@@ -1547,7 +1804,7 @@ class _LivenessScreenState extends ConsumerState<LivenessScreen>
       selfieUploadError: _selfieUploadError,
       selfieRetryInfo: _selfieRetryInfo,
       onDismissUploadError: () => setState(() => _selfieUploadError = null),
-    );
+    ));
   }
 }
 
@@ -1704,7 +1961,7 @@ class _PulseLoader extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.all(15),
-              child: CircularProgressIndicator(
+              child: MyazaSpinner(
                 color: color,
                 strokeWidth: 3,
               ),
@@ -1755,8 +2012,23 @@ class _ActiveView extends StatelessWidget {
   /// when the key is malformed). Resolved here because the screen holds config.
   final String? avatarUrl;
 
+  /// The camera has the whole screen: feed edge to edge, blurred everywhere
+  /// but a circle for the face (liveness_immersive.dart).
+  final bool immersive;
+
+  /// Full screen: the box the camera is drawn in, so the face is judged
+  /// against the window that is actually on screen.
+  final ValueChanged<Size>? onFrameSize;
+
+  /// Full screen: the room has been dark, so more of the display is given
+  /// back to the light background to light the face.
+  final bool litForDimRoom;
+
   const _ActiveView({
     this.avatarUrl,
+    this.immersive = false,
+    this.onFrameSize,
+    this.litForDimRoom = false,
     required this.ring,
     required this.ringColor,
     required this.previewKey,
@@ -1788,6 +2060,7 @@ class _ActiveView extends StatelessWidget {
         livenessState.selfieBase64 != null &&
         reviewReady) {
       return _SelfieReviewView(
+        immersive: immersive,
         selfieBase64: livenessState.selfieBase64!,
         onRetake: onRetakeSelfie,
         onContinue: onSelfieAccepted,
@@ -1798,20 +2071,182 @@ class _ActiveView extends StatelessWidget {
       );
     }
 
+    final hasWarning = livenessState.wrongGesture ||
+        livenessState.positionGuidance != null ||
+        livenessState.multipleFaces ||
+        livenessState.lightingGuidance != null;
+
+    Widget instructionWith({Widget? leading}) => _InstructionBanner(
+      overCamera: immersive,
+      leading: leading,
+      phase: phase,
+      instruction:
+          presenceInstruction(livenessState.instruction, context.kycText),
+      faceDetected: livenessState.faceDetected,
+      positionGuidance: livenessState.positionGuidance,
+      wrongGesture: livenessState.wrongGesture,
+      multipleFaces: livenessState.multipleFaces,
+      lightingGuidance: livenessState.lightingGuidance,
+    );
+    final instruction = instructionWith();
+
+    Widget circle({Size? frame, bool cutout = false}) => _CameraCircle(
+          key: previewKey,
+          controller: controller,
+          nativeTextureId: nativeTextureId,
+          nativePreviewW: nativePreviewW,
+          nativePreviewH: nativePreviewH,
+          phase: phase,
+          faceDetected: livenessState.faceDetected,
+          flashReadyProgress: livenessState.flashReadyProgress,
+          ring: ring,
+          ringColor: ringColor,
+          hasWarning: hasWarning,
+          frame: frame,
+          cutout: cutout,
+          segments: livenessState.totalCount + 2,
+        );
+
+    // Everything under the camera: where the test has got to, then either the
+    // gesture being asked for or, once time is up, the way to try again.
+    final below = <Widget>[
+      if (!immersive && livenessState.totalCount > 0)
+        _StepIndicators(
+          completedCount: livenessState.completedCount,
+          totalCount: livenessState.totalCount,
+          phase: phase,
+        ),
+      if (isFailed) ...[
+        SizedBox(height: immersive ? 0 : MyazaSpacing.md),
+        Text(
+          "Time's up. Let's try again.",
+          style: context.myazaText.bodyMedium.copyWith(
+            color: MyazaColors.error,
+            fontWeight: FontWeight.w500,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: MyazaSpacing.lg),
+        MyazaButton(label: 'Try Again', onPressed: onRetry),
+      ] else if (!immersive) ...[
+        const SizedBox(height: MyazaSpacing.xl),
+        Center(
+          child: LivenessAvatar(
+            activeChallenge: livenessState.activeChallenge,
+            phase: phase,
+            size: layout.avatar,
+            iconSize: layout.avatarIcon,
+            avatarUrl: avatarUrl,
+          ),
+        ),
+      ],
+    ];
+
+    if (immersive) {
+      // The gesture being asked for, shown ABOVE the window with the words it
+      // illustrates. The front camera is at the top of the phone: eyes that
+      // go up to read stay near the lens, while eyes that drop to the bottom
+      // of the screen tip the head down, which is the wrong pose for the
+      // photo and for a nod or a blink being judged.
+      final challenge = livenessState.activeChallenge;
+      final showsGesture = !isFailed &&
+          challenge != null &&
+          challenge != LivenessChallenge.hold &&
+          (phase == LivenessPhase.challenge ||
+              phase == LivenessPhase.challengePassed ||
+              phase == LivenessPhase.positioning);
+      Widget gesture({required double size, bool compact = false}) =>
+          LivenessGesturePlate(
+            compact: compact,
+            child: LivenessAvatar(
+              activeChallenge: challenge,
+              phase: phase,
+              size: size,
+              iconSize: size / 2,
+              avatarUrl: avatarUrl,
+            ),
+          );
+      // Where the test has got to, in words, where the sheet has its dots.
+      final total = livenessState.totalCount;
+      final showsCount = !isFailed &&
+          total > 1 &&
+          (phase == LivenessPhase.challenge ||
+              phase == LivenessPhase.challengePassed);
+      final step = math.min(
+        livenessState.completedCount +
+            (phase == LivenessPhase.challenge ? 1 : 0),
+        total,
+      );
+      // The line about the connection stays until the photo is taken. Gone
+      // as soon as a gesture was asked for, it was on screen for about a
+      // second and a half: too short to be read at all.
+      // Not on a failed check either: the reason and Try Again have the bottom.
+      final beforeCapture = phase != LivenessPhase.complete &&
+          phase != LivenessPhase.failed;
+      return LivenessBlurBudget(
+        child: LivenessImmersiveFrame(
+          onSize: onFrameSize,
+          tint: litForDimRoom ? kLivenessDimRoomTint : kLivenessTint,
+          preview: _LivePreview(
+            controller: controller,
+            nativeTextureId: nativeTextureId,
+            nativePreviewW: nativePreviewW,
+            nativePreviewH: nativePreviewH,
+          ),
+          cutout: (window) => circle(frame: window, cutout: true),
+          above: (room, reach) {
+            if (isFailed) return const SizedBox.shrink();
+            // The picture stands on its own above the words, and it is narrow,
+            // so it may rise between the back and close buttons: its size
+            // comes from the room up to the TOP of those buttons
+            // (liveness_cutout.dart). The long lighting note is wide, so it
+            // only shows when everything fits under the buttons, and the
+            // picture gives it room.
+            final lighting = isDim || isBright;
+            final showsLighting = room >= kLivenessRoomForGesture + 70;
+            final size = livenessGestureSize(
+              showsLighting && lighting ? room - 70 : reach,
+              kLivenessGestureFullSize,
+            );
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (showsLighting) ...[
+                  _LightingWarningBanner(isDim: isDim, isBright: isBright),
+                  if (lighting) const SizedBox(height: MyazaSpacing.sm),
+                ],
+                if (showsGesture) ...[
+                  Center(child: gesture(size: size)),
+                  const SizedBox(height: MyazaSpacing.sm),
+                ],
+                instructionWith(),
+              ],
+            );
+          },
+          footer: LivenessReassurance(visible: beforeCapture),
+          below: isFailed
+              // Its own surface: red text straight on the camera was lost.
+              ? LivenessFrostedPanel(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: below,
+                  ),
+                )
+              : showsCount
+                  ? LivenessStepCount(step: step, total: total)
+                  : const SizedBox.shrink(),
+        ),
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         // ── Instruction (hidden when failed — error text replaces it) ─────────
         if (!isFailed) ...[
-          _InstructionBanner(
-            phase: phase,
-            instruction: presenceInstruction(livenessState.instruction, context.kycText),
-            faceDetected: livenessState.faceDetected,
-            positionGuidance: livenessState.positionGuidance,
-            wrongGesture: livenessState.wrongGesture,
-            multipleFaces: livenessState.multipleFaces,
-            lightingGuidance: livenessState.lightingGuidance,
-          ),
+          instruction,
           const SizedBox(height: MyazaSpacing.sm),
           // ── Lighting warning (too dark / too bright; non-blocking amber) ────
           _LightingWarningBanner(isDim: isDim, isBright: isBright),
@@ -1820,72 +2255,56 @@ class _ActiveView extends StatelessWidget {
           ),
         ] else
           const SizedBox(height: MyazaSpacing.sm),
-
-        // ── Camera circle ─────────────────────────────────────────────────────
-        Center(
-          child: _CameraCircle(
-            key: previewKey,
-            controller: controller,
-            nativeTextureId: nativeTextureId,
-            nativePreviewW: nativePreviewW,
-            nativePreviewH: nativePreviewH,
-            phase: phase,
-            faceDetected: livenessState.faceDetected,
-            flashReadyProgress: livenessState.flashReadyProgress,
-              ring: ring,
-              ringColor: ringColor,
-            hasWarning: livenessState.wrongGesture ||
-                livenessState.positionGuidance != null ||
-                livenessState.multipleFaces ||
-                livenessState.lightingGuidance != null,
-          ),
-        ),
+        Center(child: circle()),
         const SizedBox(height: MyazaSpacing.lg),
-
-        // ── Step indicators ───────────────────────────────────────────────────
-        if (livenessState.totalCount > 0)
-          _StepIndicators(
-            completedCount: livenessState.completedCount,
-            totalCount: livenessState.totalCount,
-            phase: phase,
-          ),
-
-        // ── Failed: error text + retry button ─────────────────────────────────
-        if (isFailed) ...[
-          const SizedBox(height: MyazaSpacing.md),
-          Text(
-            "Time's up. Let's try again.",
-            style: context.myazaText.bodyMedium.copyWith(
-              color: MyazaColors.error,
-              fontWeight: FontWeight.w500,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: MyazaSpacing.lg),
-          MyazaButton(label: 'Try Again', onPressed: onRetry),
-        ],
-
-        // ── Active: liveness avatar ───────────────────────────────────────────
-        if (!isFailed) ...[
-          const SizedBox(height: MyazaSpacing.xl),
-          Center(
-            child: LivenessAvatar(
-              activeChallenge: livenessState.activeChallenge,
-              phase: phase,
-              size: layout.avatar,
-              iconSize: layout.avatarIcon,
-              avatarUrl: avatarUrl,
-            ),
-          ),
-        ],
+        ...below,
       ],
     );
+  }
+}
+
+/// The live camera, cover-fit to whatever box it is given: the whole screen
+/// for the full-screen camera. The same two sources the circle draws.
+class _LivePreview extends StatelessWidget {
+  const _LivePreview({
+    required this.controller,
+    required this.nativeTextureId,
+    required this.nativePreviewW,
+    required this.nativePreviewH,
+  });
+
+  final CameraController? controller;
+  final int? nativeTextureId;
+  final int nativePreviewW;
+  final int nativePreviewH;
+
+  @override
+  Widget build(BuildContext context) {
+    final textureId = nativeTextureId;
+    if (textureId != null && textureId >= 0) {
+      return NativeCameraPreview(
+        textureId: textureId,
+        bufferWidth: nativePreviewW,
+        bufferHeight: nativePreviewH,
+      );
+    }
+    final camera = controller;
+    if (camera != null && camera.value.isInitialized) {
+      return _CameraPreviewFill(controller: camera);
+    }
+    return ColoredBox(color: context.myazaColors.background);
   }
 }
 
 // ─── Selfie review view ───────────────────────────────────────────────────────
 //
 // Shows the captured selfie in a circle so the user can retake or continue.
+
+/// The finished liveness step, when the person comes back to it. The same
+/// wording as the web and React Native SDKs.
+const String kSelfieDoneTitle = 'Selfie already taken';
+const String kSelfieDoneBody =
+    'You have completed this step. There is nothing more to do here.';
 
 class _SelfieReviewView extends StatelessWidget {
   /// Null on a restored session: the mediaId survived, the preview did not.
@@ -1897,7 +2316,17 @@ class _SelfieReviewView extends StatelessWidget {
   final ({int attempt, int total})? retryInfo;
   final VoidCallback onDismissError;
 
+  /// The review keeps the whole screen, like the camera it follows: the photo
+  /// fills the display, blurred everywhere but the same window.
+  final bool immersive;
+
+  /// A selfie taken on an earlier visit to this step: shown as finished, with
+  /// Continue and no Retake.
+  final bool done;
+
   const _SelfieReviewView({
+    this.immersive = false,
+    this.done = false,
     required this.selfieBase64,
     required this.onRetake,
     required this.onContinue,
@@ -1912,6 +2341,123 @@ class _SelfieReviewView extends StatelessWidget {
     // Window-derived so a short phone keeps the avatar on screen.
     final circleSize = livenessLayout(MediaQuery.sizeOf(context)).circle;
     final imageBytes = selfieBase64 != null ? base64Decode(selfieBase64!) : null;
+
+    final retrying = retryInfo != null && isUploading
+        ? Text(
+            'Upload failed. Retrying (${retryInfo!.attempt}/${retryInfo!.total})…',
+            style: context.myazaText.bodySmall.copyWith(
+              color: const Color(0xFF92400E), // amber-800
+            ),
+            textAlign: TextAlign.center,
+          )
+        : null;
+
+    final failed = uploadError != null
+        ? MyazaAlert(
+            variant: MyazaAlertVariant.error,
+            title: 'Upload failed',
+            message: uploadError!,
+            onDismiss: onDismissError,
+          )
+            .animate()
+            .fadeIn(duration: 250.ms)
+            .slideY(begin: -0.2, end: 0, duration: 250.ms)
+        : null;
+
+    final actions = Row(
+      children: [
+        if (!done) ...[
+          Expanded(
+            child: MyazaButton.outline(
+              label: context.kycText('common.retake'),
+              onPressed: isUploading ? null : onRetake,
+              leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
+            ),
+          ),
+          const SizedBox(width: MyazaSpacing.md),
+        ],
+        Expanded(
+          child: MyazaButton(
+            label: uploadError != null
+                ? 'Try Again'
+                : context.kycText('common.continue'),
+            onPressed: isUploading ? null : onContinue,
+            leadingIcon: MyazaIcon(
+              uploadError != null ? MyazaIcons.rotateCcw : MyazaIcons.check,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    // Full screen: the photo where the camera was, in the same window, so the
+    // review is the camera held still rather than a different screen. A
+    // restored session has no photo to show and keeps the sheet.
+    if (immersive && imageBytes != null) {
+      // In the flow's own theme: the step is still lit, the review need not be.
+      return LivenessOwnTheme.wrap(context, (context) {
+      final colors = context.myazaColors;
+      return LivenessImmersiveFrame(
+        // No mirror: the JPEG is already selfie-mirrored (see below).
+        preview: Image.memory(imageBytes, fit: BoxFit.cover, gaplessPlayback: true),
+        cutout: (window) => _ReviewWindow(size: window, busy: isUploading),
+        above: (_, __) => Center(
+          child: LivenessFrostedPill(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const MyazaIcon(MyazaIcons.circleCheck,
+                    size: 18, color: MyazaColors.success),
+                const SizedBox(width: 8),
+                Text(
+                  isUploading
+                      ? 'Saving your selfie…'
+                      : done
+                          ? kSelfieDoneTitle
+                          : 'Selfie captured',
+                  style: context.myazaText.label.copyWith(
+                    color: colors.textDark,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        below: const SizedBox.shrink(),
+        // The line about the photo sits IN the footer's panel, over the
+        // buttons, not in the space under the window. That space is whatever
+        // the window leaves, and on a shorter phone it was less than the line
+        // needs: the note was cut off above the buttons.
+        footer: LivenessFrostedPanel(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (failed != null) ...[
+                failed,
+                const SizedBox(height: MyazaSpacing.sm),
+              ] else if (retrying != null) ...[
+                retrying,
+                const SizedBox(height: MyazaSpacing.sm),
+              ] else if (done) ...[
+                Text(
+                  kSelfieDoneBody,
+                  textAlign: TextAlign.center,
+                  style: context.myazaText.bodySmall
+                      .copyWith(color: colors.textDark),
+                ),
+                const SizedBox(height: MyazaSpacing.sm),
+              ] else
+                SelfieSoftNotice(selfieBase64: selfieBase64),
+              actions,
+            ],
+          ),
+        ),
+        footerReserve: 92,
+      );
+      });
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1943,7 +2489,7 @@ class _SelfieReviewView extends StatelessWidget {
                       child: Padding(
                         padding: const EdgeInsets.all(MyazaSpacing.lg),
                         child: Text(
-                          'Selfie already captured',
+                          kSelfieDoneTitle,
                           textAlign: TextAlign.center,
                           // The SDK's own tokens, not the ambient Material
                           // theme: Material's bodySmall is a dark grey meant
@@ -1981,61 +2527,135 @@ class _SelfieReviewView extends StatelessWidget {
             )
             .fadeIn(duration: 300.ms),
 
-        if (retryInfo != null && isUploading) ...[
+        if (retrying != null) ...[
           const SizedBox(height: MyazaSpacing.md),
-          Text(
-            'Upload failed. Retrying (${retryInfo!.attempt}/${retryInfo!.total})…',
-            style: context.myazaText.bodySmall.copyWith(
-              color: const Color(0xFF92400E), // amber-800
-            ),
-            textAlign: TextAlign.center,
-          ),
+          retrying,
         ],
 
         // Out of focus? Said here, where a retake costs two seconds. A notice,
         // never a gate: Continue is unaffected (utils/selfie_sharpness.dart).
-        SelfieSoftNotice(selfieBase64: selfieBase64),
+        if (done) ...[
+          const SizedBox(height: MyazaSpacing.md),
+          Text(
+            imageBytes != null ? '$kSelfieDoneTitle. $kSelfieDoneBody' : kSelfieDoneBody,
+            textAlign: TextAlign.center,
+            style: context.myazaText.bodySmall.copyWith(
+              color: context.myazaColors.textSecondary,
+            ),
+          ),
+        ] else
+          SelfieSoftNotice(selfieBase64: selfieBase64),
 
-        if (uploadError != null) ...[
+        if (failed != null) ...[
           const SizedBox(height: MyazaSpacing.lg),
-          MyazaAlert(
-            variant: MyazaAlertVariant.error,
-            title: 'Upload failed',
-            message: uploadError!,
-            onDismiss: onDismissError,
-          )
-              .animate()
-              .fadeIn(duration: 250.ms)
-              .slideY(begin: -0.2, end: 0, duration: 250.ms),
+          failed,
         ],
 
         const SizedBox(height: MyazaSpacing.xl),
 
         // ── Retake / Continue ─────────────────────────────────────────────────
-        Row(
-          children: [
-            Expanded(
-              child: MyazaButton.outline(
-                label: context.kycText('common.retake'),
-                onPressed: isUploading ? null : onRetake,
-                leadingIcon: const MyazaIcon(MyazaIcons.rotateCcw),
-              ),
+        actions,
+      ],
+    );
+  }
+}
+
+/// The camera getting ready, full screen: the window where the face will be,
+/// with a spinner in it, so the step opens on the screen it is going to use.
+class _ImmersiveLoading extends StatelessWidget {
+  const _ImmersiveLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.myazaColors;
+    return LivenessImmersiveFrame(
+      preview: ColoredBox(color: colors.background),
+      cutout: (window) => SizedBox(
+        width: window.width + 6,
+        height: window.height + 6,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: colors.backgroundSecondary,
+            borderRadius: BorderRadius.circular((window.width + 6) / 2),
+            border: Border.all(color: colors.primary200, width: 3),
+          ),
+          child: Center(child: _PulseLoader(color: colors.primary)),
+        ),
+      ),
+      above: (_, __) => Center(
+        child: LivenessFrostedPill(
+          child: Text(
+            'Getting the camera ready…',
+            style: context.myazaText.label.copyWith(
+              color: colors.textDark,
+              fontWeight: FontWeight.w600,
             ),
-            const SizedBox(width: MyazaSpacing.md),
-            Expanded(
-              child: MyazaButton(
-                label: uploadError != null ? 'Try Again' : context.kycText('common.continue'),
-                onPressed: isUploading ? null : onContinue,
-                leadingIcon: MyazaIcon(
-                  uploadError != null
-                      ? MyazaIcons.rotateCcw
-                      : MyazaIcons.check,
+          ),
+        ),
+      ),
+      below: const SizedBox.shrink(),
+      footer: const LivenessReassurance(),
+    );
+  }
+}
+
+/// The review's window: the camera's own frame, closed and green, with the
+/// saving spinner inside it while the photo uploads.
+class _ReviewWindow extends StatelessWidget {
+  const _ReviewWindow({required this.size, required this.busy});
+
+  final Size size;
+  final bool busy;
+
+  @override
+  Widget build(BuildContext context) {
+    final ends = BorderRadius.circular((size.width + 6) / 2);
+    return SizedBox(
+      width: size.width + 6,
+      height: size.height + 6,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const IgnorePointer(
+            child: CustomPaint(
+              painter: LivenessWindowGlow(color: MyazaColors.success),
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: ends,
+              border: Border.all(color: MyazaColors.success, width: 3),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(3),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(size.width / 2),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(size.width / 2),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.55),
+                        ),
+                      ),
+                    ),
+                    if (busy)
+                      ColoredBox(
+                        color: Colors.black.withValues(alpha: 0.45),
+                        child: Center(
+                          child: _PulseLoader(
+                              color: context.myazaColors.primary),
+                        ),
+                      ).animate().fadeIn(duration: 200.ms),
+                  ],
                 ),
               ),
             ),
-          ],
-        ),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
@@ -2059,7 +2679,17 @@ class _InstructionBanner extends StatelessWidget {
   /// 'dark', 'bright', or null — poor-lighting guidance.
   final String? lightingGuidance;
 
+  /// Over the camera: the instruction is the text colour itself, at every
+  /// phase. The gold a gesture wears in the sheet does not read on the pill.
+  final bool overCamera;
+
+  /// Over the camera on a short phone: the gesture's picture, drawn inside
+  /// the pill because there is no room for it above.
+  final Widget? leading;
+
   const _InstructionBanner({
+    this.overCamera = false,
+    this.leading,
     required this.phase,
     required this.instruction,
     required this.faceDetected,
@@ -2098,12 +2728,14 @@ class _InstructionBanner extends StatelessWidget {
     } else if (lightingGuidance != null) {
       displayText = lightingGuidance == 'dark'
           ? 'Move to a brighter area'
-          : 'Too bright — reduce glare';
+          : 'Too bright. Reduce glare';
       textColor = MyazaColors.error;
     } else if (hasPositionWarning) {
-      displayText = positionGuidance == 'too_far'
-          ? 'Kindly move closer'
-          : 'Kindly move further away';
+      displayText = switch (positionGuidance) {
+        'too_far' => 'Kindly move closer',
+        'off_centre' => 'Centre your face in the frame',
+        _ => 'Kindly move further away',
+      };
       textColor = MyazaColors.error;
     } else if (hasWrongGesture) {
       displayText = 'Wrong gesture';
@@ -2115,10 +2747,25 @@ class _InstructionBanner extends StatelessWidget {
       textColor   = MyazaColors.success;
     } else if (isChallenge) {
       displayText = instruction;
-      textColor   = MyazaColors.secondary;
+      textColor   = overCamera ? colors.textDark : MyazaColors.secondary;
     } else {
       displayText = instruction;
       textColor   = colors.textDark;
+    }
+
+    // Over the camera the words sit on a pill, and with nothing to say there
+    // is no pill: an empty one sat above the window after the photo.
+    if (overCamera) {
+      if (displayText.trim().isEmpty) return const SizedBox.shrink();
+      return LivenessInstructionPill(
+        text: displayText,
+        tone: textColor == MyazaColors.error
+            ? LivenessInstructionTone.warning
+            : (isChallengePassed || isComplete)
+                ? LivenessInstructionTone.done
+                : LivenessInstructionTone.prompt,
+        leading: leading,
+      );
     }
 
     return Column(
@@ -2171,8 +2818,25 @@ class _CameraCircle extends StatelessWidget {
   final ValueListenable<double> ring;
   final ValueListenable<Color> ringColor;
 
+  /// Width and height, when the caller has decided them (the full-screen
+  /// cutout, a tall shape with fully rounded ends). Null keeps the sheet's
+  /// own circle.
+  final Size? frame;
+
+  /// The camera is drawn BEHIND this, full screen: the circle is then a clear
+  /// window onto it and draws only its border, ring, guide and marks.
+  final bool cutout;
+
+  /// How many equal parts the test has (positioning, each step, the photo).
+  /// Full screen, the frame's line is split into that many, so it also says
+  /// what the row of dots says in the sheet.
+  final int segments;
+
   const _CameraCircle({
     super.key,
+    this.frame,
+    this.cutout = false,
+    this.segments = 1,
     required this.controller,
     required this.phase,
     required this.faceDetected,
@@ -2214,10 +2878,30 @@ class _CameraCircle extends StatelessWidget {
     };
   }
 
+  /// The glow outside the window. While the face is still being lined up it
+  /// breathes, which says "here" without a word; it holds still once the test
+  /// is running, and always when the person asked for less motion.
+  Widget _glow(BuildContext context, Color color) {
+    final glow = IgnorePointer(
+      child: CustomPaint(painter: LivenessWindowGlow(color: color)),
+    );
+    final still = phase != LivenessPhase.positioning ||
+        MediaQuery.of(context).disableAnimations;
+    if (still) return glow;
+    return glow
+        .animate(onPlay: (controller) => controller.repeat(reverse: true))
+        .fade(begin: 0.35, end: 1, duration: 1100.ms, curve: Curves.easeInOut);
+  }
+
   @override
   Widget build(BuildContext context) {
     // Window-derived so a short phone keeps the avatar on screen.
-    final circleSize = livenessLayout(MediaQuery.sizeOf(context)).circle;
+    final circleSize =
+        frame?.width ?? livenessLayout(MediaQuery.sizeOf(context)).circle;
+    // A circle in the sheet; taller than it is wide when full screen. Either
+    // way the ends are half the width round, so one radius describes both.
+    final frameHeight = frame?.height ?? circleSize;
+    final ends = BorderRadius.circular((circleSize + 6) / 2);
     final colors      = context.myazaColors;
     final borderColor = _borderColor(colors);
     final hasNative   = nativeTextureId != null && nativeTextureId! >= 0;
@@ -2227,34 +2911,59 @@ class _CameraCircle extends StatelessWidget {
     // Two layers: the container CLIPS the preview to a circle behind its
     // border; the ring is painted over that border, outside the clip, so the
     // arc and the border are the same line.
-    return SizedBox.square(
-      dimension: circleSize + 6,
+    return SizedBox(
+      width: circleSize + 6,
+      height: frameHeight + 6,
       child: Stack(
         fit: StackFit.expand,
         children: [
+          if (cutout) _glow(context, borderColor),
           AnimatedContainer(
             duration: const Duration(milliseconds: 350),
             curve: Curves.easeOutCubic,
             width: circleSize + 6,
-            height: circleSize + 6,
+            height: frameHeight + 6,
             decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: borderColor, width: 3),
-              boxShadow: [
-                BoxShadow(
-                  color: borderColor.withValues(alpha: 0.25),
-                  blurRadius: 12,
-                  spreadRadius: 2,
-                ),
-              ],
+              borderRadius: ends,
+              // Full screen, the painter draws the line (in segments) and the
+              // glow sits outside the window: a box shadow would fall inside
+              // it too and dim the face.
+              border: Border.all(
+                color: cutout ? Colors.transparent : borderColor,
+                width: 3,
+              ),
+              boxShadow: cutout
+                  ? null
+                  : [
+                      BoxShadow(
+                        color: borderColor.withValues(alpha: 0.25),
+                        blurRadius: 12,
+                        spreadRadius: 2,
+                      ),
+                    ],
             ),
-            child: ClipOval(
-              child: SizedBox.square(
-                dimension: circleSize,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(circleSize / 2),
+              child: SizedBox(
+                width: circleSize,
+                height: frameHeight,
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    if (hasNative)
+                    if (cutout)
+                      // A hairline of light just inside the edge.
+                      IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            borderRadius:
+                                BorderRadius.circular(circleSize / 2),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.55),
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (hasNative)
                       NativeCameraPreview(
                         textureId: nativeTextureId!,
                         bufferWidth: nativePreviewW,
@@ -2266,7 +2975,7 @@ class _CameraCircle extends StatelessWidget {
                       _CameraPlaceholder(phase: phase),
 
                     // Dashed oval face guide
-                    if (isReady && _showOval)
+                    if (isReady && _showOval && !cutout)
                       CustomPaint(
                         painter: _DashedOvalPainter(
                           color: faceDetected
@@ -2280,11 +2989,8 @@ class _CameraCircle extends StatelessWidget {
                     // (mirrors the web SDK's bg-success/20 flash). Sits behind the
                     // checkmark badge below.
                     if (phase == LivenessPhase.challengePassed)
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: MyazaColors.success.withValues(alpha: 0.20),
-                        ),
+                      ColoredBox(
+                        color: MyazaColors.success.withValues(alpha: 0.20),
                       )
                           .animate()
                           .fadeIn(duration: 200.ms, curve: Curves.easeOut),
@@ -2293,12 +2999,17 @@ class _CameraCircle extends StatelessWidget {
                     // to sit on `capturing` reading "Got it!", announcing a photo
                     // not yet taken and leaving the real wait looking finished.
                     if (phase == LivenessPhase.complete)
-                      DecoratedBox(
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
+                      ColoredBox(
+                        color: Colors.white.withValues(alpha: 0.85),
                       ).animate().fadeOut(duration: 600.ms, curve: Curves.easeOut),
+
+                    // Full screen: a line of light runs down the face once the
+                    // photo is taken, so the wait reads as the photo being
+                    // looked at. Skipped when the person asked for less motion.
+                    if (cutout &&
+                        phase == LivenessPhase.complete &&
+                        !MediaQuery.of(context).disableAnimations)
+                      const LivenessScanSweep(),
 
                     // Animated checkmark badge when challenge passes
                     if (phase == LivenessPhase.challengePassed)
@@ -2332,7 +3043,17 @@ class _CameraCircle extends StatelessWidget {
           ),
           // Only the painter repaints as the ring moves.
           IgnorePointer(
-            child: CustomPaint(painter: _CaptureRingPainter(ring, ringColor)),
+            child: CustomPaint(
+              painter: _CaptureRingPainter(
+                ring,
+                ringColor,
+                // Full screen, the line is green from its first pixel, and
+                // the painter draws its own track under it.
+                fixed: cutout ? MyazaColors.success : null,
+                track: cutout ? borderColor : null,
+                segments: cutout ? segments : 1,
+              ),
+            ),
           ),
         ],
       ),
@@ -2395,7 +3116,7 @@ class _CameraPlaceholder extends StatelessWidget {
             : Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(
+                  MyazaSpinner(
                     color: colors.primary,
                     strokeWidth: 2.5,
                   ),
@@ -2440,9 +3161,10 @@ class _FlashHolePainter extends CustomPainter {
     // BELOW the overlay (the live preview) is revealed, not just painted over.
     canvas.saveLayer(bounds, Paint());
     canvas.drawRect(bounds, Paint()..color = color);
-    canvas.drawCircle(
-      h.center,
-      h.width / 2,
+    // Round ends half the width: a circle for the sheet's preview, the tall
+    // frame for the full-screen one.
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(h, Radius.circular(h.shortestSide / 2)),
       Paint()..blendMode = BlendMode.clear,
     );
     canvas.restore();
@@ -2463,8 +3185,26 @@ class _CaptureRingPainter extends CustomPainter {
 
   // `repaint` is what lets the ring move without a single widget rebuild: the
   // painter re-paints itself when either notifier changes.
-  _CaptureRingPainter(this.progress, this.color)
-      : super(repaint: Listenable.merge([progress, color]));
+  _CaptureRingPainter(
+    this.progress,
+    this.color, {
+    this.fixed,
+    this.track,
+    this.segments = 1,
+  }) : super(repaint: Listenable.merge([progress, color]));
+
+  /// Drawn under the arc, all the way round, when the frame has no border of
+  /// its own to be the track.
+  final Color? track;
+
+  /// Equal parts with a small gap between them. One part is an unbroken line.
+  final int segments;
+
+  /// Gap between two parts, along the line.
+  static const double _gap = 9;
+
+  /// One colour for the whole test, in place of the phase colour.
+  final Color? fixed;
 
   /// The frame's own border width; the arc IS the border filling in.
   static const double stroke = 3.0;
@@ -2472,9 +3212,9 @@ class _CaptureRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final p = progress.value.clamp(0.0, 1.0);
-    if (p <= 0) return;
+    if (p <= 0 && track == null) return;
     final paint = Paint()
-      ..color = color.value
+      ..color = fixed ?? color.value
       ..style = PaintingStyle.stroke
       ..strokeWidth = stroke
       ..strokeCap = StrokeCap.butt; // flat ends: a border has no rounded tips
@@ -2485,12 +3225,56 @@ class _CaptureRingPainter extends CustomPainter {
       size.width - stroke,
       size.height - stroke,
     );
-    canvas.drawArc(rect, -math.pi / 2, 2 * math.pi * p, false, paint); // 12 o'clock
+    // The frame's own outline, clockwise from 12 o'clock: a circle in the
+    // sheet, a tall shape with round ends when full screen. Both are two half
+    // circles joined by straight sides (of no length, for the circle).
+    final r = rect.width / 2;
+    final top = Rect.fromLTWH(rect.left, rect.top, rect.width, rect.width);
+    final bottom =
+        Rect.fromLTWH(rect.left, rect.bottom - rect.width, rect.width, rect.width);
+    final outline = Path()
+      ..moveTo(rect.center.dx, rect.top)
+      ..arcTo(top, -math.pi / 2, math.pi / 2, false)
+      ..lineTo(rect.right, rect.bottom - r)
+      ..arcTo(bottom, 0, math.pi, false)
+      ..lineTo(rect.left, rect.top + r)
+      ..arcTo(top, math.pi, math.pi / 2, false);
+    final metric = outline.computeMetrics().first;
+    final parts = math.max(1, segments);
+    if (parts == 1 && track == null) {
+      canvas.drawPath(metric.extractPath(0, metric.length * p), paint);
+      return;
+    }
+    // In parts: each has its own stretch of the outline, the track under all
+    // of them and the arc over as much as the test has earned.
+    final gap = parts == 1 ? 0.0 : _gap;
+    final each = metric.length / parts;
+    final done = metric.length * p;
+    paint.strokeCap = parts == 1 ? StrokeCap.butt : StrokeCap.round;
+    final under = track == null
+        ? null
+        : (Paint()
+          ..color = track!
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = paint.strokeCap);
+    for (var i = 0; i < parts; i++) {
+      final from = i * each + gap / 2;
+      final to = (i + 1) * each - gap / 2;
+      if (under != null) canvas.drawPath(metric.extractPath(from, to), under);
+      if (done > from) {
+        canvas.drawPath(metric.extractPath(from, math.min(to, done)), paint);
+      }
+    }
   }
 
   @override
   bool shouldRepaint(_CaptureRingPainter old) =>
-      old.progress != progress || old.color != color;
+      old.progress != progress ||
+      old.color != color ||
+      old.fixed != fixed ||
+      old.track != track ||
+      old.segments != segments;
 }
 
 // ─── Dashed oval face guide ───────────────────────────────────────────────────
@@ -2712,7 +3496,7 @@ class _LightingWarningBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final show = isDim || isBright;
     final message = isBright
-        ? 'Too bright — reduce glare or move away from direct light for better detection.'
+        ? 'Too bright. Reduce glare or move away from direct light for better detection.'
         : 'It looks dark here. Move to a brighter area or near a light source for better detection.';
 
     return AnimatedSwitcher(

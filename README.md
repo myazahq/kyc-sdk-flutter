@@ -252,6 +252,7 @@ void startKYC(BuildContext context) {
 | `allowDocumentUpload`   | `bool`                  | `true`                | Allow picking a document photo from the device gallery as an alternative to the camera. `false` hides the "upload instead" option (still offered on the camera-permission-denied screen as an escape hatch). |
 | `allowDocumentScan`     | `bool`                  | `true`                | Use the live camera (viewfinder with auto-capture) for document capture. `false` never opens the camera on the document step: the user picks a photo of each side (front, then back) from their device instead, and no camera permission is requested there. At least one of `allowDocumentScan` and `allowDocumentUpload` must stay on; if both are `false`, the camera is used. |
 | `enableLiveness`        | `bool`                  | `true`                | Run the liveness challenge step. Server can disable it per ID type.                                             |
+| `selfieReview`         | `bool?`                 | `false`               | Show the selfie with Retake and Continue after the liveness capture. Off by default: the capture hands straight on to the next step. |
 | `voiceGuidance`         | `VoiceGuidanceConfig`   | enabled (`en-US`)     | Spoken liveness instructions (accessibility, TTS **output** — no microphone). `VoiceGuidanceConfig.off` mutes it; `VoiceGuidanceConfig(language: 'fr-FR')` sets the voice. See [Robustness & error handling](#robustness--error-handling). |
 | `appearance`            | `MyazaKYCAppearance?`   | brand defaults        | Brand & theme the flow — colors, logo, light/dark. See [Appearance & theming](#appearance--theming).            |
 | `consent`               | `KYCConsentContent?`    | built-in copy         | Override the consent/welcome screen `title` and `description`. See [Consent screen copy](#consent-screen-copy). |
@@ -543,7 +544,8 @@ final result = await MyazaAddressPresence.report(
   apiKey: 'pk_live_…',
   externalUserId: 'user_42', // the same userId the KYC flow ran with
 );
-// result.reason: reported | noPin | servicesOff | noFix | outsideFence | networkError
+// result.reason: reported | noPin | servicesOff | noFix | outsideFence
+//              | noWatch | stopped | networkError
 ```
 
 It never throws and never blocks startup. The geofence is evaluated ON-DEVICE:
@@ -551,6 +553,15 @@ only the derived record (calendar day + a night flag) is transmitted, never a
 coordinate. A fix outside the fence sends nothing (the server scores presence,
 never absence); a mock-location fix is reported flagged. `clearPresencePin`
 drops the stored pin (sign-out, or once the watch resolves).
+
+When your organisation stops monitoring for a user, the next report switches
+background location off, forgets the stored pin and answers `stopped`. Nothing
+more is sent for that user until a new check starts.
+
+A report also switches background monitoring on for a person whose check is
+running without it (someone verified on an older version of the SDK). They see
+the system's "allow all the time" prompt once; the SDK never asks again from a
+report. Pass `autoBackground: false` to ask yourself, at a moment you choose.
 
 ### Background monitoring (native geofencing)
 
@@ -568,9 +579,15 @@ final result = await MyazaBackgroundPresence.enable(
 // result.reason: started | noPin | permissionDenied | backgroundDenied | unavailable
 ```
 
-`enable()` walks the two-step permission escalation (while-in-use, then
-"allow all the time"); a refusal leaves the foreground tier working exactly
-as before. `MyazaBackgroundPresence.disable()` disarms and forgets the
+`enable()` asks for location in two steps (while in use, then all the time);
+a refusal leaves the foreground tier working exactly as before. The second
+step is asked by the plugin's own native code on both platforms. iOS shows
+its "Change to Always Allow" prompt once per install. Android 11 and later
+opens the app's location settings page, where the person picks "Allow all the
+time", and shows nothing after two refusals. After a refusal `enable()`
+answers `backgroundDenied` without a prompt, and `openLocationSettings()` is
+the way back. Versions up to 3.5.0 never reached the second step on either
+platform. `MyazaBackgroundPresence.disable()` disarms and forgets the
 config. On Android the fence survives reboots (a boot receiver re-arms it);
 on iOS, region monitoring relaunches the app for crossings by itself.
 
@@ -598,14 +615,17 @@ iOS (`Info.plist`):
 **"Still here" check-ins.** A fence only speaks when the person crosses its
 edge, so without help a stay is only recorded when they leave, and someone
 who hardly leaves home earns little background evidence. The plugin records a
-stay while the person is still there, once it has run three hours:
+stay while the person is still there: the first time 35 minutes after they
+arrive, then once every three hours. Until one of those moments (or until they
+leave) nothing is sent, so the server's day count does not move:
 
 - **On app open**, automatically: an inside `MyazaAddressPresence.report()`
   reading also records the running stay. On iOS every launch or relaunch
   asks Core Location whether the phone is inside, too.
 - **Android, periodically**, automatically: a WorkManager job takes one
-  low-power reading about every two hours with the background permission the
-  tier already holds. It adds no manifest entry.
+  low-power reading about 40 minutes after the person arrives and then about
+  every two hours, with the background permission the tier already holds. It
+  adds no manifest entry.
 - **iOS, periodically**, optional: add the identifier and the `fetch`
   background mode to `Info.plist`. Without both, nothing is registered.
 
@@ -622,6 +642,16 @@ stay while the person is still there, once it has run three hours:
 
 The OS decides when a background check-in actually runs, so treat it as
 best-effort.
+
+`presenceStay()` reads the stay this phone has open, so your app can say
+"inside since 18:04, first report due after 18:39" rather than leave the
+person looking at a count that has not moved:
+
+```dart
+final stay = await presenceStay();
+// null: no stay open. Otherwise stay.since and stay.nextReportAt.
+// nextReportAt is "not before": the OS decides when a background check-in runs.
+```
 
 ### The Android foreground service (reliability on OEM-managed phones)
 
@@ -703,3 +733,21 @@ key answers `{ status, progress, tier, … }` — `status` is one of
 `not_started | in_progress | verified | failed | inconclusive | expired |
 revoked`, `progress.score` is 0..1 on WEIGHTED evidence, and an unknown user
 answers the same `not_started` shape as a user with no watch.
+
+The SDK wraps that read:
+
+```dart
+final check = await fetchPresenceWatchStatus(
+  apiKey: 'pk_live_...',
+  externalUserId: 'user_42',
+);
+if (check == null) {
+  // The server could not be reached.
+} else if (check.state == PresenceWatchState.inProgress) {
+  // check.progress is 0..1; check.nightsObserved and check.daysObserved
+  // are the raw counts; check.deadlineAt is when the check ends.
+}
+```
+
+It never throws. `presenceStatus()` above answers for the phone (permissions,
+pin, tier); this answers for the check itself.

@@ -2,8 +2,9 @@ import Flutter
 import Foundation
 
 /// Channel side of the background presence tier (`kyc_sdk_flutter/presence`).
-/// Dart owns the permission escalation (geolocator's two-step to "always");
-/// this side only persists the reporter config and arms/disarms the region.
+/// Dart owns the permission escalation, but the step up to "Always" is asked
+/// here (PresenceAlwaysPermission): geolocator never asks for it on iOS. The
+/// rest of this side persists the reporter config and arms/disarms the region.
 final class PresenceChannel: NSObject {
   static func register(with registrar: FlutterPluginRegistrar) {
     let channel = FlutterMethodChannel(
@@ -59,8 +60,21 @@ final class PresenceChannel: NSObject {
       PresenceMonitor.shared.disarm()
       PresenceStore.clear()
       result(nil)
+    case "requestAlwaysLocation":
+      PresenceAlwaysPermission.shared.request { word in result(word) }
     case "isPresenceArmed":
       result(PresenceMonitor.shared.isArmed)
+    case "presenceStay":
+      // The open stay, for the host to show. Nil with no stay open.
+      guard PresenceStore.armed, let enterAt = PresenceStore.enterAt else {
+        result(nil)
+        return
+      }
+      result([
+        "since": PresenceStore.stayStart ?? enterAt,
+        "nextReportAt": PresenceFold.nextCheckpointAt(
+          enterAt: enterAt, stayStart: PresenceStore.stayStart) as Any,
+      ])
     default:
       result(FlutterMethodNotImplemented)
     }

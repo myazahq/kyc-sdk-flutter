@@ -55,15 +55,18 @@ class PresenceFoldTest {
   fun matchesCanonicalCheckInVectors() {
     val doc = JSONObject(vectorsFile().readText())
     assertEquals("check-in interval", doc.getLong("checkpointMs"), PresenceFold.CHECKPOINT_MS)
+    assertEquals("first check-in", doc.getLong("firstCheckpointMs"), PresenceFold.FIRST_CHECKPOINT_MS)
     val vectors = doc.getJSONArray("checkpoints")
     assertTrue("meaningful case set", vectors.length() >= 6)
     for (i in 0 until vectors.length()) {
       val v = vectors.getJSONObject(i)
       val name = v.getString("name")
       val enterAt = if (v.isNull("enterAt")) null else v.getLong("enterAt")
-      val out = PresenceFold.checkpointStay(enterAt, v.getLong("atMs"), v.getInt("offsetMinutes"))
+      val stayStart = if (v.isNull("stayStart")) null else v.getLong("stayStart")
+      val out = PresenceFold.checkpointStay(enterAt, v.getLong("atMs"), v.getInt("offsetMinutes"), stayStart)
       val expected = v.getJSONObject("expected")
       assertEquals("$name: enterAt", expected.getLong("enterAt"), out.enterAt)
+      assertEquals("$name: stayStart", expected.getLong("stayStart"), out.stayStart)
       val days = expected.getJSONArray("days")
       assertEquals("$name: day count", days.length(), out.days.size)
       for (j in 0 until days.length()) {

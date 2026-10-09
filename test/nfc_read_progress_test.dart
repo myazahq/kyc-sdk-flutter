@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myaza_kyc_sdk_flutter/src/services/nfc_reader.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/nfc_read_progress.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/myaza_spinner.dart';
 
 // The chip read is the one step with no shutter and no preview, and on Android
 // no system NFC UI either — so what the user sees IS the progress list. These
@@ -38,14 +39,14 @@ void main() {
 
     testWidgets('exactly one step spins at a time', (tester) async {
       await tester.pumpWidget(_host(NfcReadStage.readingSecurity));
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(MyazaSpinner), findsOneWidget);
     });
 
     testWidgets('done leaves nothing spinning', (tester) async {
       // The photo group is skipped when the security object didn't come back,
       // so a step left mid-spin after a SUCCESSFUL read would look like failure.
       await tester.pumpWidget(_host(NfcReadStage.done));
-      expect(find.byType(CircularProgressIndicator), findsNothing);
+      expect(find.byType(MyazaSpinner), findsNothing);
     });
   });
 }

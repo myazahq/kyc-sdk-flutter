@@ -5,6 +5,7 @@ import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
+import 'myaza_spinner.dart';
 
 /// The **Flutter camera-plugin** document preview — iOS's normal path, and
 /// Android's fallback when the native [DocumentCamera] fails to start.
@@ -116,7 +117,7 @@ class _DocumentPluginPreviewState extends State<DocumentPluginPreview> {
             child: Container(
               color: const Color(0xFF111111),
               child: Center(
-                child: CircularProgressIndicator(
+                child: MyazaSpinner(
                   color: context.myazaColors.primary,
                   strokeWidth: 2,
                 ),

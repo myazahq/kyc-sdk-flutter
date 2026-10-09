@@ -80,24 +80,49 @@ enum PresenceFold {
   /// records it. Without check-ins a stay was credited only when the person
   /// left, so someone who hardly leaves home produced no background evidence,
   /// and one lost exit capped a multi-day stay at its first 24 hours.
+  ///
+  /// The FIRST check-in of a stay comes at 35 minutes, just past the server's
+  /// default 30-minute dwell floor, so a day is credited soon after the
+  /// person gets home. Later ones wait three hours: the server keeps the
+  /// LONGEST slice per day, so short slices all day would never satisfy an
+  /// organisation whose floor is set above them.
+  static let firstCheckpointMs: Int64 = 35 * 60 * 1000
   static let checkpointMs: Int64 = 3 * 60 * 60 * 1000
 
+  /// `stayStart` is when the person arrived; check-ins never move it.
   struct Checkpoint: Equatable {
     let enterAt: Int64
+    let stayStart: Int64
     let days: [DayAggregate]
   }
 
+  /// The interval the open stay is waiting on: the short one until something
+  /// has recorded it (no start on file, or a start that is the stay's own).
+  static func checkpointInterval(enterAt: Int64, stayStart: Int64?) -> Int64 {
+    guard let start = stayStart, start < enterAt else { return firstCheckpointMs }
+    return checkpointMs
+  }
+
+  /// When the next check-in can record the open stay; nil with none open.
+  static func nextCheckpointAt(enterAt: Int64?, stayStart: Int64?) -> Int64? {
+    enterAt.map { $0 + checkpointInterval(enterAt: $0, stayStart: stayStart) }
+  }
+
   /// Apply a CONFIRMED-INSIDE reading at `atMs`. No open stay opens one; a
-  /// stay open at least `checkpointMs` is folded up to `atMs` and restarted
+  /// stay open at least its interval is folded up to `atMs` and restarted
   /// there; anything else is unchanged. Mirrors checkpointStay in the RN
   /// SDK's background-math.ts and PresenceFold.kt, pinned to the same vectors.
-  static func checkpointStay(enterAt: Int64?, atMs: Int64, offsetMinutes: Int) -> Checkpoint {
-    guard let enterAt = enterAt else { return Checkpoint(enterAt: atMs, days: []) }
-    if atMs - enterAt < checkpointMs { return Checkpoint(enterAt: enterAt, days: []) }
+  static func checkpointStay(
+    enterAt: Int64?, atMs: Int64, offsetMinutes: Int, stayStart: Int64? = nil
+  ) -> Checkpoint {
+    guard let enterAt = enterAt else { return Checkpoint(enterAt: atMs, stayStart: atMs, days: []) }
+    let start = stayStart ?? enterAt
+    if atMs - enterAt < checkpointInterval(enterAt: enterAt, stayStart: stayStart) {
+      return Checkpoint(enterAt: enterAt, stayStart: start, days: [])
+    }
     return Checkpoint(
-      enterAt: atMs,
+      enterAt: atMs, stayStart: start,
       days: foldSpanIntoDays(enterMs: enterAt, exitMs: atMs, offsetMinutes: offsetMinutes)
     )
   }
 }
-

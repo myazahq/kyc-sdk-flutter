@@ -73,6 +73,8 @@ class MyazaIcons {
   // drawing the web SDK and the dashboard use for this.
   static const MyazaIconData maximize2 = HugeIcons.strokeRoundedExpand;
   static const MyazaIconData messageSquare = HugeIcons.strokeRoundedMessage01;
+  // The counterpart of `maximize2`: the web SDK's `Minimize2` is this drawing.
+  static const MyazaIconData minimize2 = HugeIcons.strokeRoundedCollapse;
   static const MyazaIconData minus = HugeIcons.strokeRoundedMinusSign;
   static const MyazaIconData moon = HugeIcons.strokeRoundedMoon;
   // Lucide's `moveLeft` is a LONG arrow: a full-width shaft with a small head.
@@ -83,6 +85,8 @@ class MyazaIcons {
   // glyph is drawn locally, exactly as the web SDK draws it.
   static const MyazaIconData moveLeft = kLongArrowLeft;
   static const MyazaIconData nfc = HugeIcons.strokeRoundedNfc;
+  // The web SDK's `PenLine`: the mark for signing, and for editing a signature.
+  static const MyazaIconData penLine = HugeIcons.strokeRoundedPenTool01;
   static const MyazaIconData pencil = HugeIcons.strokeRoundedPencil;
   static const MyazaIconData pencilLine = HugeIcons.strokeRoundedPencilEdit01;
   static const MyazaIconData plus = HugeIcons.strokeRoundedAdd01;

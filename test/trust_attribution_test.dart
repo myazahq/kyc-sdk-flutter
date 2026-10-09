@@ -116,9 +116,10 @@ void main() {
           home: Scaffold(body: child),
         );
 
-    testWidgets('Myaza mode is unchanged: "Powered by" and the lockup', (tester) async {
+    testWidgets('Myaza mode: "Protected by" and the lockup', (tester) async {
       await tester.pumpWidget(host(const PoweredBy()));
-      expect(find.text('Powered by'), findsOneWidget);
+      expect(find.text('Protected by'), findsOneWidget);
+      expect(find.text('Powered by'), findsNothing);
       expect(find.text('TRUST'), findsOneWidget);
       expect(find.byType(CustomTrustMark), findsNothing);
     });

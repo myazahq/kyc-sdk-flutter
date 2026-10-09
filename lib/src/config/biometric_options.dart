@@ -94,10 +94,26 @@ BiometricFlowOptions? biometricFlowOptions({String? scope, BiometricFlowConfig? 
   );
 }
 
-/// Whether the liveness step shows the selfie review before handing over. A
-/// full verification always does; only the biometric scopes can switch it off.
-bool showsSelfieReview({String? scope, BiometricFlowConfig? biometric}) =>
-    biometricFlowOptions(scope: scope, biometric: biometric)?.selfieReview ?? true;
+/// Whether the liveness step shows the selfie review (the photo with Retake
+/// and Continue) before handing over. OFF unless a workflow or the host
+/// switches it on: the capture already waits for a face that is in the frame,
+/// at rest and facing the camera, and a retake is a second attempt to choose
+/// from. On a biometric scope its own `biometric.selfieReview` wins; every
+/// other flow reads the workflow's `selfieReview` ([review]).
+///
+/// MIRRORS the web and React Native SDKs' `showsSelfieReview`.
+bool showsSelfieReview({
+  String? scope,
+  BiometricFlowConfig? biometric,
+  bool? review,
+}) {
+  final onBiometricScope =
+      biometricFlowOptions(scope: scope, biometric: biometric) != null;
+  if (onBiometricScope && biometric?.selfieReview != null) {
+    return biometric!.selfieReview!;
+  }
+  return review ?? false;
+}
 
 /// Whether the submitted step waits for the verdict in the flow ('app' and
 /// 'both') rather than leaving it to the webhook. Only a re-authentication
@@ -114,7 +130,8 @@ bool showsDoneButton({String? scope, BiometricFlowConfig? biometric}) =>
 
 /// The same three questions asked of a whole config.
 extension BiometricFlowConfigX on MyazaKYCConfig {
-  bool get showsSelfieReviewOption => showsSelfieReview(scope: scope, biometric: biometric);
+  bool get showsSelfieReviewOption =>
+      showsSelfieReview(scope: scope, biometric: biometric, review: selfieReview);
   bool get waitsForResultOption => waitsForResult(scope: scope, biometric: biometric);
   bool get showsDoneButtonOption => showsDoneButton(scope: scope, biometric: biometric);
 }

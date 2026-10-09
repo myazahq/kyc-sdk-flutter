@@ -53,6 +53,8 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
   private lateinit var faceEventChannel: EventChannel
   private lateinit var tuningChannel: MethodChannel
   private val screenBrightness = ScreenBrightness()
+  /// The "Allow all the time" location request; needs the Activity.
+  private val alwaysPermission = PresenceAlwaysPermission()
 
   private val faceDetector = FaceDetectorHandler()
   private val textRecognizer = TextRecognizerHandler()
@@ -132,18 +134,22 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
 
   override fun onAttachedToActivity(binding: ActivityPluginBinding) {
     screenBrightness.attach(binding.activity)
+    alwaysPermission.attach(binding)
   }
 
   override fun onDetachedFromActivityForConfigChanges() {
     screenBrightness.detach()
+    alwaysPermission.detach()
   }
 
   override fun onReattachedToActivityForConfigChanges(binding: ActivityPluginBinding) {
     screenBrightness.attach(binding.activity)
+    alwaysPermission.attach(binding)
   }
 
   override fun onDetachedFromActivity() {
     screenBrightness.detach()
+    alwaysPermission.detach()
   }
 
   override fun onMethodCall(call: MethodCall, result: Result) {
@@ -152,6 +158,7 @@ class KycSdkFlutterPlugin : FlutterPlugin, MethodCallHandler, ActivityAware {
     // Claims the three presence methods; anything else falls through.
     if (presence?.handle(call, result) == true) return
     when (call.method) {
+      "requestAlwaysLocation" -> alwaysPermission.request(result)
       "detect" -> faceDetector.detect(call, result)
       "recognize" -> textRecognizer.recognize(call, result)
       "recognizeBytes" -> textRecognizer.recognizeBytes(call, result)

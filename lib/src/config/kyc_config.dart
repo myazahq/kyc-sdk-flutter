@@ -553,6 +553,12 @@ class MyazaKYCConfig {
   /// black baseline between colours is not governed by this: it always runs.
   final bool livenessBrightScreen;
 
+  /// Show the captured selfie, with Retake and Continue, before moving on.
+  /// Off by default: the liveness capture hands straight over. Normally set
+  /// by a workflow (`selfieReview`). An upload that fails still shows the
+  /// screen, which is where its retry lives. Null means "not set here".
+  final bool? selfieReview;
+
   /// The biometric scopes' flow options (workflow-driven, or passed here on a
   /// prop-configured mount): `selfieReview` shows the captured selfie with
   /// Retake and Continue before submitting (off by default on both biometric
@@ -658,6 +664,7 @@ class MyazaKYCConfig {
     this.consentStep = true,
     this.silentCapture = true,
     this.livenessBrightScreen = true,
+    this.selfieReview,
     this.biometric,
     this.questionnaire,
     this.resubmit,
@@ -709,6 +716,7 @@ class MyazaKYCConfig {
     bool? consentStep,
     bool? silentCapture,
     bool? livenessBrightScreen,
+    bool? selfieReview,
     BiometricFlowConfig? biometric,
     QuestionnaireConfig? questionnaire,
     ResubmitConfig? resubmit,
@@ -757,6 +765,7 @@ class MyazaKYCConfig {
         consentStep: consentStep ?? this.consentStep,
         silentCapture: silentCapture ?? this.silentCapture,
         livenessBrightScreen: livenessBrightScreen ?? this.livenessBrightScreen,
+        selfieReview: selfieReview ?? this.selfieReview,
         biometric: biometric ?? this.biometric,
         questionnaire: questionnaire ?? this.questionnaire,
         resubmit: resubmit ?? this.resubmit,

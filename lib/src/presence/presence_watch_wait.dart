@@ -32,9 +32,33 @@ bool pinIsFresh(String savedAt, {DateTime? now}) {
   return (now ?? DateTime.now()).difference(saved) <= kFreshPinWindow;
 }
 
+/// What the server says about the user's watch.
+class WatchState {
+  final String status;
+
+  /// The organisation (or Myaza) stopped monitoring and nothing has started
+  /// since.
+  final bool stopped;
+  const WatchState(this.status, {required this.stopped});
+}
+
+/// Whether the phone should stop its own side of monitoring: the server says
+/// it was stopped, and the pin is not fresh. A fresh pin belongs to a flow
+/// that has just submitted, whose new watch is still being minted, so the
+/// status read is still describing the one before it.
+bool shouldStandDown(WatchState? state, {required bool fresh}) =>
+    !fresh && state != null && state.stopped;
+
 /// The server's public status for the user's watch, or null when it could
 /// not be read.
 Future<String?> fetchWatchStatus(
+  String apiKey,
+  String? devUrl,
+  String externalUserId,
+) async =>
+    (await fetchWatchState(apiKey, devUrl, externalUserId))?.status;
+
+Future<WatchState?> fetchWatchState(
   String apiKey,
   String? devUrl,
   String externalUserId,
@@ -50,7 +74,9 @@ Future<String?> fetchWatchStatus(
       '/api/kyc/address/presence/${Uri.encodeComponent(externalUserId)}',
     );
     final status = res.data?['status'];
-    return status is String ? status : null;
+    if (status is! String) return null;
+    // An older server sends no flag: a revoked check is the one stop it reports.
+    return WatchState(status, stopped: res.data?['stopped'] == true || status == 'revoked');
   } catch (_) {
     return null;
   }

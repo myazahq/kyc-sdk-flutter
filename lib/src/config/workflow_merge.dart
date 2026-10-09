@@ -124,6 +124,8 @@ MyazaKYCConfig mergeWorkflowIntoConfig(
     silentCapture: flow.raw['silentCapture'] as bool?,
     // Same: absent leaves the prop (on by default); only false turns it off.
     livenessBrightScreen: flow.raw['livenessBrightScreen'] as bool?,
+    // Absent = the flow says nothing (the prop stands; off when neither sets it).
+    selfieReview: flow.raw['selfieReview'] as bool?,
     biometric: biometric,
     // Flow-defined idTypes win wholesale (an empty list means "all granted",
     // the same "unset = all" semantic the id-type picker applies). Null = the
@@ -216,6 +218,8 @@ MyazaKYCConfig overlayApplicantWorkflow(
     silentCapture: flow.raw['silentCapture'] as bool?,
     // So does the bright screen that lights the applicant's selfie.
     livenessBrightScreen: flow.raw['livenessBrightScreen'] as bool?,
+    // And the selfie review after it.
+    selfieReview: flow.raw['selfieReview'] as bool?,
     nfc: nfc,
   );
 }

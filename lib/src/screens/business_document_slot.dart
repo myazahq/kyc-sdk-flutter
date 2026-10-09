@@ -7,6 +7,7 @@ import '../config/theme.dart';
 import '../config/upload_limits.dart';
 import '../widgets/dashed_border.dart';
 import '../widgets/icons/icons.dart';
+import '../widgets/myaza_spinner.dart';
 
 // ─── One business-document upload slot ────────────────────────────────────────
 //
@@ -155,7 +156,7 @@ class BusinessDocumentSlot extends StatelessWidget {
                 SizedBox(
                   width: 20,
                   height: 20,
-                  child: CircularProgressIndicator(
+                  child: MyazaSpinner(
                     strokeWidth: 2,
                     color: colors.primary,
                   ),
@@ -264,7 +265,7 @@ class _Leading extends StatelessWidget {
           child: SizedBox(
             width: 18,
             height: 18,
-            child: CircularProgressIndicator(strokeWidth: 2),
+            child: MyazaSpinner(strokeWidth: 2),
           ),
         ),
       );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
+import 'myaza_spinner.dart';
 
 // ─── Variants ─────────────────────────────────────────────────────────────────
 
@@ -117,7 +118,7 @@ class MyazaButton extends StatelessWidget {
               key: const ValueKey('loading'),
               width: 20,
               height: 20,
-              child: CircularProgressIndicator(
+              child: MyazaSpinner(
                 strokeWidth: 2,
                 color: effectiveFg,
               ),

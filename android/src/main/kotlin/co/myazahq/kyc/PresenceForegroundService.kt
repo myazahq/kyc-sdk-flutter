@@ -159,8 +159,9 @@ class PresenceForegroundService : Service() {
     if (fixes.isEmpty()) return
     val now = fixes.maxOf { it.timestamp }
     val offsetMinutes = TimeZone.getDefault().getOffset(now) / 60_000
-    val out = PresenceSampler.apply(config.lat, config.lng, fixes, store.enterAt, offsetMinutes)
+    val out = PresenceSampler.apply(config.lat, config.lng, fixes, store.enterAt, offsetMinutes, store.stayStart)
     store.enterAt = out.enterAt
+    store.stayStart = out.stayStart
     if (out.days.isNotEmpty()) store.queueDays(out.days)
     for (f in out.flagged) store.queueFlagged(f.day, f.nightPresent)
     // A live process is the one moment a stuck queue (an EXIT flush that met

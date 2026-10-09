@@ -1,65 +1,35 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 
 import '../config/theme.dart';
+import 'myaza_spinner.dart';
 
-/// Branded loading indicator: a pulsing outer ring around a tinted circle with a
-/// spinner. Shared by the submitting screen and the ID-type loading state so the
-/// loader looks consistent across the flow.
+/// The SDK's larger loading indicator. It used to be a pulsing ring around a
+/// tinted circle; it is now the one spinner every surface shares
+/// (myaza_spinner.dart), centred in the same box so no screen's layout moves.
+/// The name is kept because several screens mount it.
 class MyazaPulseLoader extends StatelessWidget {
-  /// Outer ring diameter. The inner spinner badge scales to 70% of this.
+  /// The box the loader sits in. The spinner fills a small box and half of a
+  /// large one.
   final double size;
 
   const MyazaPulseLoader({super.key, this.size = 80});
 
+  /// The spinner's side for a loader box: all of a small box, half of a large
+  /// one (80 gives 40, 64 the web's 32).
+  static double spinnerSize(double box) => box <= 32 ? box : (box / 2).roundToDouble();
+
   @override
   Widget build(BuildContext context) {
-    final colors = context.myazaColors;
-    final inner = size * 0.7;
-
+    final side = spinnerSize(size);
     return SizedBox(
       width: size,
       height: size,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          // Pulsing outer ring.
-          Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: colors.primary.withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-          )
-              .animate(onPlay: (c) => c.repeat())
-              .scale(
-                begin: const Offset(0.85, 0.85),
-                end: const Offset(1.05, 1.05),
-                duration: 1000.ms,
-                curve: Curves.easeInOut,
-              )
-              .fadeOut(begin: 0.8, duration: 1000.ms),
-          // Inner tinted circle with spinner.
-          Container(
-            width: inner,
-            height: inner,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: colors.primary.withValues(alpha: 0.10),
-            ),
-            child: Padding(
-              padding: EdgeInsets.all(inner * 0.28),
-              child: CircularProgressIndicator(
-                color: colors.primary,
-                strokeWidth: 3,
-              ),
-            ),
-          ),
-        ],
+      child: Center(
+        child: SizedBox(
+          width: side,
+          height: side,
+          child: MyazaSpinner(color: context.myazaColors.primary),
+        ),
       ),
     );
   }

@@ -9,6 +9,7 @@ struct PresenceStore {
   private static let configKey = "myaza_kyc_presence.config"
   private static let armedKey = "myaza_kyc_presence.armed"
   private static let enterAtKey = "myaza_kyc_presence.enterAt"
+  private static let stayStartKey = "myaza_kyc_presence.stayStart"
   private static let queueKey = "myaza_kyc_presence.queue"
 
   struct Config {
@@ -47,7 +48,7 @@ struct PresenceStore {
 
   static func clear() {
     let defaults = UserDefaults.standard
-    [configKey, armedKey, enterAtKey, queueKey].forEach { defaults.removeObject(forKey: $0) }
+    [configKey, armedKey, enterAtKey, stayStartKey, queueKey].forEach { defaults.removeObject(forKey: $0) }
   }
 
   static var armed: Bool {
@@ -65,6 +66,23 @@ struct PresenceStore {
         UserDefaults.standard.set(NSNumber(value: value), forKey: enterAtKey)
       } else {
         UserDefaults.standard.removeObject(forKey: enterAtKey)
+        UserDefaults.standard.removeObject(forKey: stayStartKey)
+      }
+    }
+  }
+
+  /// When the open stay began. `enterAt` moves on at each check-in; this
+  /// does not, which is how the check-in rule knows a stay was recorded.
+  static var stayStart: Int64? {
+    get {
+      guard enterAt != nil else { return nil }
+      return (UserDefaults.standard.object(forKey: stayStartKey) as? NSNumber)?.int64Value
+    }
+    set {
+      if let value = newValue {
+        UserDefaults.standard.set(NSNumber(value: value), forKey: stayStartKey)
+      } else {
+        UserDefaults.standard.removeObject(forKey: stayStartKey)
       }
     }
   }

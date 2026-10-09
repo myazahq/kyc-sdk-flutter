@@ -18,6 +18,7 @@ import 'mrz_scan_view.dart';
 import '../widgets/nfc_scanned_summary.dart';
 import 'nfc_screen_parts.dart';
 import '../i18n/text_scope.dart';
+import '../widgets/myaza_spinner.dart';
 
 // ─── NFC chip step ────────────────────────────────────────────────────────────
 //
@@ -230,7 +231,7 @@ class _NfcScreenState extends ConsumerState<NfcScreen> {
     if (_phase == _Phase.checking) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: MyazaSpacing.xl),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: MyazaSpinner()),
       );
     }
 

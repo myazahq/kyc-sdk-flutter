@@ -8,6 +8,7 @@ import 'package:myaza_kyc_sdk_flutter/src/utils/map_tiles.dart';
 // a script.
 
 void main() {
+  frameLoadFailedTests();
   group('the framed street-view page', streetViewTests);
   test(
       'buildMapFrameSrc keeps the grant and mode, adds the view, never an origin',
@@ -105,5 +106,31 @@ void streetViewTests() {
             '{"source":"other","type":"sv-ready"}'),
         isNull);
     expect(parseStreetViewFrameMessage('{not json'), isNull);
+  });
+}
+
+// Appended 2026-10-04: a dragged map cancels tile requests, and each one is a
+// WebView resource error. Only a failed PAGE swaps the map for the built-in
+// picker.
+void frameLoadFailedTests() {
+  group('frameLoadFailed', () {
+    test('a failed tile or script is not a failed page', () {
+      expect(frameLoadFailed(isForMainFrame: false, ready: false), isFalse);
+      expect(frameLoadFailed(isForMainFrame: false, ready: true), isFalse);
+    });
+
+    test('the page itself failing before it was ready is', () {
+      expect(frameLoadFailed(isForMainFrame: true, ready: false), isTrue);
+      expect(frameLoadFailed(isForMainFrame: null, ready: false), isTrue);
+    });
+
+    test('nothing after ready takes a working map away', () {
+      expect(frameLoadFailed(isForMainFrame: true, ready: true), isFalse);
+      expect(frameLoadFailed(isForMainFrame: null, ready: true), isFalse);
+    });
+
+    test('the wait for ready is 20 seconds', () {
+      expect(kMapFrameReadyTimeout, const Duration(seconds: 20));
+    });
   });
 }

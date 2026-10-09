@@ -226,10 +226,14 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
     return min(max(v, 0.0), 1.0)
   }
 
-  /// Smile from outer-lip width relative to the face. On-device the original
-  /// (0.42→0.55) mapping topped out at ~0.70 for a real smile (barely crossing
-  /// the 0.7 gesture threshold), so the input band is recentred to (0.40→0.50):
-  /// a neutral mouth sits near 0, a clear smile lands well above the threshold.
+  /// Smile from outer-lip width relative to the face box. Input band
+  /// (0.36→0.46): detectSmile passes above 0.5, so the pass line sits at a lip
+  /// width of 0.41 of the box. It was 0.40→0.50 (pass at 0.45), which on device
+  /// needed a full grin: a modest, natural smile never crossed it. ML Kit on
+  /// Android returns a classifier probability instead, so this band is the iOS
+  /// half of one shared threshold: tune it here, not in detectSmile, or Android
+  /// loosens with it. The React Native SDK's iOS detector
+  /// (HybridMyazaFaceDetector.swift) uses the same band; change both together.
   /// `outerLips.normalizedPoints` are relative to the face bounding box, so the
   /// width is already face-normalized.
   private static func smileProbability(_ landmarks: VNFaceLandmarks2D?) -> Double {
@@ -242,7 +246,7 @@ public class KycSdkFlutterPlugin: NSObject, FlutterPlugin {
       minX = min(minX, Double(p.x)); maxX = max(maxX, Double(p.x))
     }
     let width = maxX - minX
-    let score = (width - 0.40) / (0.50 - 0.40)
+    let score = (width - 0.36) / (0.46 - 0.36)
     return min(max(score, 0.0), 1.0)
   }
 

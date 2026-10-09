@@ -101,6 +101,10 @@ class FlashResult {
   final int inconclusive;
   final List<String> sequence;
 
+  /// When each colour came on, ms from the start of the recording
+  /// (flash_timeline.dart). Null when there was no recording to measure from.
+  final List<int>? onsets;
+
   const FlashResult({
     required this.passed,
     required this.score,
@@ -108,7 +112,18 @@ class FlashResult {
     required this.total,
     required this.inconclusive,
     required this.sequence,
+    this.onsets,
   });
+
+  FlashResult withOnsets(List<int>? onsets) => FlashResult(
+        passed: passed,
+        score: score,
+        matched: matched,
+        total: total,
+        inconclusive: inconclusive,
+        sequence: sequence,
+        onsets: onsets,
+      );
 
   Map<String, dynamic> toJson() => {
         'passed': passed,
@@ -117,6 +132,7 @@ class FlashResult {
         'total': total,
         'inconclusive': inconclusive,
         'sequence': sequence,
+        if (onsets != null) 'onsets': onsets,
       };
 }
 

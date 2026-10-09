@@ -8,6 +8,8 @@ import android.location.Location
 import android.os.Build
 import androidx.core.content.ContextCompat
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.Worker
@@ -24,8 +26,8 @@ import java.util.concurrent.TimeUnit
  * LEFT: someone who hardly leaves home produced no background evidence, and
  * one exit the OS dropped capped a multi-day stay at its first 24 hours.
  *
- * Every couple of hours (WorkManager decides exactly when) this takes one
- * low-power fix and hands it to the foreground-service tier's own state
+ * Every couple of hours (WorkManager decides exactly when), and once about
+ * 40 minutes after the person arrives, this takes one low-power fix and hands it to the foreground-service tier's own state
  * machine (PresenceSampler), on the SAME stored enterAt: inside, the stay so
  * far is folded and restarted at the reading; outside with a stay open, it is
  * closed. Only per-day aggregates ever leave the device. It also re-arms a
@@ -49,7 +51,11 @@ class PresenceCheckInWorker(context: Context, params: WorkerParameters) : Worker
 
   companion object {
     private const val WORK_NAME = "myaza-kyc-presence-checkin"
+    private const val FIRST_WORK_NAME = "myaza-kyc-presence-checkin-first"
     private const val INTERVAL_HOURS = 2L
+    /** Just past the 35-minute first check-in (PresenceFold), so the run
+     *  that follows an arrival finds a stay long enough to record. */
+    private const val FIRST_DELAY_MINUTES = 40L
     private const val FIX_TIMEOUT_S = 20L
     private const val LAST_KNOWN_MAX_AGE_MS = 15L * 60 * 1000
 
@@ -63,8 +69,26 @@ class PresenceCheckInWorker(context: Context, params: WorkerParameters) : Worker
       }
     }
 
+    /**
+     * One run shortly after an arrival, so the day is credited while the
+     * person is still at home rather than at the next two-hourly run. A new
+     * arrival replaces a run still waiting on the last one.
+     */
+    fun scheduleFirst(context: Context) {
+      try {
+        val request = OneTimeWorkRequestBuilder<PresenceCheckInWorker>()
+          .setInitialDelay(FIRST_DELAY_MINUTES, TimeUnit.MINUTES)
+          .build()
+        WorkManager.getInstance(context.applicationContext)
+          .enqueueUniqueWork(FIRST_WORK_NAME, ExistingWorkPolicy.REPLACE, request)
+      } catch (_: Exception) {
+        // WorkManager unavailable: the periodic run and app opens still check in.
+      }
+    }
+
     fun cancel(context: Context) {
       try {
+        WorkManager.getInstance(context.applicationContext).cancelUniqueWork(FIRST_WORK_NAME)
         WorkManager.getInstance(context.applicationContext).cancelUniqueWork(WORK_NAME)
       } catch (_: Exception) {
         // Not scheduled.
@@ -78,8 +102,11 @@ class PresenceCheckInWorker(context: Context, params: WorkerParameters) : Worker
      */
     fun applyCheckIn(store: PresenceStore, config: PresenceStore.Config, fix: PresenceSampler.Fix) {
       val offsetMinutes = TimeZone.getDefault().getOffset(fix.timestamp) / 60_000
-      val out = PresenceSampler.apply(config.lat, config.lng, listOf(fix), store.enterAt, offsetMinutes)
+      val out = PresenceSampler.apply(
+        config.lat, config.lng, listOf(fix), store.enterAt, offsetMinutes, store.stayStart,
+      )
       store.enterAt = out.enterAt
+      store.stayStart = out.stayStart
       if (out.days.isNotEmpty()) store.queueDays(out.days)
       for (f in out.flagged) store.queueFlagged(f.day, f.nightPresent)
       PresenceGeofencer.flushQueue(store)

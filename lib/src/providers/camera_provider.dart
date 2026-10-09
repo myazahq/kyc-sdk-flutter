@@ -4,6 +4,7 @@ import 'dart:ui' show Offset;
 import 'package:camera/camera.dart';
 import 'package:flutter/foundation.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import '../liveness/flash_timeline.dart';
 
 part 'camera_provider.g.dart';
 
@@ -276,6 +277,8 @@ class CameraNotifier extends _$CameraNotifier {
     if (_controller!.value.isRecordingVideo) return;
     try {
       await _controller!.startVideoRecording(onAvailable: onImage);
+      // The flash reports its colours' times from here (flash_timeline.dart).
+      markRecordingStart(flashClockNow());
       _streamingViaRecording = onImage != null;
       _imageStreamActive = onImage != null;
     } on CameraException catch (e) {

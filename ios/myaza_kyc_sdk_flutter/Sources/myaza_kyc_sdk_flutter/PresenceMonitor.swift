@@ -95,7 +95,11 @@ final class PresenceMonitor: NSObject, CLLocationManagerDelegate {
 
   func locationManager(_ manager: CLLocationManager, didEnterRegion region: CLRegion) {
     guard region.identifier == PresenceMonitor.regionId, PresenceStore.armed else { return }
-    PresenceStore.enterAt = Int64(Date().timeIntervalSince1970 * 1000)
+    let now = Int64(Date().timeIntervalSince1970 * 1000)
+    PresenceStore.enterAt = now
+    PresenceStore.stayStart = now
+    // Ask for a refresh soon after the arrival, not at the next two-hourly one.
+    scheduleCheckIns()
   }
 
   func locationManager(

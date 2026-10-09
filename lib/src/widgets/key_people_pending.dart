@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../config/theme.dart';
 import '../i18n/text_scope.dart';
+import 'myaza_spinner.dart';
 
 /// Held while the register is reconciled against what the applicant typed.
 ///
@@ -70,7 +71,7 @@ class _KeyPeoplePendingState extends State<KeyPeoplePending>
                       SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: MyazaSpinner(
                           strokeWidth: 2,
                           color: colors.primary,
                         ),

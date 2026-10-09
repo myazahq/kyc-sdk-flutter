@@ -1,3 +1,4 @@
+import '../screens/liveness_immersive.dart';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
@@ -354,6 +355,9 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
   /// the camera never opened at all.
   final _stepKeys = <KYCStep, GlobalKey>{};
 
+  /// The step screen itself, inside the multi-ID wrapper: see _screenWithMultiId.
+  final _multiIdScreenKeys = <KYCStep, GlobalKey>{};
+
   // Ensures a fatal config-load failure is reported to onError at most once.
   bool _configErrorReported = false;
   // Ensures a cancelled session is reported to onError at most once.
@@ -597,6 +601,12 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
       // Scoped to the document step as well as the flag: if that step unmounts
       // while the flag is still raised, the NEXT step must not inherit a
       // chrome-free shell.
+      // The liveness camera takes the screen the same way. It keeps the flow's
+      // own colours (its blur is tinted with them), so it also keeps the
+      // themed system bars, and the shell draws its back and close.
+      final immersiveLiveness = blockingMessage == null &&
+          state.immersiveCapture &&
+          step == KYCStep.liveness;
       final immersive = blockingMessage == null &&
           state.immersiveCapture &&
           step == KYCStep.documentCapture;
@@ -616,6 +626,39 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
             data: Theme.of(context).copyWith(extensions: [colorScheme]),
             child: child,
           );
+
+      if (immersiveLiveness) {
+        return themed(AnnotatedRegion<SystemUiOverlayStyle>(
+          value: overlayStyle,
+          child: Scaffold(
+            backgroundColor: colorScheme.background,
+            body: Stack(
+              fit: StackFit.expand,
+              children: [
+                LivenessOwnTheme(scheme: userScheme, child: keyedScreen),
+                // In the person's OWN theme, not the lit one: on a dark flow
+                // the bright screen is there to light the face, and two white
+                // buttons are no part of that.
+                Theme(
+                  data: Theme.of(context).copyWith(extensions: [userScheme]),
+                  child: LivenessImmersiveControls(
+                  onBack: onBack,
+                  // The same explicit close as the sheet's: tell the host,
+                  // then pop past the step-back guard.
+                  onClose: canDismiss
+                      ? () {
+                          widget.onClose?.call();
+                          final nav = Navigator.of(context);
+                          if (nav.canPop()) nav.pop();
+                        }
+                      : null,
+                ),
+                ),
+              ],
+            ),
+          ),
+        ));
+      }
 
       if (immersive) {
         return themed(AnnotatedRegion<SystemUiOverlayStyle>(
@@ -750,6 +793,19 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
   Widget _screenWithMultiId(KYCStep step) {
     final plan = ref.read(kYCNotifierProvider.notifier).multiIdPlan();
     if (plan == null || !_multiIdSteps.contains(step)) return _screenForStep(step);
+    // Keyed, because the liveness step sits under the strip in the sheet and
+    // on its own once its camera takes the screen: without a key that move
+    // would rebuild the step and restart the camera.
+    final screen = KeyedSubtree(
+      key: _multiIdScreenKeys.putIfAbsent(step, GlobalKey.new),
+      child: _screenForStep(step),
+    );
+    // The full-screen liveness camera has no room for the strip, and no
+    // bounded height to give a screen placed under it.
+    if (step == KYCStep.liveness &&
+        ref.read(kYCNotifierProvider).immersiveCapture) {
+      return screen;
+    }
     // A step inside the sheet's scroll view has UNBOUNDED height, and an
     // Expanded cannot lay out there: a debug build asserts and paints nothing,
     // which left the multi-ID ID picker blank (2026-09-15; a release build skips
@@ -760,14 +816,14 @@ class _KycFlowWidgetState extends ConsumerState<_KycFlowWidget>
       return Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [MultiIdProgress(plan: plan), _screenForStep(step)],
+        children: [MultiIdProgress(plan: plan), screen],
       );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         MultiIdProgress(plan: plan),
-        Expanded(child: _screenForStep(step)),
+        Expanded(child: screen),
       ],
     );
   }

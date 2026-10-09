@@ -462,9 +462,9 @@ class KYCNotifier extends _$KYCNotifier {
     }
     final order = buildStepOrder(_config, state);
     final idx = order.indexOf(state.currentStep);
-    if (idx > 0) {
-      _moveToStep(order[idx - 1]);
-    }
+    // A finished liveness step is landed on like any other: it opens on its
+    // "already taken" screen (LivenessScreen), never on the camera again.
+    if (idx > 0) _moveToStep(order[idx - 1]);
   }
 
   // ── Setters ────────────────────────────────────────────────────────────────
@@ -536,8 +536,13 @@ class KYCNotifier extends _$KYCNotifier {
   void _moveToStep(KYCStep next) {
     state = state.copyWith(
       currentStep: next,
-      immersiveCapture:
-          next == KYCStep.documentCapture ? state.immersiveCapture : false,
+      // Only a move WITHIN document capture keeps it. The liveness camera
+      // raises it too now, and going back from there to the document step
+      // must not hand that step a raised flag.
+      immersiveCapture: next == KYCStep.documentCapture &&
+              state.currentStep == KYCStep.documentCapture
+          ? state.immersiveCapture
+          : false,
     );
   }
 

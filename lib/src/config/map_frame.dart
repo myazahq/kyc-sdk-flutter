@@ -26,8 +26,21 @@ const String kMapParentSource = 'myaza-sdk';
 const String kMapFrameChannel = 'MyazaMap';
 
 /// How long to wait for `ready` before falling back to the OSM picker.
-/// Generous: the page loads Google's script on a cold cache.
-const Duration kMapFrameReadyTimeout = Duration(seconds: 8);
+// 20 seconds: the hosted page is rendered per request and then loads Google's
+// script, and from a phone on mobile data that measured over 8 seconds often
+// enough that the map fell back to the built-in picker while the real one was
+// still on its way (production, 2026-10-04). The three SDKs keep one value.
+const Duration kMapFrameReadyTimeout = Duration(seconds: 20);
+
+/// Whether a WebView resource error means the PAGE failed to load. A map
+/// requests hundreds of tiles and cancels many of them as it is dragged, and
+/// each of those is a resource error too; treating one as a failed page
+/// swapped a working Google map for the built-in picker mid-drag. Only an
+/// error on the page itself counts, and only before the page said it was
+/// ready. An unknown answer (null) on a page that is not ready counts, since
+/// the alternative is a blank rectangle.
+bool frameLoadFailed({required bool? isForMainFrame, required bool ready}) =>
+    !ready && isForMainFrame != false;
 
 /// The full page URL: the server-minted frame URL (which already carries the
 /// signed APP grant and `mode=app`) plus the render-time parameters. There is

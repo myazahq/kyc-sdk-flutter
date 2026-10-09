@@ -11,7 +11,10 @@ import '../liveness/flash_outcome.dart';
 import '../liveness/flash_ready_gate.dart';
 import '../liveness/face_continuity.dart';
 import '../liveness/liveness_types.dart';
+import '../liveness/capture_pose.dart';
+import '../liveness/face_window.dart';
 import '../liveness/passive_hold.dart';
+import '../liveness/sharpest_still.dart';
 import '../services/image_service.dart';
 import 'kyc_provider.dart';
 
@@ -50,6 +53,7 @@ class LivenessState {
   /// Distance guidance — mirrors the web SDK's position check.
   ///   'too_far'   → face width < 0.28 → "Kindly move closer"
   ///   'too_close' → face width > 0.7  → "Kindly move further away"
+  ///   'off_centre' → full screen only: the face is beside the window
   ///   null        → correct distance
   /// Checked per-frame during positioning and challenge phases.
   /// Blocks challenge advancement when not null during positioning.
@@ -160,7 +164,7 @@ class LivenessNotifier extends _$LivenessNotifier {
   /// Shown once a flash-only face is framed + lit and the pre-flash hold begins.
   /// Doubles as the photosensitivity heads-up before the colours appear.
   static const String _kFlashHoldInstruction =
-      'Hold still — the screen will flash briefly';
+      'Hold still. The screen will flash briefly';
 
   bool _challengeProcessing = false;
 
@@ -292,7 +296,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     }
 
     // Check face size and update position guidance on every frame.
-    _checkFacePosition(data.faceSizeRatio);
+    _checkFacePosition(data);
 
     switch (state.phase) {
       case LivenessPhase.positioning:
@@ -379,7 +383,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     _flashGate?.reset();
     state = state.copyWith(
       phase: LivenessPhase.failed,
-      instruction: 'Let\'s start over — please stay in frame.',
+      instruction: 'Let\'s start over. Please stay in frame.',
       error: 'face_swap',
       clearActiveChallenge: true,
       clearPositionGuidance: true,
@@ -398,7 +402,7 @@ class LivenessNotifier extends _$LivenessNotifier {
     _flashGate?.reset();
     state = state.copyWith(
       phase: LivenessPhase.failed,
-      instruction: 'Let\'s start over — please stay in frame.',
+      instruction: 'Let\'s start over. Please stay in frame.',
       error: 'face_swap',
       clearActiveChallenge: true,
       clearPositionGuidance: true,
@@ -598,7 +602,15 @@ class LivenessNotifier extends _$LivenessNotifier {
   static const double _tooFarThreshold  = 0.28;
   static const double _tooCloseThreshold = 0.70;
 
-  void _checkFacePosition(double faceSizeRatio) {
+  /// The full-screen camera's window onto the frame, or null in the sheet,
+  /// where the circle shows the whole frame.
+  FaceWindow? _faceWindow;
+
+  /// Told by the screen when the camera takes, or gives back, the display.
+  void setFaceWindow(FaceWindow? window) => _faceWindow = window;
+
+  void _checkFacePosition(LivenessFaceData data) {
+    final faceSizeRatio = data.faceSizeRatio;
     // Don't override position guidance in terminal / transition phases.
     if (state.phase == LivenessPhase.challengePassed ||
         state.phase == LivenessPhase.capturing ||
@@ -608,7 +620,20 @@ class LivenessNotifier extends _$LivenessNotifier {
     }
 
     final String? newGuidance;
-    if (faceSizeRatio < _tooFarThreshold) {
+    final window = _faceWindow;
+    if (window != null) {
+      // Full screen: the face has to sit INSIDE the window, not merely be a
+      // sensible size somewhere in the frame.
+      newGuidance = faceWindowGuidance(
+        window,
+        faceWidth: faceSizeRatio,
+        centreX: data.faceCenterX,
+        centreY: data.faceCenterY,
+        moving: state.phase == LivenessPhase.challenge &&
+            (_manager.current?.type == LivenessChallenge.turn ||
+                _manager.current?.type == LivenessChallenge.nod),
+      );
+    } else if (faceSizeRatio < _tooFarThreshold) {
       newGuidance = 'too_far';
     } else if (faceSizeRatio > _tooCloseThreshold) {
       newGuidance = 'too_close';
@@ -657,6 +682,22 @@ class LivenessNotifier extends _$LivenessNotifier {
         instruction: instruction,
       );
     }
+  }
+
+  /// Shown when the photos just taken were soft and the SDK is taking them
+  /// again by itself.
+  void askToHoldForRetake() {
+    if (state.phase != LivenessPhase.capturing) return;
+    state = state.copyWith(instruction: kRetakeInstruction);
+  }
+
+  /// Shown while the photo waits for the face to come back to the camera
+  /// after a gesture. Only during the capture, and only when it would change
+  /// what is on screen.
+  void askForStraightFace() {
+    if (state.phase != LivenessPhase.capturing) return;
+    if (state.instruction == kLookStraightInstruction) return;
+    state = state.copyWith(instruction: kLookStraightInstruction);
   }
 
   void _startNextChallenge() {

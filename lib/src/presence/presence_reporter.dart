@@ -3,7 +3,9 @@ import 'package:geolocator/geolocator.dart';
 
 import '../utils/resolve_url.dart';
 import 'background_presence.dart';
+import 'presence_auto_arm.dart';
 import 'presence_math.dart';
+import 'presence_stand_down.dart';
 import 'presence_store.dart';
 import 'presence_watch_wait.dart';
 
@@ -27,6 +29,10 @@ enum PresenceReportReason {
 
   /// Nothing is monitoring this user right now, so a report would be dropped.
   noWatch,
+
+  /// The organisation stopped monitoring. Background location was switched
+  /// off and the stored pin forgotten.
+  stopped,
   networkError,
 }
 
@@ -36,7 +42,10 @@ class PresenceReportResult {
   /// Whether the fix landed inside the fence (null when nothing was evaluated).
   final bool? inside;
   final PresenceReportReason reason;
-  const PresenceReportResult(this.reported, this.inside, this.reason);
+
+  /// Set when this report tried to switch background monitoring on.
+  final EnableBackgroundResult? background;
+  const PresenceReportResult(this.reported, this.inside, this.reason, {this.background});
 }
 
 class MyazaAddressPresence {
@@ -85,15 +94,67 @@ class MyazaAddressPresence {
   /// reference the KYC flow ran with. [apiKey] is the org's publishable key;
   /// [devUrl] overrides the server for development keys, exactly like the SDK
   /// config's field of the same name.
+  ///
+  /// The reporter switches background monitoring on for a person whose check
+  /// is running without it, asking for "allow all the time" once. Pass
+  /// [autoBackground] `false` to do that yourself with
+  /// `MyazaBackgroundPresence.enable()`, at a moment you choose.
   static Future<PresenceReportResult> report({
     required String apiKey,
     required String externalUserId,
     String? devUrl,
+    bool autoBackground = true,
+  }) async {
+    EnableBackgroundResult? armed;
+    final result = await _report(
+      apiKey: apiKey,
+      externalUserId: externalUserId,
+      devUrl: devUrl,
+      // A check running without background monitoring gets it switched on
+      // here, once (presence_auto_arm.dart): this call is the only one an
+      // existing app makes.
+      arm: (pin, watch, fresh) async => armed = await maybeArmBackground(
+        apiKey: apiKey,
+        externalUserId: externalUserId,
+        devUrl: devUrl,
+        autoBackground: autoBackground,
+        pin: pin,
+        watch: watch,
+        fresh: fresh,
+      ),
+    );
+    // What the arming step did rides whichever answer the report ends on.
+    return armed == null
+        ? result
+        : PresenceReportResult(result.reported, result.inside, result.reason, background: armed);
+  }
+
+  static Future<PresenceReportResult> _report({
+    required String apiKey,
+    required String externalUserId,
+    String? devUrl,
+    required Future<void> Function(StoredPin pin, WatchState? watch, bool fresh) arm,
   }) async {
     final pin = await loadPresencePin(externalUserId);
     if (pin == null) {
       return const PresenceReportResult(false, null, PresenceReportReason.noPin);
     }
+
+    // Asked before anything touches location: when the organisation has
+    // stopped monitoring, the phone stops too (presence_stand_down.dart), and
+    // takes no fix at all.
+    final fresh = pinIsFresh(pin.savedAt);
+    WatchState? known;
+    var knownRead = false;
+    if (!fresh) {
+      known = await fetchWatchState(apiKey, devUrl, externalUserId);
+      knownRead = true;
+      if (shouldStandDown(known, fresh: fresh)) {
+        await standDownPresence(externalUserId);
+        return const PresenceReportResult(false, null, PresenceReportReason.stopped);
+      }
+    }
+    await arm(pin, known, fresh);
 
     // The phone's location toggle, checked before the permission dance: off,
     // every fix fails, and `noFix` told the host nothing about why.
@@ -141,8 +202,15 @@ class MyazaAddressPresence {
     // The watch is minted seconds after a submission is accepted, and the
     // ingest drops a report that arrives before it (presence_watch_wait.dart).
     final watch = await awaitWatch(
-      fresh: pinIsFresh(pin.savedAt),
-      fetchStatus: () => fetchWatchStatus(apiKey, devUrl, externalUserId),
+      fresh: fresh,
+      // The read made above is used once, so an old pin costs one request.
+      fetchStatus: () async {
+        if (knownRead) {
+          knownRead = false;
+          return known?.status;
+        }
+        return fetchWatchStatus(apiKey, devUrl, externalUserId);
+      },
     );
     if (watch == WatchPresence.absent) {
       return PresenceReportResult(false, inside, PresenceReportReason.noWatch);

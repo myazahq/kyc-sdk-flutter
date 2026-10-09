@@ -97,6 +97,7 @@ Map<String, dynamic> livenessIntegrityClaim({
         'total': flash.total,
         'inconclusive': flashUnmeasurable(flash),
         'sequence': flash.sequence,
+        if (flash.onsets != null) 'onsets': flash.onsets,
       },
   };
 }

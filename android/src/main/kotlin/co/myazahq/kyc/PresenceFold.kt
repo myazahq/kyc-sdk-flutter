@@ -77,20 +77,38 @@ object PresenceFold {
    * records it. Without check-ins a stay was credited only when the person
    * left, so someone who hardly leaves home produced no background evidence,
    * and one lost exit capped a multi-day stay at its first 24 hours.
+   *
+   * The FIRST check-in of a stay comes at 35 minutes, just past the server's
+   * default 30-minute dwell floor, so a day is credited soon after the person
+   * gets home. Later ones wait three hours: the server keeps the LONGEST
+   * slice per day, so short slices all day would never satisfy an
+   * organisation whose floor is set above them.
    */
+  const val FIRST_CHECKPOINT_MS: Long = 35L * 60 * 1000
   const val CHECKPOINT_MS: Long = 3L * 60 * 60 * 1000
 
-  data class Checkpoint(val enterAt: Long, val days: List<DayAggregate>)
+  /** [stayStart] is when the person arrived; check-ins never move it. */
+  data class Checkpoint(val enterAt: Long, val stayStart: Long, val days: List<DayAggregate>)
+
+  /** The interval the open stay is waiting on: the short one until something
+   *  has recorded it (no start on file, or a start that is the stay's own). */
+  fun checkpointInterval(enterAt: Long, stayStart: Long?): Long =
+    if (stayStart == null || stayStart >= enterAt) FIRST_CHECKPOINT_MS else CHECKPOINT_MS
+
+  /** When the next check-in can record the open stay; null with none open. */
+  fun nextCheckpointAt(enterAt: Long?, stayStart: Long?): Long? =
+    enterAt?.let { it + checkpointInterval(it, stayStart) }
 
   /**
    * Apply a CONFIRMED-INSIDE reading at [atMs]. No open stay opens one; a stay
-   * open at least CHECKPOINT_MS is folded up to [atMs] and restarted there;
+   * open at least its interval is folded up to [atMs] and restarted there;
    * anything else is unchanged. Mirrors checkpointStay in the RN SDK's
    * background-math.ts and PresenceFold.swift, pinned to the same vectors.
    */
-  fun checkpointStay(enterAt: Long?, atMs: Long, offsetMinutes: Int): Checkpoint {
-    if (enterAt == null) return Checkpoint(atMs, emptyList())
-    if (atMs - enterAt < CHECKPOINT_MS) return Checkpoint(enterAt, emptyList())
-    return Checkpoint(atMs, foldSpanIntoDays(enterAt, atMs, offsetMinutes))
+  fun checkpointStay(enterAt: Long?, atMs: Long, offsetMinutes: Int, stayStart: Long? = null): Checkpoint {
+    if (enterAt == null) return Checkpoint(atMs, atMs, emptyList())
+    val start = stayStart ?: enterAt
+    if (atMs - enterAt < checkpointInterval(enterAt, stayStart)) return Checkpoint(enterAt, start, emptyList())
+    return Checkpoint(atMs, start, foldSpanIntoDays(enterAt, atMs, offsetMinutes))
   }
 }

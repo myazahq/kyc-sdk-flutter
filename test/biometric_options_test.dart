@@ -39,9 +39,29 @@ void main() {
     expect(showsDoneButton(scope: 'biometric-enrollment', biometric: const BiometricFlowConfig(doneButton: false)), isFalse);
   });
 
-  test('a full verification always reviews, never waits and always shows Done, whatever the block says', () {
+  test('a full verification reviews only when its workflow says so', () {
+    // Off by default, and the biometric block does not speak for it.
+    expect(showsSelfieReview(), isFalse);
+    expect(showsSelfieReview(biometric: const BiometricFlowConfig(selfieReview: true)), isFalse);
+    expect(showsSelfieReview(review: true), isTrue);
+    expect(showsSelfieReview(review: false), isFalse);
+  });
+
+  test('a biometric scope takes its own switch first, then the workflow one', () {
+    const scope = 'biometric-authentication';
+    expect(showsSelfieReview(scope: scope, review: true), isTrue);
+    expect(
+      showsSelfieReview(
+        scope: scope,
+        review: true,
+        biometric: const BiometricFlowConfig(selfieReview: false),
+      ),
+      isFalse,
+    );
+  });
+
+  test('a full verification never waits and always shows Done, whatever the block says', () {
     expect(biometricFlowOptions(), isNull);
-    expect(showsSelfieReview(biometric: const BiometricFlowConfig(selfieReview: false)), isTrue);
     expect(waitsForResult(scope: 'address', biometric: const BiometricFlowConfig(resultDelivery: 'both')), isFalse);
     expect(showsDoneButton(scope: 'contact', biometric: const BiometricFlowConfig(doneButton: false)), isTrue);
   });

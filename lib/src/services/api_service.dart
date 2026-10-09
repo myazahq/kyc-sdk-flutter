@@ -1,3 +1,4 @@
+import '../config/signature.dart';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -26,7 +27,7 @@ part 'api_device.dart';
 // which SDK versions are in the wild and gate breaking API changes by version.
 // Keep in sync with pubspec.yaml `version`.
 
-const String kSdkVersion = '3.5.0';
+const String kSdkVersion = '3.6.0';
 
 // ─── Exception ────────────────────────────────────────────────────────────────
 
@@ -1235,6 +1236,29 @@ class KYCApiService {
       return UploadResponse.fromJson(res.data!).mediaId;
     } on DioException catch (e) {
       throw _mapDioError(e, fallbackError: 'upload_failed');
+    }
+  }
+
+  // ── Signature drawn on screen ─────────────────────────────────────────────
+  //
+  // The server draws the image from the strokes and stores it as a supporting
+  // document; returns its mediaId, exactly as [upload] does.
+  Future<String> uploadSignature(SignatureDrawing drawing) async {
+    try {
+      final uploadDeviceId = await _uploadDeviceId();
+      final res = await _dio.post<Map<String, dynamic>>(
+        '/api/kyc/upload/signature',
+        data: drawing.toJson(),
+        options: Options(
+          contentType: 'application/json',
+          headers: {
+            if (uploadDeviceId != null) kDeviceIdHeader: uploadDeviceId,
+          },
+        ),
+      );
+      return UploadResponse.fromJson(res.data!).mediaId;
+    } on DioException catch (e) {
+      throw _mapDioError(e, fallbackError: 'signature_not_saved');
     }
   }
 

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/theme.dart';
 import '../../widgets/myaza_input.dart';
 import '../../widgets/icons/icons.dart';
+import '../../widgets/myaza_spinner.dart';
 
 /// The minimum a query must reach before either backend is asked. Below it the
 /// answer is noise and the request is wasted.
@@ -40,7 +41,7 @@ class AddressAutocompleteField extends StatelessWidget {
           ? SizedBox(
               width: 16,
               height: 16,
-              child: CircularProgressIndicator(
+              child: MyazaSpinner(
                   strokeWidth: 2, color: colors.textSecondary),
             )
           : null,
@@ -119,7 +120,7 @@ class _AddressBasicSearchFieldState extends State<AddressBasicSearchField> {
                     ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: MyazaSpinner(
                             strokeWidth: 2, color: colors.primary),
                       )
                     : MyazaIcon(MyazaIcons.search,

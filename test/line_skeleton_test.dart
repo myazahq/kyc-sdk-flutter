@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:myaza_kyc_sdk_flutter/src/widgets/line_skeleton.dart';
+import 'package:myaza_kyc_sdk_flutter/src/widgets/myaza_spinner.dart';
 
 // ─── The pending line is a skeleton that speaks ─────────────────────────────
 //
@@ -28,7 +29,7 @@ void main() {
     await tester.pump();
 
     expect(find.bySemanticsLabel('Finding the address…'), findsOneWidget);
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(MyazaSpinner), findsNothing);
   });
 
   testWidgets('stands exactly at the height of the line it replaces',

@@ -105,16 +105,16 @@ class PoweredBy extends StatelessWidget {
         // device with no browser has nothing useful to show instead.
         // The ROW is not the link — only the mark is. A Row expands to its
         // constraints, so wrapping it in the GestureDetector made the entire
-        // footer width open myaza.co. "Powered by" is a label, not a
+        // footer width open myaza.co. "Protected by" is a label, not a
         // destination.
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Small and muted on purpose — "Powered by" is connective tissue,
+            // Small and muted on purpose — "Protected by" is connective tissue,
             // not the message. The BRAND carries the weight.
             Text(
-              'Powered by',
+              'Protected by',
               style: TextStyle(
                 fontSize: 12,
                 height: 1.2,

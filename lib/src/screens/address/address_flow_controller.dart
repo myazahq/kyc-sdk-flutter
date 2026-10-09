@@ -182,7 +182,8 @@ class AddressFlowController extends ChangeNotifier
     final userId = config.userId;
     if (cfg?.presenceEnabled == true && userId != null && userId.isNotEmpty) {
       await savePresencePin(userId, current.lat, current.lng,
-          alwaysOn: cfg?.presenceAlwaysOn == true);
+          alwaysOn: cfg?.presenceAlwaysOn == true,
+          background: cfg?.presenceBackground != false);
     }
     if (!alive) return;
 

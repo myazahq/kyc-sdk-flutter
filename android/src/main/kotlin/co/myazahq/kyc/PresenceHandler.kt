@@ -12,8 +12,10 @@ import kotlin.concurrent.thread
 
 /**
  * Channel side of the background presence tier (`kyc_sdk_flutter/presence`).
- * Dart owns the permission escalation (geolocator's two-step to "always");
- * this side only persists the reporter config and arms/disarms the fence.
+ * Dart owns the permission escalation, but the step up to "Allow all the
+ * time" is asked natively ([PresenceAlwaysPermission]): geolocator's own
+ * request is ignored by Android 11 and later. This side persists the reporter
+ * config and arms/disarms the fence.
  */
 class PresenceHandler(private val context: Context) {
   /** Returns true when the call was one of ours. */
@@ -78,6 +80,19 @@ class PresenceHandler(private val context: Context) {
         result.success(null)
       }
       "isPresenceArmed" -> result.success(PresenceStore(context).armed)
+      // The open stay, for the host to show: when the person arrived and when
+      // the next check-in can record it. Null with no stay open.
+      "presenceStay" -> {
+        val store = PresenceStore(context)
+        val enterAt = store.enterAt
+        result.success(
+          if (!store.armed || enterAt == null) null
+          else mapOf(
+            "since" to (store.stayStart ?: enterAt),
+            "nextReportAt" to PresenceFold.nextCheckpointAt(enterAt, store.stayStart),
+          ),
+        )
+      }
       "enablePresenceService" -> {
         val lat = call.argument<Double>("lat")
         val lng = call.argument<Double>("lng")

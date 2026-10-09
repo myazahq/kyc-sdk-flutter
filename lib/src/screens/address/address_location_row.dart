@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../config/theme.dart';
 import '../../widgets/icons/icons.dart';
 import '../../i18n/text_scope.dart';
+import '../../widgets/myaza_spinner.dart';
 
 /// "Use my current location" as a proper ROW, not a button pretending to be
 /// two: a medallion showing the fix's state, a title with the RESOLVED ADDRESS
@@ -58,7 +59,7 @@ class CurrentLocationRow extends StatelessWidget {
                     ? SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
+                        child: MyazaSpinner(
                             strokeWidth: 2, color: colors.primary),
                       )
                     : MyazaIcon(
@@ -145,7 +146,7 @@ class LocateOnMapButton extends StatelessWidget {
                   SizedBox(
                     width: 14,
                     height: 14,
-                    child: CircularProgressIndicator(
+                    child: MyazaSpinner(
                         strokeWidth: 2, color: colors.textSecondary),
                   )
                 else

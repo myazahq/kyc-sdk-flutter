@@ -15,6 +15,16 @@
 import '../i18n/translate.dart' show TextFn, defaultTextFn;
 
 /// One requested supporting document, as the workflow configures it.
+/// How the applicant provides a document. An unknown mode from a newer
+/// workflow degrades to the upload slot this build can draw.
+enum SupportingDocumentCapture { upload, draw, drawOrUpload }
+
+SupportingDocumentCapture supportingDocumentCaptureFrom(Object? raw) => switch (raw) {
+      'draw' => SupportingDocumentCapture.draw,
+      'draw_or_upload' => SupportingDocumentCapture.drawOrUpload,
+      _ => SupportingDocumentCapture.upload,
+    };
+
 class SupportingDocumentRequest {
   const SupportingDocumentRequest({
     required this.key,
@@ -24,7 +34,11 @@ class SupportingDocumentRequest {
     this.idTypes = const [],
     this.alwaysAsk = false,
     this.reads = const [],
+    this.capture = SupportingDocumentCapture.upload,
   });
+
+  /// How it is provided: a file, a signature drawn on screen, or either.
+  final SupportingDocumentCapture capture;
 
   /// The organisation's own slug — the wire `type` this upload submits as.
   final String key;
@@ -72,6 +86,7 @@ class SupportingDocumentRequest {
       idTypes: ids is List ? ids.whereType<String>().toList() : const [],
       alwaysAsk: json['alwaysAsk'] == true,
       reads: _reads(json['fields']),
+      capture: supportingDocumentCaptureFrom(json['capture']),
     );
   }
 
@@ -121,7 +136,11 @@ class ResolvedSupportingDocument {
     required this.description,
     required this.required,
     this.reads = const [],
+    this.capture = SupportingDocumentCapture.upload,
   });
+
+  /// How it is provided: uploaded, signed on screen, or either.
+  final SupportingDocumentCapture capture;
 
   final String key;
   final String label;
@@ -167,6 +186,7 @@ List<ResolvedSupportingDocument> resolveSupportingDocuments(
       description: entry.description,
       required: entry.required && inScope,
       reads: entry.reads,
+      capture: entry.capture,
     ));
   }
   return out;
@@ -226,7 +246,12 @@ class SupportingDocumentUpload {
     required this.fileName,
     this.previewPath,
     this.isPdf = false,
+    this.method,
   });
+
+  /// How it was provided (`drawn` or `uploaded`), where the workflow lets the
+  /// applicant sign on screen. Null on an upload-only document.
+  final String? method;
 
   /// The document's key, chosen by the org — what the server matches this
   /// upload back to its own request on.
@@ -240,7 +265,11 @@ class SupportingDocumentUpload {
   final String? previewPath;
   final bool isPdf;
 
-  Map<String, dynamic> toJson() => {'type': type, 'mediaId': mediaId};
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'mediaId': mediaId,
+        if (method != null) 'method': method,
+      };
 
   /// Restores a saved session's upload. The preview is deliberately dropped —
   /// progress carries ids, not bytes — so a resumed slot shows as uploaded
@@ -255,6 +284,7 @@ class SupportingDocumentUpload {
       type: type,
       mediaId: mediaId,
       fileName: json['fileName'] as String? ?? type,
+      method: switch (json['method']) { 'drawn' => 'drawn', 'uploaded' => 'uploaded', _ => null },
     );
   }
 }

@@ -70,4 +70,24 @@ void main() {
       expect(pinIsFresh('yesterday', now: now), isFalse);
     });
   });
+
+  // The organisation can stop monitoring; the phone then stops its own side.
+  // A port of the RN SDK's presenceWatchWait.test.ts.
+  group('shouldStandDown', () {
+    test('stands down when monitoring was stopped and the pin is not fresh', () {
+      expect(shouldStandDown(const WatchState('revoked', stopped: true), fresh: false), isTrue);
+      // An always-on arrangement ended between checks keeps its last verdict.
+      expect(shouldStandDown(const WatchState('verified', stopped: true), fresh: false), isTrue);
+    });
+
+    test('never on a fresh pin: its own check is still being started', () {
+      expect(shouldStandDown(const WatchState('revoked', stopped: true), fresh: true), isFalse);
+    });
+
+    test('never on a running, finished or unreadable status', () {
+      expect(shouldStandDown(const WatchState('in_progress', stopped: false), fresh: false), isFalse);
+      expect(shouldStandDown(const WatchState('verified', stopped: false), fresh: false), isFalse);
+      expect(shouldStandDown(null, fresh: false), isFalse);
+    });
+  });
 }

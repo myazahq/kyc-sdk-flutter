@@ -14,8 +14,9 @@ import kotlin.math.sqrt
  * cooperate on one state rather than double-counting a stay:
  *
  *   inside,  no open stay  → open one (stamp enterAt)
- *   inside,  open stay     → check in: once it has run CHECKPOINT_MS, fold it
- *                            so far and restart it here (checkpointStay)
+ *   inside,  open stay     → check in: once it has run its interval (35
+ *                            minutes the first time, then three hours),
+ *                            fold it so far and restart it (checkpointStay)
  *   outside, open stay     → close it: fold the span into per-day aggregates
  *   outside, no open stay  → nothing (absence is never evidence)
  *   mocked                 → report the day FLAGGED, never open a stay
@@ -40,6 +41,8 @@ object PresenceSampler {
 
   data class Result(
     val enterAt: Long?,
+    /** When that stay began (null = none open); check-ins leave it alone. */
+    val stayStart: Long?,
     val days: List<PresenceFold.DayAggregate>,
     val flagged: List<Flagged>,
   )
@@ -77,8 +80,10 @@ object PresenceSampler {
     fixes: List<Fix>,
     enterAt: Long?,
     offsetMinutes: Int,
+    stayStart: Long? = null,
   ): Result {
     var open = enterAt
+    var start = if (enterAt == null) null else stayStart
     val days = mutableListOf<PresenceFold.DayAggregate>()
     val flagged = mutableListOf<Flagged>()
     for (fix in fixes.sortedBy { it.timestamp }) {
@@ -89,15 +94,17 @@ object PresenceSampler {
       if (insideFence(pinLat, pinLng, fix)) {
         // A person who never leaves never produces an exit, so their stay is
         // recorded here, at each confirmed-inside reading, instead.
-        val checked = PresenceFold.checkpointStay(open, fix.timestamp, offsetMinutes)
+        val checked = PresenceFold.checkpointStay(open, fix.timestamp, offsetMinutes, start)
         open = checked.enterAt
+        start = checked.stayStart
         days.addAll(checked.days)
         continue
       }
       val enteredAt = open ?: continue
       days.addAll(PresenceFold.foldSpanIntoDays(enteredAt, fix.timestamp, offsetMinutes))
       open = null
+      start = null
     }
-    return Result(open, days, flagged)
+    return Result(open, start, days, flagged)
   }
 }

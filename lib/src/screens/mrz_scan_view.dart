@@ -11,6 +11,7 @@ import '../services/mrz_extract.dart';
 import '../services/mrz_parser.dart';
 import '../services/text_recognition.dart';
 import 'mrz_scan_overlay.dart';
+import '../widgets/myaza_spinner.dart';
 
 // ─── MRZ scan view ────────────────────────────────────────────────────────────
 //
@@ -171,7 +172,7 @@ class _MrzScanViewState extends ConsumerState<MrzScanView> {
     if (!camera.isReady || controller == null) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: MyazaSpacing.xl),
-        child: Center(child: CircularProgressIndicator()),
+        child: Center(child: MyazaSpinner()),
       );
     }
 
@@ -185,7 +186,7 @@ class _MrzScanViewState extends ConsumerState<MrzScanView> {
         mainAxisSize: MainAxisSize.min,
         children: [
           if (busy) ...[
-            const Center(child: CircularProgressIndicator()),
+            const Center(child: MyazaSpinner()),
             const SizedBox(height: MyazaSpacing.md),
           ],
           Text(message, style: text.bodyMedium, textAlign: TextAlign.center),

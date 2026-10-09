@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ui' show Color;
 
 import 'flash_detector.dart';
+import 'flash_timeline.dart';
 
 // ─── Flash sequence runner ────────────────────────────────────────────────────
 //
@@ -62,16 +63,28 @@ class FlashSequenceRunner {
   final FaceRgbSampler sampleFace;
   final FlashTimings timings;
 
+  /// The clock the colour-on times are read from (flash_timeline.dart).
+  /// Injectable for tests.
+  final int Function() now;
+
+  /// When the recording started, on the same clock. Tests inject it; the app
+  /// reads the one the recorder marked.
+  final int? Function()? recordingStartedAt;
+
   const FlashSequenceRunner({
     required this.paint,
     required this.sampleFace,
     this.timings = const FlashTimings(),
+    this.now = flashClockNow,
+    this.recordingStartedAt,
   });
 
   /// Runs the full [sequence], returning the aggregated [FlashResult]. A flash
   /// whose baseline/lit sample is missing (no face) is treated as inconclusive.
   Future<FlashResult> run(List<FlashColor> sequence) async {
     final samples = <FlashSample>[];
+    // When each colour came on, for the server's re-check.
+    final onAt = <int>[];
     for (final flash in sequence) {
       // Neutral baseline immediately before each flash, so ambient drift is
       // tracked per-flash rather than assumed constant across the sequence.
@@ -80,6 +93,7 @@ class FlashSequenceRunner {
       final baseline = await sampleFace(timings.baselineSettle);
 
       paint(flash.color);
+      onAt.add(now());
       // Screen paint + camera exposure both lag; sampling immediately would
       // average the pre-flash frames back in.
       await Future<void>.delayed(timings.litLatency);
@@ -94,6 +108,10 @@ class FlashSequenceRunner {
       }
     }
     paint(null); // restore neutral
-    return evaluateFlashSequence(sequence, samples);
+    final started = recordingStartedAt;
+    final onsets = started != null
+        ? flashOnsets(onAt, sequence.length, startedAt: started(), useMarked: false)
+        : flashOnsets(onAt, sequence.length);
+    return evaluateFlashSequence(sequence, samples).withOnsets(onsets);
   }
 }

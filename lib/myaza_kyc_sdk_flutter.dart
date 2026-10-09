@@ -126,6 +126,9 @@ export 'src/presence/presence_reporter.dart'
 // backend already holds the address), the host app hands the SDK the pin so
 // the foreground and background presence tiers can run.
 export 'src/presence/presence_store.dart' show clearPresencePin, savePresencePin;
+// What the SDK does when the organisation stops monitoring; a host may also
+// call it itself (for example on sign-out).
+export 'src/presence/presence_stand_down.dart' show standDownPresence;
 export 'src/presence/background_presence.dart'
     show
         BackgroundPresenceReason,
@@ -152,6 +155,17 @@ export 'src/presence/presence_status.dart'
         presenceStatus;
 export 'src/presence/presence_tier.dart'
     show PresenceTierInputs, resolvePresenceTier;
+// The stay the background tier has open on this phone: when the person
+// arrived and when it can next be reported.
+export 'src/presence/presence_stay.dart' show PresenceStay, presenceStay;
+// Where the check stands on the server (running, verified, how far along),
+// for the host app to show without a webhook relayed through its backend.
+export 'src/presence/presence_watch_status.dart'
+    show
+        PresenceWatchState,
+        PresenceWatchStatus,
+        fetchPresenceWatchStatus,
+        parsePresenceWatchStatus;
 
 export 'src/config/contact_verification.dart'
     show OtpInputStyle, EmailVerificationConfig, PhoneVerificationConfig;

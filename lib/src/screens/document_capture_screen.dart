@@ -48,6 +48,7 @@ import '../widgets/myaza_button.dart';
 import '../services/model_readiness.dart';
 import '../widgets/icons/icons.dart';
 import '../i18n/text_scope.dart';
+import '../widgets/myaza_spinner.dart';
 
 // ─── Scan phase ───────────────────────────────────────────────────────────────
 //
@@ -1725,7 +1726,7 @@ class _PulseLoader extends StatelessWidget {
             ),
             child: Padding(
               padding: const EdgeInsets.all(15),
-              child: CircularProgressIndicator(
+              child: MyazaSpinner(
                 color: color,
                 strokeWidth: 3,
               ),

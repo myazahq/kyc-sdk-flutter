@@ -14,6 +14,7 @@ import '../../widgets/myaza_button.dart';
 import '../../widgets/sticky_actions.dart';
 import 'street_view_chrome.dart';
 import '../../i18n/text_scope.dart';
+import '../../widgets/myaza_spinner.dart';
 
 // ─── Framed Street View ──────────────────────────────────────────────────────
 //
@@ -87,7 +88,11 @@ class _FramedStreetViewState extends State<FramedStreetView> {
         onMessageReceived: (message) => _onMessage(message.message),
       )
       ..setNavigationDelegate(
-        NavigationDelegate(onWebResourceError: (_) => _unavailable()),
+        NavigationDelegate(onWebResourceError: (error) {
+          if (frameLoadFailed(isForMainFrame: error.isForMainFrame, ready: _ready)) {
+            _unavailable();
+          }
+        }),
       )
       ..loadRequest(Uri.parse(src));
     setState(() => _controller = controller);
@@ -172,7 +177,7 @@ class _FramedStreetViewState extends State<FramedStreetView> {
                         child: Center(
                           child: SizedBox.square(
                             dimension: 20,
-                            child: CircularProgressIndicator(
+                            child: MyazaSpinner(
                               strokeWidth: 2,
                               color: colors.primary,
                             ),

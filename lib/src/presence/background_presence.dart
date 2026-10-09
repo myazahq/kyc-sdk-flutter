@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 
@@ -130,11 +132,10 @@ class MyazaBackgroundPresence {
   }
 }
 
-/// The documented two-step escalation to "allow all the time": while-in-use
-/// first, then a second request that (with the background entries declared
-/// by the host) raises the always prompt. Shared by the geofence and the
-/// foreground-service tiers so the two can never ask differently. Null when
-/// the platform could not answer at all.
+/// The two-step escalation to "allow all the time": while-in-use first, then
+/// a second request for the background permission. Shared by the geofence and
+/// the foreground-service tiers so the two can never ask differently. Null
+/// when the platform could not answer at all.
 Future<LocationPermission?> requestAlwaysLocationPermission() async {
   try {
     var permission = await Geolocator.checkPermission();
@@ -142,10 +143,45 @@ Future<LocationPermission?> requestAlwaysLocationPermission() async {
       permission = await Geolocator.requestPermission();
     }
     if (permission == LocationPermission.whileInUse) {
-      permission = await Geolocator.requestPermission();
+      permission = await _requestAlwaysNatively(permission);
     }
     return permission;
   } catch (_) {
     return null;
+  }
+}
+
+/// The second step is asked by the plugin's own native code on both
+/// platforms, because geolocator's second request never reaches the system
+/// prompt on either:
+///   • iOS: it returns at once when any decision already exists, and with
+///     both usage strings declared it only ever asks for "While Using".
+///   • Android 11+: it asks for background location together with the
+///     foreground permissions, and the system ignores a mixed request.
+/// iOS shows its prompt once per install and Android stops after two
+/// refusals; after that this answers the current permission without one.
+Future<LocationPermission> _requestAlwaysNatively(LocationPermission current) async {
+  if (!Platform.isIOS && !Platform.isAndroid) return current;
+  try {
+    final word = await const MethodChannel('kyc_sdk_flutter/presence')
+        .invokeMethod<String>('requestAlwaysLocation');
+    return alwaysAnswerToPermission(word, current);
+  } catch (_) {
+    return current;
+  }
+}
+
+/// Pure: the native side's answer as a geolocator permission. An answer this
+/// build does not know keeps [current].
+LocationPermission alwaysAnswerToPermission(String? word, LocationPermission current) {
+  switch (word) {
+    case 'always':
+      return LocationPermission.always;
+    case 'whileInUse':
+      return LocationPermission.whileInUse;
+    case 'denied':
+      return LocationPermission.deniedForever;
+    default:
+      return current;
   }
 }

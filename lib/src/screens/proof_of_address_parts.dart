@@ -4,6 +4,7 @@ import '../config/theme.dart';
 import '../config/upload_limits.dart';
 import '../widgets/country_flag.dart';
 import '../widgets/icons/icons.dart';
+import '../widgets/myaza_spinner.dart';
 
 export 'proof_of_address_uploaded_row.dart';
 
@@ -71,7 +72,7 @@ class PoaDropzone extends StatelessWidget {
                 SizedBox(
                   width: 30,
                   height: 30,
-                  child: CircularProgressIndicator(
+                  child: MyazaSpinner(
                     strokeWidth: 2.5,
                     valueColor: AlwaysStoppedAnimation(colors.primary),
                   ),

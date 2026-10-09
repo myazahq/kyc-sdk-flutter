@@ -31,10 +31,27 @@ class PresenceSamplerTest {
     val r = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 9))), null, lagos)
     assertEquals(at(3, 9), r.enterAt)
     assertTrue(r.days.isEmpty())
-    // Within the check-in interval a later inside fix does not re-stamp.
-    val again = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 11))), r.enterAt, lagos)
+    assertEquals(at(3, 9), r.stayStart)
+    // Within the first check-in interval a later inside fix does not re-stamp.
+    val again = PresenceSampler.apply(
+      pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 9, 20))), r.enterAt, lagos, r.stayStart,
+    )
     assertEquals(at(3, 9), again.enterAt)
     assertTrue(again.days.isEmpty())
+  }
+
+  @Test
+  fun recordsANewStayAtItsFirstCheckInThenWaitsThreeHours() {
+    val start = at(3, 9)
+    val first = PresenceSampler.apply(pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 9, 40))), start, lagos, start)
+    assertEquals(at(3, 9, 40), first.enterAt)
+    assertEquals(start, first.stayStart)
+    assertEquals(listOf(PresenceFold.DayAggregate("2026-09-03", 40, false)), first.days)
+    val soon = PresenceSampler.apply(
+      pinLat, pinLng, listOf(fix(pinLat, pinLng, at(3, 11))), first.enterAt, lagos, first.stayStart,
+    )
+    assertEquals(first.enterAt, soon.enterAt)
+    assertTrue(soon.days.isEmpty())
   }
 
   @Test

@@ -27,9 +27,11 @@ extension PresenceMonitor {
       for: Date(timeIntervalSince1970: Double(atMs) / 1000)
     ) / 60
     let out = PresenceFold.checkpointStay(
-      enterAt: PresenceStore.enterAt, atMs: atMs, offsetMinutes: offsetMinutes
+      enterAt: PresenceStore.enterAt, atMs: atMs, offsetMinutes: offsetMinutes,
+      stayStart: PresenceStore.stayStart
     )
     PresenceStore.enterAt = out.enterAt
+    PresenceStore.stayStart = out.stayStart
     if out.days.isEmpty { return }
     PresenceStore.queueDays(out.days)
     flushQueue()
@@ -64,8 +66,20 @@ extension PresenceMonitor {
   func scheduleCheckIns() {
     guard PresenceMonitor.hostAllowsCheckIns, PresenceStore.armed else { return }
     let request = BGAppRefreshTaskRequest(identifier: PresenceMonitor.checkInTaskId)
-    request.earliestBeginDate = Date(timeIntervalSinceNow: PresenceMonitor.checkInIntervalS)
+    request.earliestBeginDate = Date(timeIntervalSinceNow: nextCheckInDelayS())
     try? BGTaskScheduler.shared.submit(request)
+  }
+
+  /// Ask for the refresh just after the open stay becomes recordable (five
+  /// minutes past, so the run finds it due), never later than the usual two
+  /// hours. With no stay open, the usual two hours.
+  private func nextCheckInDelayS() -> TimeInterval {
+    guard
+      let due = PresenceFold.nextCheckpointAt(
+        enterAt: PresenceStore.enterAt, stayStart: PresenceStore.stayStart)
+    else { return PresenceMonitor.checkInIntervalS }
+    let untilDue = Double(due) / 1000 - Date().timeIntervalSince1970 + 5 * 60
+    return min(PresenceMonitor.checkInIntervalS, max(5 * 60, untilDue))
   }
 
   func cancelCheckIns() {

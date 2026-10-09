@@ -22,11 +22,21 @@ class StoredPin {
 
   /// Whether this pin belongs to the always-on arrangement (never expires).
   final bool alwaysOn;
+
+  /// False when the workflow switched background monitoring off for this
+  /// check. Pins saved before this was recorded read as on.
+  final bool background;
+
+  /// The reporter has asked for "allow all the time" for this pin once
+  /// (presence_auto_arm.dart). It never asks again; a new pin starts clean.
+  final bool backgroundAsked;
   const StoredPin({
     required this.lat,
     required this.lng,
     required this.savedAt,
     this.alwaysOn = false,
+    this.background = true,
+    this.backgroundAsked = false,
   });
 }
 
@@ -67,6 +77,7 @@ Future<void> savePresencePin(
   double lat,
   double lng, {
   bool alwaysOn = false,
+  bool background = true,
 }) async {
   if (externalUserId.isEmpty) return;
   final pins = await _readAll();
@@ -75,7 +86,17 @@ Future<void> savePresencePin(
     'lng': lng,
     'savedAt': DateTime.now().toUtc().toIso8601String(),
     if (alwaysOn) 'alwaysOn': true,
+    if (!background) 'background': false,
   };
+  await _writeAll(pins);
+}
+
+/// Records that the reporter asked for "allow all the time" for this pin.
+Future<void> markBackgroundAsked(String externalUserId) async {
+  final pins = await _readAll();
+  final raw = pins[externalUserId];
+  if (raw is! Map || raw['backgroundAsked'] == true) return;
+  pins[externalUserId] = {...raw, 'backgroundAsked': true};
   await _writeAll(pins);
 }
 
@@ -123,6 +144,8 @@ Future<StoredPin?> loadPresencePin(String externalUserId) async {
     lng: lng.toDouble(),
     savedAt: (raw['savedAt'] as String?) ?? '',
     alwaysOn: alwaysOn,
+    background: raw['background'] != false,
+    backgroundAsked: raw['backgroundAsked'] == true,
   );
 }
 

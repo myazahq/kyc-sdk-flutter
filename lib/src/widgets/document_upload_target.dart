@@ -4,6 +4,7 @@ import '../config/theme.dart';
 import 'dashed_border.dart';
 import 'icons/icons.dart';
 import '../i18n/text_scope.dart';
+import 'myaza_spinner.dart';
 
 // ─── The upload-only tap target ───────────────────────────────────────────────
 //
@@ -75,7 +76,7 @@ class DocumentUploadTarget extends StatelessWidget {
                     child: isBusy
                         ? Padding(
                             padding: const EdgeInsets.all(15),
-                            child: CircularProgressIndicator(
+                            child: MyazaSpinner(
                                 strokeWidth: 2, color: colors.primary),
                           )
                         : MyazaIcon(MyazaIcons.imageUp,

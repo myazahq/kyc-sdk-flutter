@@ -121,9 +121,14 @@ class PresenceStore(context: Context) {
   var enterAt: Long?
     get() = prefs.getLong("enterAt", -1L).takeIf { it > 0 }
     set(value) {
-      if (value == null) prefs.edit().remove("enterAt").apply()
+      if (value == null) prefs.edit().remove("enterAt").remove("stayStart").apply()
       else prefs.edit().putLong("enterAt", value).apply()
     }
+
+  /** When the open stay began; check-ins move `enterAt` on, never this. */
+  var stayStart: Long?
+    get() = prefs.getLong("stayStart", -1L).takeIf { it > 0 && enterAt != null }
+    set(value) = prefs.edit().putLong("stayStart", value ?: -1L).apply()
 
   /** Merge fresh day aggregates into the queue: same day → sum dwell, OR
    *  night, sum samples. The RN tier's mergeIntoQueue, verbatim. */

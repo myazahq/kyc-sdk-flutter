@@ -5,6 +5,7 @@ import '../../widgets/dashed_border.dart';
 import 'address_photo_filled.dart';
 import '../../widgets/icons/icons.dart';
 import '../../i18n/text_scope.dart';
+import '../../widgets/myaza_spinner.dart';
 
 // ─── The entrance photo, as the hero of its screen ───────────────────────────
 //
@@ -85,7 +86,7 @@ class _Empty extends StatelessWidget {
                       ? SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(
+                          child: MyazaSpinner(
                               strokeWidth: 2, color: colors.primary),
                         )
                       : MyazaIcon(MyazaIcons.camera,

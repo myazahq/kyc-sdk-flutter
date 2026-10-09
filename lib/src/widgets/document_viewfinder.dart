@@ -12,6 +12,7 @@ import 'document_scan_overlay.dart';
 import 'native_camera_preview.dart';
 import 'icons/icons.dart';
 import '../i18n/text_scope.dart';
+import 'myaza_spinner.dart';
 
 /// Keys for the two controls whose overlap is a real (and once-shipped) bug:
 /// the hint sat behind the shutter. Layout tests target these.
@@ -338,7 +339,7 @@ class _ViewfinderPlaceholder extends StatelessWidget {
                           .copyWith(color: Colors.white70)),
                 ],
               )
-            : CircularProgressIndicator(
+            : MyazaSpinner(
                 color: context.myazaColors.primary, strokeWidth: 2),
       ),
     );
@@ -446,7 +447,7 @@ class _ProcessingPill extends StatelessWidget {
           const SizedBox(
             width: 14,
             height: 14,
-            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+            child: MyazaSpinner(color: Colors.white, strokeWidth: 2),
           ),
           const SizedBox(width: 8),
           Text(

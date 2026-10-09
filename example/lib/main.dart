@@ -18,6 +18,8 @@ const String kApiKey = String.fromEnvironment(
 );
 const String kDevServer = String.fromEnvironment('MYAZA_DEV_SERVER');
 const String kWorkflowId = String.fromEnvironment('MYAZA_WORKFLOW_ID');
+// The org's user reference. Address presence reports only for a named user.
+const String kUserId = String.fromEnvironment('MYAZA_USER_ID', defaultValue: 'usr_123');
 
 void main() => runApp(const ExampleApp());
 
@@ -49,6 +51,7 @@ class HomeScreen extends StatelessWidget {
         apiKey: kApiKey,
         devUrl: kDevServer.isEmpty ? null : kDevServer,
         workflowId: kWorkflowId.isEmpty ? null : kWorkflowId,
+        userId: kUserId,
         // A workflow declares its own countries and ID types, so these are
         // omitted when one is set. Passing them anyway narrows a multi-region
         // flow to this hardcoded list: such a flow keeps its ID types per
@@ -63,7 +66,7 @@ class HomeScreen extends StatelessWidget {
           companyName: 'Myaza',
           theme: MyazaThemeMode.light,
         ),
-        metadata: const {'userId': 'usr_123'},
+        metadata: const {'userId': kUserId},
       ),
       onSubmit: (KYCSubmission submission) {
         // Fires once the server accepts the submission. `status` is always
